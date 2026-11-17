@@ -316,7 +316,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const occurrence = newDelegationOccurrence(session, 0);
       const operationClaim = await claimDelegationOperation(session, spec, occurrence, ctx, signal, definitionBinding);
-      // Public capture keeps the caller's own request; the bound ID is in details and the ledger.
+      // Public capture keeps the caller's own request; the bound ID is in details.
       const capture = publicEvidenceCall(
         session.publicEvidence,
         _toolCallId,

@@ -40,15 +40,6 @@ Earlier schema snapshots omitted `context:` even though the runtime emitted and 
 validation of existing records; it changes no grant or execution authority. Consumers pinned to older schemas
 must explicitly adopt the corrected contract. The closed field and identifier-tail rules remain unchanged.
 
-## Definition binding fields (2026-11-17)
-
-A `capability_decision` may carry `definitionId` (the selected definition identity the delegation was checked
-against) with `definitionIdSource`: `supplied` when the call named it, `remembered` when Daddy filled it from the
-session's last `delegate_describe` of that agent. The two appear together or not at all; they are absent when no
-identity was used, which includes every earlier record. This is an additive change to the closed schema: earlier
-records stay valid, and consumers pinned to an older schema must explicitly adopt it to accept new records. Like
-`definitionHash`, the ID identifies content without reproducing it and grants nothing.
-
 ## Execution identity
 
 Every v3 execution event carries:

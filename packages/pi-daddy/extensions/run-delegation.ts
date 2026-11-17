@@ -300,10 +300,11 @@ async function runOneDelegationImplementation(
     preApproved?: InheritableApproval[];
     /**
      * The definitionId `spec` carries and where it came from (2026-11-17). Trusted: bound by the calling tool from
-     * its own arguments and this session's describe memory, never read from model input. Recorded, not decisive:
-     * the identity check compares `spec.definitionId` with the current selection either way.
+     * its own arguments and this session's describe memory, never read from model input. Returned in the outcome's
+     * details and used for the refusal wording, not decisive: the identity check compares `spec.definitionId` with the
+     * current selection either way.
      */
-    definitionBinding?: import("../src/governance/ledger.ts").DefinitionBinding;
+    definitionBinding?: import("./definition-describe.ts").DefinitionBinding;
     /**
      * The child whose output composed this child's task (ADR-0033).
      *
@@ -489,7 +490,6 @@ async function runOneDelegationImplementation(
         taskFromExecutionId,
         approval: approvalOutcome,
         approvalFacts,
-        definitionBinding: options.definitionBinding,
       });
     } catch (error) {
       plan = {

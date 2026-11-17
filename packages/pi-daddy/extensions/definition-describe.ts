@@ -4,7 +4,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ceilingForDefinition, digestDefinition } from "../src/kernel/definitions.ts";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
-import type { DefinitionBinding, DefinitionIdSource } from "../src/governance/ledger.ts";
 import { hostModel, liveParentTools } from "./parent-tool-host.ts";
 import type { GrantsSession } from "./session.ts";
 import type { ReloadLifecycle } from "./reload-environment.ts";
@@ -15,6 +14,17 @@ export const definitionIdDescription =
   "(required for Principal phases).";
 
 class DefinitionInputError extends Error {}
+
+/** Where a delegation's definitionId came from: its own arguments, or this session's last describe of the agent. */
+export type DefinitionIdSource = "supplied" | "remembered";
+/**
+ * The definitionId a delegation was checked against, and its source. Returned in tool result details only: the
+ * ledger schema is closed and pinned by skill-harness, so recording it there needs a coordinated schema version.
+ */
+export interface DefinitionBinding {
+  definitionId: string;
+  source: DefinitionIdSource;
+}
 
 /**
  * Owner decision 2026-11-17: the harness carries the IDs. Each omitted definitionId is filled from this Pi

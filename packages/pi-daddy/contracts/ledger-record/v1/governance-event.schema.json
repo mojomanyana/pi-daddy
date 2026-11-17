@@ -429,18 +429,6 @@
           "type": "string",
           "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$"
         },
-        "definitionId": {
-          "type": "string",
-          "description": "the selected definitionId this delegation was checked against; present only with definitionIdSource",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "definitionIdSource": {
-          "description": "supplied by the call, or remembered from this session's last delegate_describe of the agent",
-          "enum": [
-            "supplied",
-            "remembered"
-          ]
-        },
         "handoff": {
           "type": "object",
           "description": "the context handoff this child received (ADR-0078); absent means nothing crossed",
@@ -541,14 +529,6 @@
         "executor",
         "taskDigest"
       ],
-      "dependentRequired": {
-        "definitionId": [
-          "definitionIdSource"
-        ],
-        "definitionIdSource": [
-          "definitionId"
-        ]
-      },
       "additionalProperties": false
     },
     "workspaceLease": {

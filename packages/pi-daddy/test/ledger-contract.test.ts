@@ -12,7 +12,6 @@ import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
 import {
   CHILD_LIFECYCLE_STATES,
   CHILD_PROCESS_SIGNALS,
-  DEFINITION_ID_SOURCES,
   LEDGER_EVENT_KINDS,
   LEDGER_GATE_OUTCOMES,
   WORKSPACE_ACCESSES,
@@ -93,8 +92,6 @@ const CAPABILITY_FIELDS = [
   "definitionDigest",
   "definitionHash",
   "definitionPackageVersion",
-  "definitionId",
-  "definitionIdSource",
   "handoff",
   "executor",
   "taskFrom",
@@ -307,26 +304,9 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
     episodeId: _episodeAddedLater,
     definitionHash: _definitionHashAddedLater,
     definitionPackageVersion: _definitionPackageVersionAddedLater,
-    definitionId: _definitionIdAddedLater,
-    definitionIdSource: _definitionIdSourceAddedLater,
     ...historicalFixture
   } = fixture;
   assert.equal(validator.Check(historicalFixture), true, "retained records without additive fields remain valid");
-  assert.equal(validateLedgerV3Event(historicalFixture), null);
-  // The definitionId binding (2026-11-17) is one fact: an ID without its source, or a source without an ID, is corrupt.
-  const { definitionIdSource: _source, ...idWithoutSource } = fixture;
-  const { definitionId: _id, ...sourceWithoutId } = fixture;
-  for (const corrupt of [
-    idWithoutSource,
-    sourceWithoutId,
-    { ...fixture, definitionIdSource: "guessed" },
-    { ...fixture, definitionId: "SECRET TASK TEXT" },
-    { ...fixture, definitionId: "A".repeat(64) },
-  ]) {
-    assert.equal(validator.Check(corrupt), false, JSON.stringify(corrupt).slice(-160));
-    assert.notEqual(validateLedgerV3Event(corrupt), null, JSON.stringify(corrupt).slice(-160));
-  }
-  assert.equal(validateLedgerV3Event({ ...fixture, definitionIdSource: "supplied" }), null);
   assert.equal(validator.Check({ ...fixture, ledgerVersion: 2 }), false);
   assert.equal(validator.Check({ ...fixture, executionId: undefined }), false);
   assert.equal(validator.Check({ ...fixture, task: "forbidden ledger text" }), false);
@@ -455,7 +435,6 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
   assert.deepEqual(sorted(finite(defs.approvalScope)), sorted(APPROVAL_SCOPES));
   assert.deepEqual(sorted(values("capabilityDecision", "executor")), sorted(EXECUTOR_KINDS));
   assert.deepEqual(sorted(values("capabilityDecision", "gateOutcome")), sorted(LEDGER_GATE_OUTCOMES));
-  assert.deepEqual(sorted(values("capabilityDecision", "definitionIdSource")), sorted(DEFINITION_ID_SOURCES));
   assert.deepEqual(sorted(mapValues("capabilityDecision", "approvalSources")), sorted(APPROVAL_SOURCES));
   assert.deepEqual(sorted(values("workspaceLease", "access")), sorted(WORKSPACE_ACCESSES));
   assert.deepEqual(sorted(values("workspaceLease", "outcome")), sorted(WORKSPACE_LEASE_OUTCOMES));

@@ -24,7 +24,6 @@ const EXECUTORS = new Set(["process", "herdr"]);
 const APPROVAL_SOURCES = new Set(["prompt", "session", "persisted", "inherited", "auto"]);
 const APPROVAL_SCOPES = new Set(["once", "session", "always"]);
 const GATE_OUTCOMES = new Set(["declined", "dismissed", "expired", "aborted", "no-ui", "error"]);
-const DEFINITION_ID_SOURCES = new Set(["supplied", "remembered"]);
 const LEASE_OUTCOMES = new Set([
   "acquired",
   "uncontended",
@@ -108,8 +107,6 @@ const FIELDS = {
     "definitionDigest",
     "definitionHash",
     "definitionPackageVersion",
-    "definitionId",
-    "definitionIdSource",
     "handoff",
     "executor",
     "taskFrom",
@@ -342,9 +339,6 @@ function validateCapabilityDecision(event: LedgerV3Object): string | null {
     !optional(event, "definitionDigest", validDefinitionDigest) ||
     !optional(event, "definitionHash", (value) => SHA256_RE.test(String(value))) ||
     !optional(event, "definitionPackageVersion", isDefinitionPackageVersion) ||
-    !optional(event, "definitionId", (value) => /^[a-f0-9]{64}$/.test(String(value))) ||
-    !optional(event, "definitionIdSource", (value) => DEFINITION_ID_SOURCES.has(String(value))) ||
-    Object.hasOwn(event, "definitionId") !== Object.hasOwn(event, "definitionIdSource") ||
     !optional(event, "taskFrom", isLedgerDisplayIdentifier) ||
     !optional(event, "taskFromExecutionId", isExecutionId) ||
     !optional(event, "correlation", validCorrelation) ||

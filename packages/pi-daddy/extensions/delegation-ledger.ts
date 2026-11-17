@@ -1,5 +1,5 @@
 import type { Delegation } from "../src/kernel/delegate.ts";
-import { appendRecord, buildRecord, type DefinitionBinding } from "../src/governance/ledger.ts";
+import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
 import type { ApprovalOutcome } from "./approvals.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import type { GrantsSession } from "./session.ts";
@@ -22,8 +22,6 @@ export async function recordDelegationDecision(input: {
   taskFromExecutionId?: string;
   approval?: ApprovalOutcome;
   approvalFacts?: ApprovalLedgerFacts;
-  /** Which definitionId the identity check used, and whether the call supplied it or Daddy remembered it. */
-  definitionBinding?: DefinitionBinding;
 }): Promise<void> {
   const ledgerPath = input.session.ledgerPath;
   if (!ledgerPath) return;
@@ -62,7 +60,6 @@ export async function recordDelegationDecision(input: {
       definitionDigest: plan.definitionDigest,
       definitionHash: plan.definitionHash,
       definitionPackageVersion: plan.definitionPackageVersion,
-      definitionBinding: input.definitionBinding,
       taskDigest: plan.taskDigest,
       correlation: plan.correlation,
       refusal: plan.refusal,

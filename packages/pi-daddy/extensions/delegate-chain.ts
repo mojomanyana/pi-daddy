@@ -244,7 +244,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             agent: chainPlan.doomed.agent,
             reason: message,
             refusal: chainPlan.doomed.refusal,
-            definitionBinding: bound.bindings[chainPlan.doomed.step - 1],
           });
           if (chainPlan.doomed.refusal) throw new GovernanceRefusal({ ...chainPlan.doomed.refusal, message });
           throw new Error(message);
@@ -334,7 +333,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               reason: message,
               refusal: decision.refusal,
               approval: mergeGateOutcomes(decision.outcomes),
-              definitionBinding: bound.bindings[stepIndex],
             });
           }
           if (structured) throw new GovernanceRefusal(structured);

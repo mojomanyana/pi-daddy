@@ -15,7 +15,10 @@ This file is the product description, present tense. If code and this file disag
 Native delegation accepts an optional stable `operation_id`. The session owner admits one
 matching request; a concurrent or later duplicate returns its existing execution reference.
 It does not launch another child, replay a completed mutation, or grant approval. A changed
-request under the same ID refuses. An intentional retry needs a new attempt after the
+request under the same ID refuses. The request covers the selected definition's `definitionId`, not
+whether the call supplied it, `delegate_describe` filled it in or it was omitted: a describe or tree
+navigation between identical calls leaves it the same request, and a changed definition makes it a
+different one. An intentional retry needs a new attempt after the
 previous operation is proven settled or never started; uncertainty stays blocked.
 Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
@@ -709,9 +712,9 @@ for that agent in this Pi session and uses it when a `delegate`, a `delegate_all
 step names the agent without one; a supplied `definitionId` wins and is never remembered. Principal bindings
 require a describe (or the ID). `/reload` keeps what was described; `/new`, resume, fork and tree navigation
 drop it. Description starts no child and grants no authority. A stale ID, supplied or remembered, refuses
-before approval or launch until the agent is described again. Results and the ledger record the ID used and
-its source. This hash is an observation and precondition, not an approval record or a learned-policy
-authorization.
+before approval or launch until the agent is described again. Tool result details record the ID used and its
+source (`definitionBinding`); the ledger does not. This hash is an observation and precondition, not an
+approval record or a learned-policy authorization.
 
 The description also returns `selectedResources`: version `1`, `selectedSkill` and `definition` objects
 containing `path` and `sha256`, and `resourceDirectory` for relative references. A verified Principal binding

@@ -15,8 +15,11 @@
  *  - dropping the memory on `/reload`, or keeping it across `/new`, resume, fork, tree navigation or a root
  *    replacement; recording a describe that was refused or failed;
  *  - not refusing a remembered ID whose definition changed, or telling the model to copy an ID there;
- *  - not recording the ID and its source in the result details and the ledger (including refusals after the
- *    identity check), or recording one never used; recording a remembered ID as the caller's request in capture.
+ *  - giving a chain step or batch child another entry's binding, or checking it with another entry's source;
+ *  - not recording the ID and its source in the result details, or recording one never used; writing it to the
+ *    ledger, whose closed schema skill-harness pins; recording a remembered ID as the caller's request in capture;
+ *  - digesting how a call got its definitionId instead of the selected definition: an identical `operation_id`
+ *    retry must stay the same request across a describe or tree navigation, and a changed definition must not be.
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -124,7 +127,11 @@ async function harness(env: Record<string, string> = {}) {
   const native = toolSources().map((tool) => ({ ...tool, description: tool.name, parameters: {}, exposure: "direct" }));
   const active = ["read", "bash", "delegate", "delegate_all", "delegate_chain", "delegate_describe"];
   let owners = 0;
-  const newOwner = () => ({ getSessionId: () => `fixture-session-${++owners}` });
+  // One stable ID per session manager, as Pi's: durable operation records are owned by it across a reload.
+  const newOwner = () => {
+    const id = `fixture-session-${++owners}`;
+    return { getSessionId: () => id };
+  };
   let ctx = {
     cwd: dir,
     hasUI: false,
@@ -195,26 +202,36 @@ async function harness(env: Record<string, string> = {}) {
 
 const remembered = (definitionId: string) => ({ definitionId, source: "remembered" });
 const supplied = (definitionId: string) => ({ definitionId, source: "supplied" });
-const bindingOf = (decision: Record<string, unknown>) =>
-  decision.definitionId === undefined
-    ? undefined
-    : { definitionId: decision.definitionId, source: decision.definitionIdSource };
+const changedSince = (agent: string) =>
+  `Definition snapshot changed or is unavailable for agent "${agent}": it changed since this session described it. ` +
+  "Describe it again with delegate_describe.";
+const suppliedStale = (agent: string) =>
+  `Definition snapshot changed or is unavailable for agent "${agent}": the supplied definitionId does not match ` +
+  "its current selection. Describe it again with delegate_describe and omit the ID.";
+/** The binding is reported in result details only: no capability decision carries it (closed, pinned schema). */
+const assertNoLedgerBinding = (decisions: Array<Record<string, unknown>>) => {
+  assert.notEqual(decisions.length, 0);
+  for (const decision of decisions)
+    assert.deepEqual(
+      [Object.hasOwn(decision, "definitionId"), Object.hasOwn(decision, "definitionIdSource")],
+      [false, false],
+    );
+};
 /**
- * An unresolvable model is refused only after the identity check and its ledger write, so a probe shows which ID
- * a call was bound to (the record's binding) or that it was refused as never described, without launching a child.
+ * An unresolvable model is refused only after the identity check, so a probe shows without launching a child
+ * whether a Principal delegation carried the current definitionId ("bound"; no other ID passes that check), was
+ * refused as never described, or was refused because its remembered ID changed since the describe.
  */
 const UNRESOLVED = "nope/nope";
 async function probe(f: Awaited<ReturnType<typeof harness>>, spec: Record<string, unknown>) {
-  const before = (await f.decisions()).length;
   try {
     await f.call("delegate", { task: "probe", ...spec, model: UNRESOLVED });
   } catch (error) {
     const message = (error as Error).message;
     if (message.startsWith(notDescribed(String(spec.agent)))) return "not described";
+    if (message.startsWith(changedSince(String(spec.agent)))) return "changed";
     assert.match(message, /nope\/nope/);
-    const decisions = await f.decisions();
-    assert.equal(decisions.length, before + 1);
-    return bindingOf(decisions.at(-1)!);
+    return "bound";
   }
   assert.fail("a probe must not launch");
 }
@@ -251,18 +268,17 @@ test("a described agent's definitionId fills delegate, a delegate_all child and 
 
     assert.equal(await f.launched(), 4);
     // Fan-out children append concurrently, so the ledger is compared as a multiset.
-    const rows = (await f.decisions()).map((decision) =>
-      JSON.stringify([decision.agentType, decision.blocked, bindingOf(decision) ?? null]),
-    );
+    const decisions = await f.decisions();
     assert.deepEqual(
-      rows.sort(),
+      decisions.map((decision) => JSON.stringify([decision.agentType, decision.blocked])).sort(),
       [
-        ["build", false, remembered(id)],
-        ["build", false, remembered(id)],
-        ["build", false, remembered(id)],
-        ["notes", false, null],
+        ["build", false],
+        ["build", false],
+        ["build", false],
+        ["notes", false],
       ].map((row) => JSON.stringify(row)),
     );
+    assertNoLedgerBinding(decisions);
     for (const result of [single, all, chain])
       assert.equal(JSON.stringify(result.content).includes(id), false, "the model is not handed the ID");
   } finally {
@@ -277,8 +293,8 @@ test("two agents keep their own described definitionIds", async () => {
     assert.equal(await probe(f, { agent: "review" }), "not described");
     const review = await f.describe("review");
     assert.notEqual(build, review);
-    assert.deepEqual(await probe(f, { agent: "review" }), remembered(review));
-    assert.deepEqual(await probe(f, { agent: "build" }), remembered(build));
+    assert.equal(await probe(f, { agent: "review" }), "bound");
+    assert.equal(await probe(f, { agent: "build" }), "bound", "still build's own ID, not review's");
     assert.equal(await f.launched(), 0);
   } finally {
     await f.close();
@@ -290,7 +306,7 @@ test("/reload keeps the binding; a definition changed since its describe refuses
   try {
     const first = await f.describe("build");
     await f.reload();
-    assert.deepEqual(await probe(f, { agent: "build" }), remembered(first), "same definition after reload");
+    assert.equal(await probe(f, { agent: "build" }), "bound", "same definition after reload");
 
     await f.edit("build", " changed");
     await f.reload();
@@ -298,8 +314,7 @@ test("/reload keeps the binding; a definition changed since its describe refuses
     await assert.rejects(f.call("delegate", { agent: "build", task: "stale" }), (error: Error) => {
       assert.equal(
         error.message,
-        'Definition snapshot changed or is unavailable for agent "build": it changed since this session described it. ' +
-          "Describe it again with delegate_describe." +
+        changedSince("build") +
           ADMISSION +
           " This does not establish whether an earlier call used the same operation ID.",
       );
@@ -312,7 +327,7 @@ test("/reload keeps the binding; a definition changed since its describe refuses
 
     const second = await f.describe("build");
     assert.notEqual(second, first);
-    assert.deepEqual(await probe(f, { agent: "build" }), remembered(second));
+    assert.equal(await probe(f, { agent: "build" }), "bound");
     assert.equal(await f.launched(), 0);
   } finally {
     await f.close();
@@ -329,15 +344,7 @@ test("an agent no longer selected after /reload refuses its remembered ID as cha
     );
     await f.reload();
     await assert.rejects(f.call("delegate", { agent: "notes", task: "gone" }), (error: Error) => {
-      assert.equal(
-        error.message.startsWith(
-          'Definition snapshot changed or is unavailable for agent "notes": it changed since this session described it. ' +
-            "Describe it again with delegate_describe." +
-            ADMISSION,
-        ),
-        true,
-        error.message,
-      );
+      assert.equal(error.message.startsWith(changedSince("notes") + ADMISSION), true, error.message);
       return true;
     });
     await assert.rejects(
@@ -354,31 +361,23 @@ test("a supplied definitionId wins over the remembered one and never replaces it
   const f = await harness();
   try {
     const first = await f.describe("build");
-    assert.deepEqual(await probe(f, { agent: "build", definitionId: first }), supplied(first));
+    assert.equal(await probe(f, { agent: "build", definitionId: first }), "bound");
     await assert.rejects(
       f.call("delegate_all", { children: [{ agent: "build", definitionId: "f".repeat(64), task: "explicit stale" }] }),
       (error: Error) => {
-        assert.equal(
-          error.message.startsWith(
-            'Definition snapshot changed or is unavailable for agent "build": the supplied definitionId does not match ' +
-              "its current selection. Describe it again with delegate_describe and omit the ID." +
-              ADMISSION,
-          ),
-          true,
-          error.message,
-        );
+        assert.equal(error.message.startsWith(suppliedStale("build") + ADMISSION), true, error.message);
         return true;
       },
     );
-    assert.deepEqual(await probe(f, { agent: "build" }), remembered(first), "a refused supplied ID changed nothing");
+    assert.equal(await probe(f, { agent: "build" }), "bound", "a refused supplied ID changed nothing");
 
     await f.edit("build", " changed");
     await f.reload();
     // A caller that already holds the current ID may supply it: that call is bound to it, and the memory keeps `first`.
     const current = (await selectedDefinitions(f.commands)).definitions.get("build")!.definitionId!;
     assert.notEqual(current, first);
-    assert.deepEqual(await probe(f, { agent: "build", definitionId: current }), supplied(current));
-    await assert.rejects(f.call("delegate", { agent: "build", task: "omitted" }), /it changed since this session/);
+    assert.equal(await probe(f, { agent: "build", definitionId: current }), "bound", "the supplied ID won");
+    assert.equal(await probe(f, { agent: "build" }), "changed", "the memory still holds the first ID");
     assert.equal(await f.launched(), 0);
   } finally {
     await f.close();
@@ -406,9 +405,10 @@ test("/new, resume, fork, tree navigation and a root replacement drop the bindin
     ];
     for (const [label, event] of events) {
       const id = await f.describe("build");
-      assert.deepEqual(await probe(f, { agent: "build" }), remembered(id), `${label}: bound before`);
+      assert.ok(id);
+      assert.equal(await probe(f, { agent: "build" }), "bound", `${label}: bound before`);
       await f.reload();
-      assert.deepEqual(await probe(f, { agent: "build" }), remembered(id), `${label}: a reload keeps it`);
+      assert.equal(await probe(f, { agent: "build" }), "bound", `${label}: a reload keeps it`);
       await event();
       assert.equal(await probe(f, { agent: "build" }), "not described", `${label}: dropped`);
     }
@@ -510,35 +510,117 @@ test("binding reads only the call: a supplied ID, even empty, is never replaced 
   assert.equal(f.binding("build"), undefined, "no lifecycle, no memory");
 });
 
-test("refusals after the identity check record the ID they used: chain preflight and gate, operation election", async () => {
+test("each chain step carries its own binding: two steps with different agents", async () => {
   const f = await harness();
   try {
     const id = await f.describe("build");
-    const shell = await f.describe("shell");
-    // `bash` is gated and this session has nobody to ask, so the chain's upfront gate declines the step.
-    await assert.rejects(f.call("delegate_chain", { steps: [{ agent: "shell", task: "gated" }] }), /was not approved/);
-    await assert.rejects(
-      f.call("delegate_chain", { steps: [{ agent: "build", task: "doomed", model: "nope/nope" }] }),
-      /chain refused at step 1/,
-    );
-    // Not in the grant and not gated, so the operation election's preview denies it and records that refusal.
-    await assert.rejects(
-      f.call("delegate", {
-        agent: "build",
-        task: "denied before admission",
-        operation_id: "bind:denied",
-        context: { mode: "summary", summary: "x" },
-      }),
-      /context:summary/,
-    );
+    const chain = await f.call("delegate_chain", {
+      steps: [
+        { agent: "notes", task: "ordinary, never described" },
+        { agent: "build", task: "described" },
+      ],
+    });
+    assert.equal(chain.isError, false, chain.content[0].text);
     assert.deepEqual(
-      (await f.decisions()).map((decision) => [decision.agentType, decision.blocked, bindingOf(decision)]),
+      chain.details.outcomes.map((outcome: any) => [outcome.agent, outcome.definitionBinding]),
       [
-        ["shell", true, remembered(shell)],
-        ["build", true, remembered(id)],
-        ["build", true, remembered(id)],
+        ["notes", undefined],
+        ["build", remembered(id)],
       ],
     );
+    assert.equal(await f.launched(), 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a refused or gated second chain step is checked with its own binding and records none", async () => {
+  const f = await harness();
+  try {
+    const build = await f.describe("build");
+    const review = await f.describe("review");
+    await f.edit("review", " changed");
+    await f.reload();
+    assert.equal(await probe(f, { agent: "build", definitionId: build }), "bound", "build itself did not change");
+    const recorded = (await f.decisions()).length;
+    // Step 1 is fine either way; step 2's refusal names how step 2 got its ID, not how step 1 did.
+    await assert.rejects(
+      f.call("delegate_chain", {
+        steps: [
+          { agent: "build", definitionId: build, task: "supplied, current" },
+          { agent: "review", task: "remembered, stale" },
+        ],
+      }),
+      (error: Error) => {
+        assert.equal(error.message.startsWith(changedSince("review") + ADMISSION), true, error.message);
+        return true;
+      },
+    );
+    await assert.rejects(
+      f.call("delegate_chain", {
+        steps: [
+          { agent: "build", task: "remembered, current" },
+          { agent: "review", definitionId: review, task: "supplied, stale" },
+        ],
+      }),
+      (error: Error) => {
+        assert.equal(error.message.startsWith(suppliedStale("review") + ADMISSION), true, error.message);
+        return true;
+      },
+    );
+    assert.equal((await f.decisions()).length, recorded, "a stale step is an input error: no decision is written");
+
+    // `bash` is gated and this session has nobody to ask, so the chain's upfront gate declines step 2.
+    await f.describe("shell");
+    await assert.rejects(
+      f.call("delegate_chain", {
+        steps: [
+          { agent: "build", task: "remembered" },
+          { agent: "shell", task: "gated" },
+        ],
+      }),
+      /was not approved for shell/,
+    );
+    const decisions = (await f.decisions()).slice(recorded);
+    assert.deepEqual(
+      decisions.map((decision) => [decision.agentType, decision.blocked]),
+      [["shell", true]],
+    );
+    assertNoLedgerBinding(decisions);
+    assert.equal(await f.launched(), 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("operation election checks the bound entry: a delegate_all child, a chain's first step and a delegate", async () => {
+  const f = await harness();
+  try {
+    await f.describe("build");
+    // Not in the grant and not gated, so the election's preview denies it and records that refusal. A Principal
+    // entry that reached the election without its remembered ID would be refused as never described instead.
+    const denied = (operation_id: string) => ({
+      agent: "build",
+      task: "denied at election",
+      operation_id,
+      context: { mode: "summary", summary: "x" },
+    });
+    await assert.rejects(
+      f.call("delegate_all", { children: [{ agent: "notes", task: "ordinary" }, denied("bind:denied-batch")] }),
+      /context:summary/,
+    );
+    await assert.rejects(f.call("delegate_chain", { steps: [denied("bind:denied-chain")] }), /context:summary/);
+    await assert.rejects(f.call("delegate", denied("bind:denied-single")), /context:summary/);
+    const decisions = await f.decisions();
+    assert.deepEqual(
+      decisions.map((decision) => [decision.agentType, decision.blocked]),
+      [
+        ["build", true],
+        ["build", true],
+        ["build", true],
+      ],
+    );
+    assertNoLedgerBinding(decisions);
     assert.equal(await f.launched(), 0);
   } finally {
     await f.close();
@@ -557,6 +639,61 @@ test("a remembered ID is the same operation request as the supplied one: a repea
     assert.equal(repeat.details.outcomes[0].operation.reused, true, repeat.content[0].text);
     assert.equal(repeat.details.outcomes[0].operation.executionId, first.details.outcomes[0].operation.executionId);
     assert.deepEqual(repeat.details.outcomes[0].definitionBinding, remembered(id));
+    assert.equal(await f.launched(), 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an identical operation_id retry is the same request before and after a describe and after tree navigation", async () => {
+  const f = await harness();
+  try {
+    const call = { agent: "notes", task: "once", operation_id: "probe:notes-1" };
+    const first = await f.call("delegate", call);
+    assert.equal(first.isError, false, first.content[0].text);
+    assert.equal(first.details.definitionBinding, undefined);
+    const id = await f.describe("notes");
+    const afterDescribe = await f.call("delegate", call);
+    assert.equal(afterDescribe.details.operation.reused, true, afterDescribe.content[0].text);
+    assert.equal(afterDescribe.details.operation.executionId, first.details.operation.executionId);
+    assert.deepEqual(afterDescribe.details.definitionBinding, remembered(id));
+
+    const bound = { ...call, operation_id: "probe:notes-2" };
+    const second = await f.call("delegate", bound);
+    assert.equal(second.isError, false, second.content[0].text);
+    assert.deepEqual(second.details.definitionBinding, remembered(id));
+    await f.tree();
+    for (const [retry, original] of [
+      [call, first],
+      [bound, second],
+    ]) {
+      const afterTree = await f.call("delegate", retry);
+      assert.equal(afterTree.details.operation.reused, true, afterTree.content[0].text);
+      assert.equal(afterTree.details.operation.executionId, original.details.operation.executionId);
+      assert.equal(afterTree.details.definitionBinding, undefined);
+    }
+    assert.equal(await f.launched(), 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a changed definition cannot reuse an operation retained for the old one", async () => {
+  const f = await harness();
+  try {
+    const call = { agent: "notes", task: "once", operation_id: "probe:notes-changed" };
+    const first = await f.call("delegate", call);
+    assert.equal(first.isError, false, first.content[0].text);
+    const before = (await selectedDefinitions(f.commands)).definitions.get("notes")!;
+    // Only the frontmatter changes: the body (and so the body digest the request already covered) stays the same.
+    await writeFile(
+      join(f.root, "notes", "SKILL.md"),
+      "---\nname: notes\ndescription: ordinary, reworded\nallowed-tools: read\n---\nTake notes.",
+    );
+    const after = (await selectedDefinitions(f.commands)).definitions.get("notes")!;
+    assert.deepEqual([after.body === before.body, after.definitionId === before.definitionId], [true, false]);
+    await f.reload();
+    await assert.rejects(f.call("delegate", call), { message: "Operation identity conflict with retained request" });
     assert.equal(await f.launched(), 1);
   } finally {
     await f.close();
