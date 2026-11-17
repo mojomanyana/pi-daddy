@@ -300,6 +300,16 @@ flag, a bounded reason, the operation ID (or execution ID), and for a worker tha
 receipt's cause and signal. Complete final identities and process receipts stay in the result details, which Pi
 persists but does not send to the provider, and in opt-in public capture.
 
+A child whose tools only read (`read`, `grep`, `find`, `ls`, plus context handoff) is replay-safe, and
+`delegate_describe` (`replaySafe`), the `/grants` allow lines and the startup summary say so. When such a child fails
+for a transient reason (it exited without a final, timed out, could not launch for want of system resources, or its
+model request failed), Daddy runs the same request once more in the same tool call: a new execution and process with
+the same task, definition, model and context, planned with nobody asked and bounded by the first attempt's
+wall-clock deadline. It never retries a child the parent or a person stopped, one whose cleanup is not settled, one
+that spent an approval, one carrying an `operation_id`, or one in a Herdr pane, and it never retries twice. The
+summary then carries `"retry":{"attempts":2,"firstFailure":"…"}`, the details keep the first attempt complete, and
+the ledger links the two with `retryOf`. `PI_DADDY_REPLAY_RETRY=0` turns the retry off; the mark stays.
+
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` after a `delegate_describe` of each, which binds its `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
@@ -424,7 +434,7 @@ configuration where both exist.
 | Area | Variables |
 | :--- | :--- |
 | Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
-| Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS` |
+| Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS`, `PI_DADDY_REPLAY_RETRY` |
 | Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT` |
 | Activity | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT` |
 

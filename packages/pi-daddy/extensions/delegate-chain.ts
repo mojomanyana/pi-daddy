@@ -367,6 +367,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
 
         const outcomes: Array<import("./execute-child.ts").DelegationOutcome & { step: number; agent?: string }> = [];
         let previous: string | undefined;
+        // The occurrence that wrote `previous`: the step's own, or its automatic retry's (2026-11-17).
+        let previousExecutionId: string | undefined;
         let aborted = false;
         let blockedReason: "full-final-too-large-for-handoff" | undefined;
         /**
@@ -425,7 +427,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               },
               // Provenance: which child's output composed THIS step's task (ADR-0033). Absent for step 1.
               taskFrom: index === 0 ? undefined : childSpawnId(session.ownSpawnId, index - 1),
-              taskFromExecutionId: index === 0 ? undefined : executionIds[index - 1],
+              taskFromExecutionId: index === 0 ? undefined : previousExecutionId,
             },
           );
           const outcome = await usageReport.settle(running);
@@ -459,6 +461,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             break;
           }
           previous = outcome.text;
+          previousExecutionId = outcome.retry?.executionId ?? executionIds[index];
         }
         paint.flush();
 

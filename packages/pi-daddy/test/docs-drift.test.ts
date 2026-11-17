@@ -195,6 +195,9 @@ const NOT_REFUSAL_CODES = new Set([
   // The parent-run tool allowlist (2026-11-17). Named in the decision because it is the one place that list is
   // widened, and "the allowlist" would leave a reader unable to find it.
   "PARENT_PROXIED_TOOLS",
+  // The read-only native tool set behind replay-safe retry (2026-11-17). Named for the same reason: the decision
+  // says that list is widened only by another dated decision, and a reader has to be able to find it.
+  "REPLAY_SAFE_TOOLS",
 ]);
 
 test("every refusal code the documents name exists", async () => {

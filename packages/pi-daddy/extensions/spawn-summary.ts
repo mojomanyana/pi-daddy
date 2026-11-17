@@ -25,6 +25,8 @@
  */
 
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
+import { ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
+import { replaySafe } from "../src/kernel/replay-safe.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 
 /** Why a definition is not spawnable right now; display never changes the planner's refusal. */
@@ -54,6 +56,8 @@ export interface SpawnableSummary {
   awaitingTools?: string[];
   /** Spawnable definitions whose allowlisted tools this session runs for the child (2026-11-17). */
   parentRun?: { name: string; tools: string[] }[];
+  /** Spawnable definitions whose planned tools only read; `retry` is false when the operator switched it off. */
+  replaySafe?: { names: string[]; retry: boolean };
   /**
    * Set when NOTHING can be spawned for a reason about the SESSION rather than about any definition — no
    * `tool:delegate`, or a depth bound that forbids spawning. Per-definition work is skipped entirely.
@@ -86,6 +90,8 @@ export interface SessionFacts {
   maxDepth: number;
   /** Omitted by callers with an already-settled planner; false only before native tool observation. */
   toolsObserved?: boolean;
+  /** The automatic retry of replay-safe children is on (`PI_DADDY_REPLAY_RETRY`); omitted means on. */
+  replayRetry?: boolean;
 }
 
 /**
@@ -140,12 +146,14 @@ export async function summariseSpawnable(
   const withheld: WithheldDefinition[] = [];
   const awaitingTools: string[] = [];
   const parentRun: { name: string; tools: string[] }[] = [];
+  const replay: string[] = [];
 
   for (const name of names.slice(0, PREVIEW_LIMIT)) {
     const { plan } = await preview(name);
     if (plan.ok) {
       spawnable.push(name);
       if (plan.parentTools?.length) parentRun.push({ name, tools: plan.parentTools });
+      if (replaySafe(plan.effective)) replay.push(name);
       continue;
     }
     // The initial catalog contains built-ins before Pi exposes its callable extension tools. Preserve
@@ -187,6 +195,7 @@ export async function summariseSpawnable(
     withheld,
     ...(awaitingTools.length ? { awaitingTools } : {}),
     ...(parentRun.length ? { parentRun } : {}),
+    ...(replay.length ? { replaySafe: { names: replay, retry: session.replayRetry !== false } } : {}),
     notChecked: Math.max(0, names.length - PREVIEW_LIMIT),
   };
 }
@@ -250,6 +259,13 @@ export function renderSpawnableSummary(summary: SpawnableSummary, total: number)
   if (summary.parentRun?.length) {
     const runs = summary.parentRun.map((run) => `${safeName(run.name)} (${list(run.tools.map(safeName))})`);
     lines.push(`  run by this session for the child: ${list(runs)}`);
+  }
+  // 2026-11-17: whose transient failures are retried once without asking, or that would be if the switch were on.
+  if (summary.replaySafe) {
+    const how = summary.replaySafe.retry
+      ? "retried once automatically after a transient failure"
+      : `automatic retry off by ${ENV_REPLAY_RETRY}`;
+    lines.push(`  replay-safe (${how}): ${list(summary.replaySafe.names.map(safeName))}`);
   }
   if (summary.awaitingTools?.length) {
     lines.push(`  checking available tools: ${list(summary.awaitingTools.map(safeName))} — updates when work starts`);

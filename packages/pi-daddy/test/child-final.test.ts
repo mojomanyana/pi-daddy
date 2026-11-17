@@ -259,3 +259,32 @@ test("shared Pi 1.0.4 final conformance agrees with skill-harness", async () => 
     if (result.state === "complete") assert.equal(result.text, item.expected.finalText, item.id);
   }
 });
+// 2026-11-17: Pi's JSON mode exits 0 after a failed model request, so the settled terminal message is the only
+// record that the provider failed. Breaks if the mark is dropped, or set for any other missing final.
+test("a settled run ending in a failed model request is marked as a provider failure, nothing else is", async () => {
+  const run = (message: Record<string, unknown>, settled = true) =>
+    capture(
+      [
+        header,
+        { type: "message_end", message: user },
+        { type: "message_end", message },
+        ...(settled ? [{ type: "agent_settled" }] : []),
+      ],
+      [header, row("u", null, user), row("a", "u", message)],
+    );
+  const failed = (await run({ ...assistant, stopReason: "error", errorMessage: "overloaded" })).result;
+  assert.deepEqual(failed, {
+    state: "unavailable",
+    reason: "Error: no eligible current terminal assistant message",
+    diagnosticText: visible,
+    providerError: true,
+  });
+  for (const stopReason of ["pending", "aborted", "length", "toolUse"]) {
+    const other = (await run({ ...assistant, stopReason })).result;
+    assert.equal(other.state, "unavailable", stopReason);
+    assert.equal("providerError" in other, false, stopReason);
+  }
+  const unsettled = (await run({ ...assistant, stopReason: "error" }, false)).result;
+  assert.equal("providerError" in unsettled, false, "a run still in progress has not failed yet");
+  assert.equal("providerError" in (await capture()).result, false);
+});

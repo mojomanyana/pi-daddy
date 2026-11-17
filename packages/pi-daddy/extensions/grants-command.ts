@@ -15,6 +15,8 @@ import type { childExecutionLimits } from "./dashboard-settings.ts";
 
 import { renderExecutionControls } from "./execution-controls.ts";
 import { shouldSeekApproval } from "../src/kernel/approval.ts";
+import { ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
+import { replayRetrySwitch, replaySafe } from "../src/kernel/replay-safe.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import type { ExecutorChoice } from "../src/executors/executor.ts";
 import type { Catalog } from "../src/kernel/catalog.ts";
@@ -529,6 +531,7 @@ export const grantsCommand = {
       `  grant source ${ctx.grants.grantSource ?? "unobserved"}; store directory ${ctx.grants.storeCwd ?? cwd}`,
     );
     const shown = [...definitions].slice(0, PREVIEW_LIMIT);
+    const retry = replayRetrySwitch(process.env[ENV_REPLAY_RETRY]).enabled;
     for (const [name] of shown) {
       const { plan, approval } = await previewDelegation(name);
       const runtime = runtimeFor(name);
@@ -552,9 +555,12 @@ export const grantsCommand = {
       const reason = awaitingAuto
         ? `${plan.result!.gatedBlocked.join(", ")}: Auto supplies approval at dispatch; live state is rechecked`
         : plan.reason;
+      // 2026-11-17: the planned tools only read, so one transient failure is retried automatically.
+      const replay =
+        plan.ok && replaySafe(plan.effective) ? `  replay-safe${retry ? "" : ` (retry off: ${ENV_REPLAY_RETRY})`}` : "";
       lines.push(
         `    ${plan.ok ? "allow" : awaitingAuto ? "AUTO" : "BLOCK"}  ${name}  [${runtimeText}]` +
-          (plan.ok ? `  ${plan.effective.join(", ")}${because}` : ` — ${reason}`),
+          (plan.ok ? `  ${plan.effective.join(", ")}${because}${replay}` : ` — ${reason}`),
       );
     }
     // R-48. The cap is fine; the SILENCE was not. An operator running `/grants` to answer "what can this

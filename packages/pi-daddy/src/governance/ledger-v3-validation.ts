@@ -111,6 +111,7 @@ const FIELDS = {
     "executor",
     "taskFrom",
     "taskFromExecutionId",
+    "retryOf",
     "taskDigest",
     "correlation",
     "refusal",
@@ -341,6 +342,7 @@ function validateCapabilityDecision(event: LedgerV3Object): string | null {
     !optional(event, "definitionPackageVersion", isDefinitionPackageVersion) ||
     !optional(event, "taskFrom", isLedgerDisplayIdentifier) ||
     !optional(event, "taskFromExecutionId", isExecutionId) ||
+    !optional(event, "retryOf", (value) => isExecutionId(value) && value !== event.executionId) ||
     !optional(event, "correlation", validCorrelation) ||
     !optional(event, "refusal", validRefusal)
   ) {

@@ -8,6 +8,7 @@ import type { OperationClaim } from "../src/kernel/dispatch-operation.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
+import { replayIfSafe, type AttemptObservation } from "./replay-retry.ts";
 /**
  * Plan, gate, audit and run ONE governed child — the whole of a delegation except its tool surface.
  *
@@ -325,6 +326,14 @@ async function runOneDelegationImplementation(
      * not even show up as a gap, and ADR-0010's compensating control was blind to every chain step.
      */
     approvalFacts?: ApprovalLedgerFacts;
+    /** A replay-safe retry (2026-11-17): plan with nobody asked, so it runs only if an unprompted call would. */
+    askNobody?: boolean;
+    /** The execution this one retries, recorded on its capability decision. */
+    retryOf?: string;
+    /** Epoch ms the child's wall-clock deadline may not pass: the first attempt's, for a retry. */
+    deadlineAt?: number;
+    /** Composition-only observation of what this attempt spent and recorded; see `replay-retry.ts`. */
+    onAttempt?: (facts: AttemptObservation) => void;
   } = {},
 ): Promise<DelegationOutcome> {
   let capacity: CapacityReservation | undefined;
@@ -345,7 +354,7 @@ async function runOneDelegationImplementation(
     await session.ensureDefinitions?.();
     assertDefinitionIdentity(session, spec, options.definitionBinding?.source);
 
-    const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
+    const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts, askNobody } = options;
     // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
     // alone is not enough, it must be qualified with its provider (`Model<Api>` carries both).
     const defaultModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -442,7 +451,14 @@ async function runOneDelegationImplementation(
             ledgerPath: session.ledgerPath,
           });
           request.correlation = preparedWorkspace.correlation;
-          const gated = await planWithApprovals(session, request, planContext, ctx, signal, preApproved);
+          const gated = await planWithApprovals(
+            session,
+            request,
+            planContext,
+            askNobody ? null : ctx,
+            signal,
+            preApproved,
+          );
           plan = gated.plan;
           options.onDefinition?.(gated.definition);
           approvalOutcome = gated.approval;
@@ -459,7 +475,7 @@ async function runOneDelegationImplementation(
         session,
         request,
         planContext,
-        executorRefusal || modelRefusal || capacityRefusal ? null : ctx,
+        askNobody || executorRefusal || modelRefusal || capacityRefusal ? null : ctx,
         signal,
         preApproved,
       );
@@ -490,6 +506,7 @@ async function runOneDelegationImplementation(
         taskFromExecutionId,
         approval: approvalOutcome,
         approvalFacts,
+        retryOf: options.retryOf,
       });
     } catch (error) {
       plan = {
@@ -531,6 +548,12 @@ async function runOneDelegationImplementation(
       };
     }
 
+    // Any answer a gate gave for this attempt is spent on it: prompt, store or Auto here, a chain's upfront dialog
+    // through `preApproved` (whose ledger attribution, `approvalFacts`, is derived from the same list).
+    options.onAttempt?.({
+      runtime: resolvedRuntime,
+      approvalSpent: Boolean(approvalOutcome?.approved.length || preApproved?.length),
+    });
     executorEntered = true;
     return await executePlannedChild({
       capacityReservation: capacity,
@@ -550,6 +573,8 @@ async function runOneDelegationImplementation(
       resolvedRuntime,
       signal,
       onProgress,
+      deadlineAt: options.deadlineAt,
+      onDeadline: (deadlineAt) => options.onAttempt?.({ deadlineAt }),
     });
   } finally {
     capacity?.finalize(
@@ -564,7 +589,7 @@ async function runOneDelegationImplementation(
 export async function runOneDelegation(
   ...args: Parameters<typeof runOneDelegationImplementation>
 ): Promise<DelegationOutcome> {
-  const [session, spec, ids, , ctx, signal] = args;
+  const [session, spec, ids, budget, ctx, signal] = args;
   const finalScope = operationFinalScope(session);
   const options = args[6] ?? {};
   const binding = options.definitionBinding;
@@ -577,6 +602,7 @@ export async function runOneDelegation(
   }
   let executorEntered = false;
   try {
+    const attempt: AttemptObservation = {};
     args[6] = {
       ...options,
       operationClaim: claim,
@@ -584,8 +610,35 @@ export async function runOneDelegation(
         executorEntered = true;
         options.onExecutorEntry?.();
       },
+      onAttempt: (facts) => Object.assign(attempt, facts),
     };
-    const result = await runOneDelegationImplementation(...args);
+    let result = await runOneDelegationImplementation(...args);
+    // 2026-11-17: one automatic retry of a replay-safe child, never under a stable operation (its admission names
+    // exactly one execution). The retry is a new occurrence planned through this same path, with nobody asked,
+    // the first attempt's runtime and deadline, and none of the approvals the first attempt spent.
+    const operation = Boolean(claim);
+    result = await replayIfSafe(
+      result,
+      { session, ids, budget, signal, operation, attempt },
+      (retryIds, reservation, observe) => {
+        const {
+          operationClaim: _claim,
+          capacityReservation: _first,
+          preApproved: _spent,
+          approvalFacts: _facts,
+          ...kept
+        } = options;
+        return runOneDelegationImplementation(session, spec, retryIds, budget, ctx, signal, {
+          ...kept,
+          capacityReservation: reservation,
+          resolvedRuntime: attempt.runtime,
+          askNobody: true,
+          retryOf: ids.executionId,
+          deadlineAt: attempt.deadlineAt,
+          onExecutorEntry: observe.onExecutorEntry,
+        });
+      },
+    );
     if (claim) {
       try {
         await finishDelegationOperation(claim, result, session, finalScope);

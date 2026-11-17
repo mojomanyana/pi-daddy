@@ -195,6 +195,11 @@ export interface GrantRecord extends LedgerEventBase {
   taskFrom?: string;
   /** Unique occurrence whose output composed this task; taskFrom remains the readable logical position. */
   taskFromExecutionId?: string;
+  /**
+   * The execution this one automatically retries (decision of 2026-11-17): the failed first attempt of a
+   * replay-safe child. Absent on every first attempt. Same task, definition and logical position; new identity.
+   */
+  retryOf?: string;
   /** Trusted SHA-256 of the exact task; task text remains forbidden (ADR-0034). */
   taskDigest?: string;
   /** Stable machine-readable refusal accompanying `reason`. */
@@ -251,6 +256,8 @@ export function buildRecord(args: {
   taskFrom?: string;
   /** The unique occurrence whose output composed this task. */
   taskFromExecutionId?: string;
+  /** The failed execution this one automatically retries. */
+  retryOf?: string;
   taskDigest?: string;
   correlation?: CorrelationMetadata;
   refusal?: StructuredRefusal;
@@ -263,6 +270,8 @@ export function buildRecord(args: {
     if (args.parentExecutionId !== null) assertExecutionId(args.parentExecutionId, "parentExecutionId");
     if (args.parentExecutionId === args.executionId) throw new TypeError("an execution cannot be its own parent");
     if (args.taskFromExecutionId !== undefined) assertExecutionId(args.taskFromExecutionId, "taskFromExecutionId");
+    if (args.retryOf !== undefined) assertExecutionId(args.retryOf, "retryOf");
+    if (args.retryOf === args.executionId) throw new TypeError("an execution cannot retry itself");
   }
   if (args.definitionDigest && !/^[a-f0-9]{64}$/i.test(args.definitionDigest.sha256)) {
     throw new TypeError("definitionDigest.sha256 must be a SHA-256 hex digest");
@@ -296,6 +305,7 @@ export function buildRecord(args: {
     executor: args.executor,
     ...(args.taskFrom ? { taskFrom: args.taskFrom } : {}),
     ...(args.taskFromExecutionId ? { taskFromExecutionId: args.taskFromExecutionId } : {}),
+    ...(args.retryOf ? { retryOf: args.retryOf } : {}),
     ...(args.taskDigest !== undefined ? { taskDigest: args.taskDigest } : {}),
     ...(args.handoff ? { handoff: { ...args.handoff } } : {}),
     ...(args.correlation ? { correlation: structuredClone(args.correlation) } : {}),

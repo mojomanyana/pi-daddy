@@ -20,8 +20,9 @@ import { existsSync } from "node:fs";
 import { legacyApprovalsPath, sharedApprovalsPath } from "../src/governance/approval-store.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
 import { AGENT_WILDCARD } from "../src/kernel/resolve.ts";
-import { ENV_PARENT_TOOLS } from "../src/kernel/env-names.ts";
+import { ENV_PARENT_TOOLS, ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
 import { parentToolsSwitch } from "../src/kernel/parent-tools.ts";
+import { replayRetrySwitch } from "../src/kernel/replay-safe.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import type { GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
@@ -74,6 +75,11 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   if (session.depth === 0 && parentToolsSwitch(process.env[ENV_PARENT_TOOLS]).malformed)
     ctx.ui.notify(
       `grants: ${ENV_PARENT_TOOLS} must be literal 1 or 0 — no tool is run for a child by this session (failing closed)`,
+      "warning",
+    );
+  if (session.depth === 0 && replayRetrySwitch(process.env[ENV_REPLAY_RETRY]).malformed)
+    ctx.ui.notify(
+      `grants: ${ENV_REPLAY_RETRY} must be literal 1 or 0 — no failed child is retried automatically (failing closed)`,
       "warning",
     );
   // A registered workspace that could not be pinned is not routable this session, and the routing refusal an
@@ -337,6 +343,7 @@ function selectedDefinitionsSummary(session: GrantsSession): Promise<string | nu
       depth: session.depth,
       maxDepth: session.maxDepth,
       toolsObserved: session.observed,
+      replayRetry: replayRetrySwitch(process.env[ENV_REPLAY_RETRY]).enabled,
     },
   ).then((summary) => renderSpawnableSummary(summary, session.definitions.size));
 }

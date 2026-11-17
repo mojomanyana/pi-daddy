@@ -50,17 +50,23 @@ export function publicEvidenceCall(
     finish<T extends Result>(result: T, outcomes: readonly DelegationOutcome[] = []): T {
       if (!owner) return result;
       let status: unknown;
+      // A replay-safe retry (2026-11-17) answers for its request: name its execution, as a reused operation's is.
+      // The first attempt stays in the complete runtime evidence under `retry.first`.
+      const answered = requested.map((row, index) => {
+        const retry = outcomes[index]?.retry;
+        return retry ? { ...row, executionId: retry.executionId } : row;
+      });
       try {
         const ref = capturePublicEvidence(owner, {
           toolCallId,
           tool,
           response: { isError: result.isError ?? false, content: result.content },
-          requested,
+          requested: answered,
           runtimeEvidence: tool === "delegate_describe" ? null : executionEvidence(tool, outcomes, specs.length),
           definitions: [...definitions.values()],
           finals: outcomes.map((outcome, index) => ({
             ordinal: index + 1,
-            executionId: requested[index]?.executionId ?? null,
+            executionId: answered[index]?.executionId ?? null,
             final:
               outcome.final?.state === "complete"
                 ? {

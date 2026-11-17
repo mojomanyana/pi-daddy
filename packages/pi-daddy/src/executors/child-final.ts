@@ -13,7 +13,13 @@ const object = (x: unknown): x is Record<string, any> => !!x && typeof x === "ob
 const hash = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 export type ChildFinal =
   | { state: "complete"; text: string; sessionId: string; messageId: string; leafId: string; sha256: string }
-  | { state: "unavailable"; reason: string; diagnosticText?: string };
+  | {
+      state: "unavailable";
+      reason: string;
+      diagnosticText?: string;
+      /** The settled run's terminal assistant message reports a failed model request (`stopReason: "error"`). */
+      providerError?: true;
+    };
 const capturedSessions = new WeakMap<ChildFinal, Readonly<CapturedSessionBranch>>();
 /** Only the original in-process final carries this observation; JSON/copies do not recreate it. */
 export function capturedFinalSession(final: ChildFinal): Readonly<CapturedSessionBranch> | undefined {
@@ -113,6 +119,10 @@ export class ChildFinalCapture {
       state: "unavailable",
       reason,
       ...(this.visible() ? { diagnosticText: this.visible().slice(0, 8192) } : {}),
+      // Pi's JSON mode exits 0 after a failed model request; the settled terminal message is the one record of it.
+      ...(this.settled && !this.active.size && this.final?.stopReason === "error"
+        ? { providerError: true as const }
+        : {}),
     });
     try {
       this.buffer += this.decoder.decode();
