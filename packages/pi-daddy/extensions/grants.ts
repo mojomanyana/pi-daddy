@@ -80,6 +80,7 @@ import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/projec
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import { changeSessionModels, renderSessionModels } from "./session-model-prompt.ts";
 import { ensureDashboardSessionServer } from "./dashboard-session-server.ts";
+import { registerChildUsageReport } from "./child-usage-report.ts";
 /** Optional trusted session injection is composition-only, never provider payload input. */
 export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   // The path pi loads as the extension, so a child granted `tool:delegate` can be started with `-e <this>`.
@@ -97,6 +98,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   bindEcosystemVersions(pi, session, fileURLToPath(new URL("../", import.meta.url)));
   session.currentThinking = typeof pi.getThinkingLevel === "function" ? () => pi.getThinkingLevel() : undefined;
   registerActivityTimeline(pi, session);
+  // Once per instance, unlike the delegation tools, which session_start registers again (2026-11-17).
+  registerChildUsageReport(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
   registerDashboardSettings(pi, session);
   const projectMemory = registerProjectMemoryOwner(pi, session);

@@ -211,17 +211,26 @@ once at any depth: a child's session total includes what its own delegation resu
 whose meaning is unchanged) apart from those results, and its report to its parent is both. Summing the ledger over
 an episode therefore still counts each call once, as `pi-daddy report` does; the retired episode cost ceiling
 (`PI_DADDY_EPISODE_COST_CEILING`, 2026-10-07) is stripped from children and summed by nothing. In a child's session
-a delegation result without a record (a call that threw) counts as one unmeasured child, and a record whose usage
-the host did not keep counts its children as unmeasured. A reused operation reports nothing. A delegation call that
-throws has no result and reports nothing (a critical-assurance block, an executor failure in `delegate` or a chain,
-a fan-out whose every child failed); its children's own usage stays in a configured ledger, and a fan-out still
-reports a child that threw after running. The capability check is the session's own record, not a version string:
-the dashboard says child usage is already in the session's totals only for delegation results whose persisted tool
-result kept the usage, and names the ones that did not. Values from a child's session are untrusted numbers,
-validated and used only as usage; Pi's session cost controls nothing. Scout 0.3.1 does not set tool-result usage (it
-reports host-observed token counters as text and details, never cost); the coverage words follow its
+a delegation result without a record counts as one unmeasured child, so does a delegation call of the current turn
+with no result at all (the child stopped while it waited on its own child), and a record whose usage the host did
+not keep counts its children as unmeasured. A reused operation reports nothing. A delegation call that throws after
+its children ran (a critical-assurance block, an executor failure in `delegate` or a chain step, a fan-out whose
+every child failed) still reports them: each call keeps its settled children under its tool call id, and one
+`tool_result` handler (`extensions/child-usage-report.ts`) adds their `usage` and `childUsage` to the bare error
+result Pi made of the throw. Pi keeps a handler's `usage` and `details` while the error text and `isError` stay
+unchanged (1.0.4 and 1.5.2); a result that already carries `usage` or `childUsage` is left alone, and a refusal that
+started no child is unchanged. The capability check is the session's own record, not a version string: the
+dashboard's ledger frame (with the owning Pi session connected) says child usage is already in the session's totals
+only for delegation results whose persisted tool result kept the usage, and names the ones that did not; a
+`delegate` run from a Codemode script is in the totals through the `codemode` result but not in that line. Values
+from a child's session are untrusted numbers, validated and used only as usage; Pi's session cost controls nothing.
+A figure beyond the ceilings in `child-usage.ts` (1e13 tokens, $1e8 or 1e7 executions in one value, above what a
+delegation subtree could use within Daddy's default bounds even at an implausible rate) counts as unmeasured, and
+children are added one at a time, so only that child is unmeasured and its siblings keep their usage. Scout 0.3.1 does not set tool-result usage (it reports
+host-observed token counters as text and details, never cost); the coverage words follow its
 complete/partial/unavailable. Pi adds the usage of a parent-run tool, which runs nested in the waiting `delegate`,
-to that same tool result, still once. Proven model-free with fixed numbers on a real three-level Pi tree
+to that same tool result, still once. Proven model-free with fixed numbers on a real three-level Pi tree and on a
+real root whose three delegation calls throw after their children ran
 (`test-integration/pi-sdk/child-usage-total.it.ts`, 1.0.4 and 1.5.2); no model was run and hosts older than 0.81.0
 were not.
 

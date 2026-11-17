@@ -4,7 +4,9 @@
  * Pi adds a tool result's `usage` to the session that ran the tool: the persisted tool result message, session
  * statistics, the footer and cost (Pi 0.81.0 and later; read in 1.0.4 and 1.5.2). `delegate`, `delegate_all` and
  * `delegate_chain` report there what their children were observed to spend, so a session that delegates its work
- * does not look cheap. A host without that accounting does not keep the field, and nothing else changes.
+ * does not look cheap. A call that throws reports through Pi's `tool_result` hook instead
+ * (`extensions/child-usage-report.ts`). A host without that accounting does not keep the field, and nothing else
+ * changes.
  *
  * **Each model call is counted once, at any depth.** A child's own session counts what its delegation results
  * reported, so `activity-session.ts` keeps the two apart: the child's own calls are `usage`, which the ledger
@@ -13,17 +15,33 @@
  *
  * **Coverage is counted, never filled in.** `measured` and `unmeasured` count governed executions in the subtree
  * whose own usage was or was not observed. An unobserved child adds nothing to the total, so a total with
- * `unmeasured > 0` is a lower bound. In a child's session, a delegation result without a record (a call that threw,
- * which Pi turns into a bare error result) counts as one unmeasured child, because nothing says whether a child
- * ran; a record whose usage the host did not keep counts all its children as unmeasured.
+ * `unmeasured > 0` is a lower bound. In a child's session, a delegation result without a record counts as one
+ * unmeasured child, because nothing says whether a child ran; so does a delegation call with no result at all (the
+ * child stopped while it waited); a record whose usage the host did not keep counts all its children as unmeasured.
  *
- * Every value read back comes from a child's session file: untrusted numbers, accepted only when finite and
- * non-negative. They describe usage and nothing else; no grant, refusal or limit reads them.
+ * Every value read back comes from a child's session file: untrusted numbers. A value that is not a non-negative
+ * number makes the child's observation invalid. A number beyond `USAGE_CEILINGS`, or one whose addition would take a
+ * sum beyond them, is implausible and counts as unmeasured. Children are added one at a time, so only that child is
+ * unmeasured and every other one keeps its usage. They describe usage and nothing else; no grant, refusal or limit
+ * reads them.
  */
 import type { ChildUsageTotals } from "../governance/ledger-events.ts";
 
 /** The tools whose results report children's usage. `delegate_describe` starts nothing. */
 export const DELEGATION_RESULT_TOOLS: ReadonlySet<string> = new Set(["delegate", "delegate_all", "delegate_chain"]);
+
+/**
+ * The largest value accepted for one usage figure: a child's report, a delegation result read back, or a sum
+ * (review of 2026-11-17). Under Daddy's defaults one delegation call's whole subtree runs at most 8 sessions at a time
+ * (the fan-out budget) for at most 48 hours (an 8-step chain of 6-hour ceilings): 384 session-hours. A session that
+ * re-read a 1M-token context every second, beyond any real agent loop, would use 1.4e12 tokens in that time, $6.9e7
+ * at $50 per million tokens; one governed execution a second would be 1.4e6 executions. The ceilings sit above all
+ * three. A larger value is a fault or a hostile child: it counts as unmeasured and never reaches Pi's totals, while
+ * the ledger still records each execution's own usage as read. An operator who raises those bounds far enough could
+ * pass a ceiling legitimately and is then told `unmeasured`, never a wrong total. Below the ceilings a token sum of
+ * hundreds of values stays an exact integer, so no sibling's usage is absorbed by another's.
+ */
+export const USAGE_CEILINGS = { tokens: 1e13, cost: 1e8, executions: 1e7 } as const;
 
 export interface UsageCoverage {
   /** Governed executions in the subtree whose own model usage was observed. */
@@ -44,27 +62,42 @@ export interface ChildUsageRecord extends UsageCoverage {
 
 const TOKEN_FIELDS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const;
 const COST_FIELDS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
+const NONE: ObservedChildUsage = { measured: 0, unmeasured: 0 };
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-const amount = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
-const count = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+/** NaN fails; Infinity passes here and fails the ceilings. */
+const nonNegative = (value: unknown): value is number => typeof value === "number" && value >= 0;
+const count = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= USAGE_CEILINGS.executions;
 
-/** Pi's `Usage` fields this package reads, validated; anything else in the value is dropped. */
-export function usageTotals(value: unknown): ChildUsageTotals | undefined {
+/** Pi's `Usage` fields this package reads, as a new object, when each is a non-negative number. */
+function usageShape(value: unknown): ChildUsageTotals | undefined {
   const usage = object(value),
     cost = object(usage?.cost);
   if (
     !usage ||
     !cost ||
-    !TOKEN_FIELDS.every((field) => amount(usage[field])) ||
-    !COST_FIELDS.every((field) => amount(cost[field]))
+    !TOKEN_FIELDS.every((field) => nonNegative(usage[field])) ||
+    !COST_FIELDS.every((field) => nonNegative(cost[field]))
   )
     return undefined;
-  if (usage.reasoning !== undefined && !amount(usage.reasoning)) return undefined;
+  if (usage.reasoning !== undefined && !nonNegative(usage.reasoning)) return undefined;
   return addUsage(undefined, usage as unknown as ChildUsageTotals);
 }
+/** Every field within `USAGE_CEILINGS`; Infinity and NaN are not. */
+function plausible(usage: ChildUsageTotals): boolean {
+  return (
+    [...TOKEN_FIELDS.map((field) => usage[field]), usage.reasoning ?? 0].every((v) => v <= USAGE_CEILINGS.tokens) &&
+    COST_FIELDS.every((field) => usage.cost[field] <= USAGE_CEILINGS.cost)
+  );
+}
+/** Pi's `Usage` fields this package reads, validated and within the ceilings; anything else in the value is dropped. */
+export function usageTotals(value: unknown): ChildUsageTotals | undefined {
+  const usage = usageShape(value);
+  return usage && plausible(usage) ? usage : undefined;
+}
 
-/** Field-wise sum; `reasoning` stays absent unless a side reported it. Callers check the sum is still finite. */
+/** Field-wise sum; `reasoning` stays absent unless a side reported it. `addObserved` checks the sum is plausible. */
 export function addUsage(left: ChildUsageTotals | undefined, right: ChildUsageTotals): ChildUsageTotals {
   const sum = (a: number | undefined, b: number) => (a ?? 0) + b;
   const reasoning =
@@ -87,11 +120,20 @@ export function addUsage(left: ChildUsageTotals | undefined, right: ChildUsageTo
     },
   };
 }
-const finite = (usage: ChildUsageTotals | undefined) => !usage || usageTotals(usage) !== undefined;
-/** A sum that stops being finite measures nothing: every child in it becomes unmeasured. */
-function observed(usage: ChildUsageTotals | undefined, measured: number, unmeasured: number): ObservedChildUsage {
-  if (!finite(usage)) return { measured: 0, unmeasured: measured + unmeasured };
-  return { ...(usage ? { usage } : {}), measured, unmeasured };
+
+/**
+ * Adds one child to a running total. A child whose usage would take the sum past a ceiling (or make it non-finite)
+ * adds all its executions as unmeasured and no usage; the total so far keeps its measured children. Counts stay safe
+ * integers: each record is at most `USAGE_CEILINGS.executions` and one session file holds at most 64 MiB of them.
+ */
+function addObserved(total: ObservedChildUsage, child: ObservedChildUsage): ObservedChildUsage {
+  const usage = child.usage ? addUsage(total.usage, child.usage) : total.usage;
+  if (usage && !plausible(usage)) return { ...total, unmeasured: total.unmeasured + child.measured + child.unmeasured };
+  return {
+    ...(usage ? { usage } : {}),
+    measured: total.measured + child.measured,
+    unmeasured: total.unmeasured + child.unmeasured,
+  };
 }
 
 /** A record read back from a child's session; `coverage` is recomputed, never trusted. */
@@ -103,36 +145,51 @@ export function childUsageRecord(value: unknown): Omit<ChildUsageRecord, "covera
 }
 
 /**
- * Adds one of a child's own delegation results, as its session recorded it. Undefined when the values cannot be
- * accounted at all, which makes the child's whole observation invalid rather than partly counted.
+ * Adds one of a child's own delegation results, as its session recorded it. Undefined when its usage is not usage
+ * at all, which makes the child's whole observation invalid rather than partly counted. Without a usable record the
+ * result is one unmeasured child; usage the host did not keep, or beyond the ceilings, leaves the record's children
+ * unmeasured; a record that says it reported nothing measured nothing.
  */
 export function addDelegationResult(
   previous: ObservedChildUsage | undefined,
   value: { usage?: unknown; details?: unknown },
 ): ObservedChildUsage | undefined {
-  const usage = value.usage === undefined ? undefined : usageTotals(value.usage);
-  if (value.usage !== undefined && !usage) return undefined;
+  if (value.usage !== undefined && !usageShape(value.usage)) return undefined;
+  const usage = usageTotals(value.usage);
   const record = childUsageRecord(object(value.details)?.childUsage);
-  let { measured, unmeasured } = previous ?? { measured: 0, unmeasured: 0 };
-  if (!record) unmeasured += 1;
-  else if (record.reported && !usage) unmeasured += record.measured + record.unmeasured;
-  else {
-    measured += record.measured;
-    unmeasured += record.unmeasured;
-  }
-  const total = usage ? addUsage(previous?.usage, usage) : previous?.usage;
-  if (!count(measured) || !count(unmeasured) || !finite(total)) return undefined;
-  return { ...(total ? { usage: total } : {}), measured, unmeasured };
+  const child: ObservedChildUsage = !record
+    ? { ...(usage ? { usage } : {}), measured: 0, unmeasured: 1 }
+    : record.reported && usage
+      ? { usage, measured: record.measured, unmeasured: record.unmeasured }
+      : { measured: 0, unmeasured: record.measured + record.unmeasured };
+  return addObserved(previous ?? NONE, child);
 }
 
-/** One settled child: its own calls when observed, plus what its delegation results reported. */
+/** Ids of the delegation calls in an assistant message's content; a child's reader matches them to their results. */
+export function delegationCallIds(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block) => {
+    const call = object(block);
+    return call?.type === "toolCall" && DELEGATION_RESULT_TOOLS.has(String(call.name)) ? [String(call.id)] : [];
+  });
+}
+
+/** Delegation calls with no result: the child stopped while each waited, so each is one unmeasured child. */
+export function addUnansweredCalls(
+  previous: ObservedChildUsage | undefined,
+  calls: number,
+): ObservedChildUsage | undefined {
+  return calls > 0 ? addObserved(previous ?? NONE, { measured: 0, unmeasured: calls }) : previous;
+}
+
+/** One settled child: its own calls when observed and plausible, plus what its delegation results reported. */
 export function observedChildUsage(observation: {
   usage?: ChildUsageTotals;
   delegated?: ObservedChildUsage;
 }): ObservedChildUsage {
-  const { usage: own, delegated } = observation;
-  const usage = own && delegated?.usage ? addUsage(own, delegated.usage) : (own ?? delegated?.usage);
-  return observed(usage, (own ? 1 : 0) + (delegated?.measured ?? 0), (own ? 0 : 1) + (delegated?.unmeasured ?? 0));
+  const own = usageTotals(observation.usage);
+  const self: ObservedChildUsage = own ? { usage: own, measured: 1, unmeasured: 0 } : { measured: 0, unmeasured: 1 };
+  return observation.delegated ? addObserved(self, observation.delegated) : self;
 }
 
 /**
@@ -142,25 +199,14 @@ export function observedChildUsage(observation: {
 export function delegationUsage(
   outcomes: readonly { observedUsage?: ObservedChildUsage; operation?: { reused?: boolean } }[],
 ): { usage?: ChildUsageTotals; childUsage: ChildUsageRecord } {
-  let usage: ChildUsageTotals | undefined,
-    measured = 0,
-    unmeasured = 0;
-  for (const { observedUsage, operation } of outcomes) {
-    if (operation?.reused || !observedUsage) continue;
-    measured += observedUsage.measured;
-    unmeasured += observedUsage.unmeasured;
-    if (observedUsage.usage) usage = addUsage(usage, observedUsage.usage);
-  }
-  const total = observed(usage, measured, unmeasured);
-  const coverage = total.unmeasured === 0 ? "complete" : total.measured > 0 ? "partial" : "unavailable";
+  let total = NONE;
+  for (const { observedUsage, operation } of outcomes)
+    if (!operation?.reused && observedUsage) total = addObserved(total, observedUsage);
+  const { usage, measured, unmeasured } = total;
+  const coverage = unmeasured === 0 ? "complete" : measured > 0 ? "partial" : "unavailable";
   return {
-    ...(total.usage ? { usage: total.usage } : {}),
-    childUsage: {
-      reported: total.usage !== undefined,
-      measured: total.measured,
-      unmeasured: total.unmeasured,
-      coverage,
-    },
+    ...(usage ? { usage } : {}),
+    childUsage: { reported: usage !== undefined, measured, unmeasured, coverage },
   };
 }
 

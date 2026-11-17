@@ -1,7 +1,10 @@
 /**
  * A real Pi root delegates to a real Pi child, which delegates to a real Pi leaf; Pi's own session statistics hold
- * every model call of the tree exactly once (owner decision 2026-11-17). Model-free: every process uses the scripted
- * local provider with fixed usage per call (`child-usage-extension.ts`).
+ * every model call of the tree exactly once (owner decision 2026-11-17). A second root makes three delegation calls
+ * that throw after their children ran (a veto in `delegate`, in `delegate_all` beside a sibling that answers, and in
+ * a chain's second step); Pi's statistics hold those children too, through Daddy's `tool_result` hook (review of
+ * 2026-11-17), with the veto text and `isError` unchanged. Model-free: every process uses the scripted local provider
+ * with fixed usage per call (`child-usage-extension.ts`).
  *
  * Runs on the lockfile's Pi by default. `DADDY_TEST_PI_CLI=<pi-coding-agent>/dist/cli.js` selects another Pi (the
  * qualification run uses 1.5.2). The root runs in RPC mode, so the totals are Pi's `get_session_stats` answer, the
@@ -9,7 +12,8 @@
  *
  * Breaks if: a delegation result stops reporting its children's usage (the root misses 28 tokens); a child's reader
  * counts its own delegation result as its own call (the leaf's 16 tokens arrive twice, and the ledger holds them
- * twice); or the ledger stops recording each execution's own calls.
+ * twice); the ledger stops recording each execution's own calls; or a delegation call that throws drops its
+ * children's usage (the second root misses 496 tokens) or alters the error Pi made of it.
  */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -18,7 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { CALLS } from "./child-usage-extension.ts";
+import { CALLS, THROWN } from "./child-usage-extension.ts";
 import { MODEL, PROVIDER } from "./scripted-provider.ts";
 
 const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
@@ -27,7 +31,7 @@ const sum = (calls: Array<{ input: number; cost: { total: number } }>) => ({
   cost: calls.reduce((total, call) => total + call.cost.total, 0),
 });
 
-async function runTree() {
+async function runTree(tools = "read,delegate", scenario?: "thrown") {
   const root = await mkdtemp(join(tmpdir(), "daddy-child-usage-"));
   const agent = join(root, "agent"),
     bin = join(root, "bin"),
@@ -71,7 +75,7 @@ async function runTree() {
     "-e",
     grants,
     "--tools",
-    "read,delegate",
+    tools,
     "--provider",
     PROVIDER,
     "--model",
@@ -91,6 +95,7 @@ async function runTree() {
       PI_DADDY_AUTO_MODE: "0",
       PI_DADDY_ACTIVITY_TIMELINE: "off",
       PI_DADDY_LEDGER: ledger,
+      ...(scenario ? { DADDY_TEST_CHILD_USAGE: scenario } : {}),
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -167,6 +172,53 @@ test("a three-level governed tree reaches the root Pi session's statistics once 
         ["completed", 16, 0.0625],
       ],
       "the child's own two calls, and the leaf's one; never the leaf's again inside the child's",
+    );
+  } finally {
+    await rm(run.root, { recursive: true, force: true });
+  }
+});
+
+test("delegation calls that throw after their children ran still reach the root Pi session's statistics once", async () => {
+  const run = await runTree("read,delegate,delegate_all,delegate_chain", "thrown");
+  try {
+    assert.equal(run.stats.success, true, run.stderr);
+    const children = (...tokens: number[]) => sum(tokens.map((n) => THROWN.children[n]));
+    const tree = sum([...THROWN.root, ...[16, 32, 64, 128, 256].map((n) => THROWN.children[n])]);
+    assert.deepEqual(
+      { input: run.stats.data.tokens.input, cost: run.stats.data.cost },
+      tree,
+      "511 tokens, $1.99609375",
+    );
+    const expected = [
+      ["delegate", children(16), 1],
+      ["delegate_all", children(32, 64), 2],
+      ["delegate_chain", children(128, 256), 2],
+    ] as const;
+    for (const [tool, below, measured] of expected) {
+      const ended = run.events.find((event) => event.type === "tool_execution_end" && event.toolName === tool);
+      assert.equal(ended.isError, true, tool);
+      // Pi's own error result for the thrown veto: its text, and nothing in details but the record.
+      assert.match(ended.result.content[0].text, /^BLOCKED_CRITICAL_ASSURANCE\nfixture veto/, tool);
+      assert.equal(ended.result.content.length, 1, tool);
+      assert.deepEqual(ended.result.details, {
+        childUsage: { reported: true, measured, unmeasured: 0, coverage: "complete" },
+      });
+      assert.deepEqual({ input: ended.result.usage.input, cost: ended.result.usage.cost.total }, below, tool);
+      const persisted = run.events.find(
+        (event) =>
+          event.type === "message_end" && event.message.role === "toolResult" && event.message.toolName === tool,
+      );
+      assert.equal(persisted.message.usage.input, below.input, tool);
+    }
+    // The ledger holds each child's own calls once: five children, one call each.
+    const terminal = run.ledger
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).body)
+      .filter((body) => body.event === "child_lifecycle" && ["completed", "failed"].includes(body.state));
+    assert.deepEqual(
+      terminal.map((body) => body.usage.input).sort((a, b) => a - b),
+      [16, 32, 64, 128, 256],
     );
   } finally {
     await rm(run.root, { recursive: true, force: true });

@@ -3,6 +3,7 @@ import { operationIdShape, claimDelegationOperation } from "./delegation-operati
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
 import { delegationUsage } from "../src/executors/child-usage.ts";
+import { childUsageReport } from "./child-usage-report.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import {
   assertDefinitionInputsBeforeAdmission,
@@ -305,6 +306,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateParams,
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      // Reported through Pi's tool_result hook if this call throws after its child ran (2026-11-17).
+      const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       await session.ensureDefinitions?.();
       // The call's own definitionId, else this session's last describe of the agent; checked the same way.
@@ -325,7 +328,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         [params],
         [operationClaim?.operation.executionId ?? occurrence.executionId],
       );
-      const outcome = await runOneDelegation(
+      const running = runOneDelegation(
         session,
         {
           operation_id: params.operation_id,
@@ -353,6 +356,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           onDefinition: (definition) => capture.selected(0, definition),
         },
       );
+      const outcome = await usageReport.settle(running);
       progress.settle([outcome]);
 
       if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
@@ -414,6 +418,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateAllParams,
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       const children = params.children ?? [];
       // Correctable definition inputs must not consume earlier siblings' operation IDs.
@@ -489,6 +494,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         }
       });
       const outcomes = await Promise.all(pending);
+      // Both throws below follow children that ran: a vetoed child's siblings, or every child failed after running.
+      usageReport.add(...outcomes);
       progress.settle(outcomes);
       // The upstream controller's verdict outranks our own infrastructure noise — it is the answer the
       // caller is waiting for, and ADR-0034 requires it to pass through unchanged. But an infrastructure
