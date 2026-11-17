@@ -213,11 +213,15 @@ const why = {
   timeout: "the sub-agent ran past its 30 minute(s) ceiling and was killed (PI_DADDY_CHILD_TIMEOUT sets it in seconds)",
   cancelled: "the sub-agent was cancelled",
   spawn: "the sub-agent could not be started: ownership directory unavailable before helper launch: Error: EACCES",
-  noFinal: "the sub-agent has no attributable complete final: terminal unavailable",
+  noFinal: "the sub-agent has no attributable complete final: Error: current run is not settled",
+  launcherDeath: "the sub-agent could not be started: Error: Herdr launcher closed without a complete result/ownership",
 };
-const noFinal = { state: "unavailable" as const, reason: "terminal unavailable" };
+/** The final reason a real child stopped mid-run leaves (timeout, abort, signal, exit 0 without settling). */
+const noFinal = { state: "unavailable" as const, reason: "Error: current run is not settled" };
 const stopped = { ok: false, exitCode: null, timedOut: false, aborted: false, truncated: false, spawnFailed: false };
 const cancelledReceipt = { ...receipt, workerCode: null, workerSignal: 15, reason: "cancelled" as const };
+/** How a settled worker stopped when it was not an ordinary exit: its cause and signal, at their v1 paths. */
+const stoppedBy = (receipt: { reason?: string; workerSignal?: number }) => ({ ...settled, receipt });
 const operation = {
   operationId: "principal:" + "c".repeat(64),
   executionId: "exec:fixture",
@@ -270,7 +274,14 @@ const states: Array<{ name: string; outcome: DelegationOutcome; summary: Record<
       final: noFinal,
       cleanup: { state: "settled", identity, receipt: cancelledReceipt },
     },
-    summary: { ok: false, work: "failed", reason: why.timeout, timedOut: true, final: noFinal, cleanup: settled },
+    summary: {
+      ok: false,
+      work: "failed",
+      reason: why.timeout,
+      timedOut: true,
+      final: noFinal,
+      cleanup: stoppedBy({ reason: "cancelled", workerSignal: 15 }),
+    },
   },
   {
     name: "aborted",
@@ -283,7 +294,14 @@ const states: Array<{ name: string; outcome: DelegationOutcome; summary: Record<
       final: noFinal,
       cleanup: { state: "settled", identity, receipt: cancelledReceipt },
     },
-    summary: { ok: false, work: "failed", reason: why.cancelled, aborted: true, final: noFinal, cleanup: settled },
+    summary: {
+      ok: false,
+      work: "failed",
+      reason: why.cancelled,
+      aborted: true,
+      final: noFinal,
+      cleanup: stoppedBy({ reason: "cancelled", workerSignal: 15 }),
+    },
   },
   {
     name: "spawn failed",
@@ -327,22 +345,68 @@ const states: Array<{ name: string; outcome: DelegationOutcome; summary: Record<
       cleanup: settled,
     },
   },
+  // Review of 2026-11-17: these three were indistinguishable from their neighbours without the receipt's cause and
+  // signal. Shaped as the real runs were (the delegate tool with inert children on the process executor, and
+  // `herdr-owned.test.ts` "launcher death"): reasons, exit codes and receipts as recorded there.
   {
-    name: "worker killed by a signal",
+    name: "worker killed by SIGKILL",
     outcome: {
       ...outcome(),
       ...stopped,
       work: "failed",
-      reason: "the sub-agent exited with code null",
+      reason: why.noFinal,
       final: noFinal,
       cleanup: { state: "settled", identity, receipt: { ...receipt, workerCode: null, workerSignal: 9 } },
     },
     summary: {
       ok: false,
       work: "failed",
-      reason: "the sub-agent exited with code null",
+      reason: why.noFinal,
       final: noFinal,
-      cleanup: settled,
+      cleanup: stoppedBy({ workerSignal: 9 }),
+    },
+  },
+  {
+    name: "helper interrupted by a signal, worker exit 0",
+    outcome: {
+      ...outcome(),
+      ...stopped,
+      exitCode: 0,
+      work: "unknown",
+      reason: why.noFinal,
+      final: noFinal,
+      cleanup: { state: "settled", identity, receipt: { ...receipt, reason: "helper-signal" } },
+    },
+    summary: {
+      ok: false,
+      work: "unknown",
+      reason: why.noFinal,
+      final: noFinal,
+      cleanup: stoppedBy({ reason: "helper-signal" }),
+    },
+  },
+  {
+    name: "Herdr launcher death: the worker ran and was reaped on owner loss",
+    outcome: {
+      ...outcome(),
+      ...stopped,
+      work: "failed",
+      reason: why.launcherDeath,
+      spawnFailed: true,
+      final: noFinal,
+      cleanup: {
+        state: "settled",
+        identity,
+        receipt: { ...receipt, workerCode: null, workerSignal: 15, reason: "owner-loss" },
+      },
+    },
+    summary: {
+      ok: false,
+      work: "failed",
+      reason: why.launcherDeath,
+      spawnFailed: true,
+      final: noFinal,
+      cleanup: stoppedBy({ reason: "owner-loss", workerSignal: 15 }),
     },
   },
   {
@@ -402,6 +466,29 @@ const states: Array<{ name: string; outcome: DelegationOutcome; summary: Record<
       work: "succeeded",
       final: complete,
       cleanup: { state: "settled" },
+    },
+  },
+  {
+    // A Principal phase always has an operation: its summary cites no execution, but keeps how the worker stopped.
+    name: "own operation, timed out",
+    outcome: {
+      ...outcome(),
+      ...stopped,
+      work: "failed",
+      reason: why.timeout,
+      timedOut: true,
+      final: noFinal,
+      cleanup: { state: "settled", identity, receipt: cancelledReceipt },
+      operation: { ...operation, reused: false },
+    },
+    summary: {
+      operation: { ...cited, state: "settled" },
+      ok: false,
+      work: "failed",
+      reason: why.timeout,
+      timedOut: true,
+      final: noFinal,
+      cleanup: { state: "settled", receipt: { reason: "cancelled", workerSignal: 15 } },
     },
   },
   {
@@ -514,6 +601,12 @@ test("every failure and uncertainty keeps its own summary without relying on pro
     JSON.stringify(rest),
   );
   assert.equal(new Set(decisive).size, states.length, "two different states read the same without their prose");
+  // The pair the review measured as byte-identical but for the execution ID: only the receipt's cause separates them.
+  const at = (name: string) => summaries[states.findIndex((state) => state.name === name)];
+  const { cleanup: helperCleanup, ordinal: _h, ...helper } = at("helper interrupted by a signal, worker exit 0");
+  const { cleanup: exitCleanup, ordinal: _e, ...exited } = at("no attributable final");
+  assert.deepEqual(helper, exited);
+  assert.deepEqual(helperCleanup, { ...exitCleanup, receipt: { reason: "helper-signal" } });
   const wire = JSON.stringify(summaries);
   for (const text of ["/owned", "/work", "session-fixture", "nonce-fixture", "boot-fixture", "424242", "737373"])
     assert.ok(!wire.includes(text), `${text} reached the model`);
@@ -540,7 +633,8 @@ test("every summary value is copied from the complete projection at the same pat
     assert.equal(value, source, path);
   };
   walk(summary.outcomes, full.outcomes, "outcomes");
-  assert.equal(leaves, 158);
+  // 158 before the review of 2026-11-17; the three added states and the receipts' causes and signals add 37.
+  assert.equal(leaves, 195);
 });
 
 // Breaks if a long diagnostic is repeated whole, cut inside a character, or cut without saying so.

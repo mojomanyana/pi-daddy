@@ -354,8 +354,9 @@ work, final availability, subtree cleanup and optional observation completeness 
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
 the primary final. Unknown cleanup retains capacity and workspace exclusion. The coordinating model receives a
 version 2 runtime evidence summary per child: those states, any timeout, cancellation, spawn-failure or truncation
-flag, a bounded reason and the operation ID (or execution ID). Complete final identities and process receipts stay
-in the result details, which Pi persists but does not send to the provider.
+flag, a bounded reason, the operation ID (or execution ID), and for a worker that did not exit normally the
+receipt's cause and signal. Complete final identities and process receipts stay in the result details, which Pi
+persists but does not send to the provider, and in opt-in public capture.
 
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
 

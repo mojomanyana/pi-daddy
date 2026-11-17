@@ -203,14 +203,28 @@ it measured nothing rather than passing quietly.
 Owner decision: per child, `delegate`, `delegate_all` and `delegate_chain` return a version 2 summary to the
 model: ordinal, ok/work/control, final and cleanup state, observation state when not complete, timeout/cancel/
 spawn-failure/truncation flags that are true, a reason bounded to 160 characters, and one citable identity (the
-operation ID, else the execution ID its cleanup names). It is computed only from the unchanged version 1
-projection, keeps each value at its version 1 path, and carries no path, PID, nonce, boot ID, session/message ID
-or hash. Complete receipts stay in result details (persisted by Pi, withheld from providers), the runtime
-settlement journal, the native receipt file and a stable operation's retained record; public capture still
-records version 1 as `runtimeEvidence` beside the summary response. No Principal, Bookie, Scout or skill-harness
-consumer reads a complete receipt only from provider-visible text; skill-harness's capture reader is pinned to
-0.45.0 captures. Failure and uncertainty states stay distinguishable without prose. Ledger, details, capture
-manifest and cleanup behaviour are unchanged; no model was run, so model behaviour is not established.
+operation ID, else the execution ID its cleanup names). A settled worker that did not exit normally also keeps its
+receipt's cause when it is not `worker-exit` and a non-zero signal (`cleanup.receipt.reason`,
+`cleanup.receipt.workerSignal`; review of 2026-11-17): without them a helper interrupted by a signal read like an
+exit without a final, a SIGKILLed worker carried no sign of the kill, and a Herdr worker reaped on owner loss read
+like a launch that never started. It is computed only from the unchanged version 1 projection, keeps each value at
+its version 1 path, and carries no path, PID, nonce, boot ID, session/message ID or hash. Complete receipts stay in
+result details (kept in the Pi session file when the session is persisted, withheld from providers) and in opt-in
+public capture, which records version 1 as `runtimeEvidence` beside the summary response. The runtime settlement
+journal keeps a receipt's identity and SHA-256 only, a stable operation's retained record keeps its `receiptPath`
+and `executionId`, the receipt file itself is in the OS temporary directory, and the governance ledger records no
+receipt. No Principal, Bookie, Scout or skill-harness code parses a receipt from provider-visible text;
+skill-harness's capture reader is pinned to 0.45.0 captures. Principal's coordinator texts do ask the model to check
+the "identity-bound receipt", which a Principal phase (always with an `operation_id`) no longer sees: it sees
+`cleanup.state=settled` and the operation ID. Daddy reports settled only after matching the identity-bound receipt,
+and Principal's `complete` rechecks the cleanup's execution identity from Daddy's native record, so a literal
+coordinator blocks completion rather than passing it. Principal pins pi-daddy 0.59.0; its "identity-bound receipt"
+wording must change in the same Principal release that adopts this one (suggested: "check the full native result
+and the runtime evidence summary's `cleanup.state=settled` before dependent work; Daddy reports settled only with a
+matching identity-bound receipt, and `complete` rechecks it against the execution identity; receipts stay in tool
+details"). Failure and uncertainty states stay distinguishable without prose, tested with the shapes real runs
+produce. Ledger, details, capture manifest and cleanup behaviour are unchanged; no model was run, so model behaviour
+is not established.
 
 ### 2026-11-16 — Tool inventory observations precede settled availability claims
 

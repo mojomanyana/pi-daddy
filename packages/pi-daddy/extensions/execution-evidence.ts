@@ -5,8 +5,10 @@
  * Two forms of one allowlist (owner decision 2026-11-17). Version 1 (`executionEvidence`) is the complete
  * projection: final identity, process receipt, paths. Opt-in public capture records it as `runtimeEvidence`.
  * The model receives version 2, a summary computed from version 1 alone: it cannot carry a field version 1 did
- * not allow, and every value keeps its version 1 path. The complete receipt stays outside model context in the
- * tool result details, the runtime settlement journal and, for a stable operation, its retained record.
+ * not allow, and every value keeps its version 1 path. The complete receipt stays outside model context: in the
+ * tool result details (kept in the Pi session file when the session is persisted) and in opt-in public capture.
+ * The runtime settlement journal keeps only its identity and SHA-256, a stable operation's record keeps its
+ * `receiptPath` and `executionId`, and the receipt file itself is in the OS temporary directory.
  */
 import type { DelegationOutcome } from "./execute-child.ts";
 import type { CapturedWorkerIdentity } from "../src/kernel/captured-worker-contract.ts";
@@ -115,6 +117,21 @@ function operationSummary(value: NonNullable<CompleteOutcome["operation"]>) {
       : {}),
   };
 }
+/**
+ * How a settled worker stopped, only when it was not an ordinary exit (review of 2026-11-17): the receipt's cause
+ * unless it is `worker-exit`, and a non-zero signal, at their version 1 paths. Without them a helper interrupted by
+ * a signal, a worker that exited without a final, a SIGKILLed worker and a Herdr worker reaped on owner loss read
+ * alike. Both are fixed values from Daddy's verified receipt, never child text.
+ */
+function receiptSummary(value: CompleteOutcome["cleanup"]) {
+  const receipt = value && "receipt" in value ? value.receipt : undefined;
+  if (!receipt) return {};
+  const abnormal = {
+    ...(receipt.reason !== "worker-exit" ? { reason: receipt.reason } : {}),
+    ...(receipt.workerSignal ? { workerSignal: receipt.workerSignal } : {}),
+  };
+  return Object.keys(abnormal).length > 0 ? { receipt: abnormal } : {};
+}
 /** One citable identity per outcome: the operation ID when there is one, else the execution its cleanup names. */
 function cleanupSummary(value: CompleteOutcome["cleanup"], cite: boolean) {
   if (!value) return null;
@@ -122,6 +139,7 @@ function cleanupSummary(value: CompleteOutcome["cleanup"], cite: boolean) {
     state: value.state,
     ...(cite && value.identity ? { identity: { executionId: value.identity.executionId } } : {}),
     ...(value.reason !== undefined ? { reason: brief(value.reason) } : {}),
+    ...receiptSummary(value),
   };
 }
 /**
