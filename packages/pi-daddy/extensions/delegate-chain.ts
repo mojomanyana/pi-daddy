@@ -2,7 +2,11 @@ import { dashboardSummaryDescription } from "../src/products/activity-summary.ts
 import { operationIdShape, claimDelegationOperation, existingOperationOutcome } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
-import { assertDefinitionInputsBeforeAdmission, definitionIdDescription } from "./definition-describe.ts";
+import {
+  assertDefinitionInputsBeforeAdmission,
+  bindDescribedDefinitions,
+  definitionIdDescription,
+} from "./definition-describe.ts";
 /**
  * `delegate_chain` — a governed sequential pipeline, planned and gated as one unit (ADR-0033).
  *
@@ -92,9 +96,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         `that output is appended instead. The first step never receives one.`,
     }),
     agent: Type.Optional(
-      Type.String({
-        description: "Definition for this step; copy with definitionId from delegate_describe.delegationArguments.",
-      }),
+      Type.String({ description: "Definition for this step. delegate_describe binds its definitionId." }),
     ),
     tools: Type.Optional(Type.Array(Type.String(), { description: "Capabilities, when no 'agent' fits." })),
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
@@ -136,9 +138,12 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
-      const steps = args.steps ?? [];
+      const requested = args.steps ?? [];
       await session.ensureDefinitions?.();
-      assertDefinitionInputsBeforeAdmission(session, steps);
+      // Bound once for the whole chain, before planning: every step uses this call's reading of the memory.
+      const bound = bindDescribedDefinitions(session, requested);
+      const steps = bound.specs;
+      assertDefinitionInputsBeforeAdmission(session, steps, bound.bindings);
 
       // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
       // `PI_DADDY_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
@@ -166,16 +171,18 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         },
         ctx,
         signal,
+        bound.bindings[0],
       );
       const capture = publicEvidenceCall(
         session.publicEvidence,
         _toolCallId,
         "delegate_chain",
-        steps,
+        requested,
         executionIds.map((id, index) => (index === 0 ? (firstClaim?.operation.executionId ?? id) : id)),
       );
       if (firstClaim?.reused) {
         const outcome = existingOperationOutcome(firstClaim, session.depth + 1);
+        if (bound.bindings[0]) outcome.definitionBinding = { ...bound.bindings[0] };
         return capture.finish(
           {
             isError: false,
@@ -237,6 +244,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             agent: chainPlan.doomed.agent,
             reason: message,
             refusal: chainPlan.doomed.refusal,
+            definitionBinding: bound.bindings[chainPlan.doomed.step - 1],
           });
           if (chainPlan.doomed.refusal) throw new GovernanceRefusal({ ...chainPlan.doomed.refusal, message });
           throw new Error(message);
@@ -326,6 +334,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               reason: message,
               refusal: decision.refusal,
               approval: mergeGateOutcomes(decision.outcomes),
+              definitionBinding: bound.bindings[stepIndex],
             });
           }
           if (structured) throw new GovernanceRefusal(structured);
@@ -388,6 +397,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             signal,
             {
               ...(index === 0 ? { capacityReservation: firstReservation, operationClaim: firstClaim } : {}),
+              definitionBinding: bound.bindings[index],
               resolvedRuntime: runtimeChoices.get(step),
               onDefinition: (definition) => capture.selected(index, definition),
               preApproved: availableForStep,

@@ -1,6 +1,6 @@
 import type { ApprovalOutcome } from "./approvals.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
-import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
+import { appendRecord, buildRecord, type DefinitionBinding } from "../src/governance/ledger.ts";
 import type { StructuredRefusal } from "../src/kernel/refusals.ts";
 import { childSpawnId } from "../src/kernel/fanout.ts";
 import type { GrantsSession } from "./session.ts";
@@ -16,6 +16,7 @@ export async function recordChainRefusal(input: {
   reason: string;
   refusal?: StructuredRefusal;
   approval?: ApprovalOutcome;
+  definitionBinding?: DefinitionBinding;
 }): Promise<void> {
   if (!input.session.ledgerPath) return;
   await appendRecord(
@@ -43,6 +44,7 @@ export async function recordChainRefusal(input: {
       definitionDigest: input.plan.definitionDigest,
       definitionHash: input.plan.definitionHash,
       definitionPackageVersion: input.plan.definitionPackageVersion,
+      definitionBinding: input.definitionBinding,
       taskDigest: input.plan.taskDigest,
       correlation: input.plan.correlation,
       // An approval banked before a later chain decline is a yes that led to no spawn, not the stale

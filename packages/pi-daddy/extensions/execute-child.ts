@@ -54,6 +54,8 @@ export interface DelegationOutcome {
   observation?: { state: "complete" | "incomplete"; reasons: string[] };
   diagnostics?: string;
   diagnosticsTruncated?: boolean;
+  /** The definitionId the identity check used and whether the call supplied it or Daddy remembered it. */
+  definitionBinding?: import("../src/governance/ledger.ts").DefinitionBinding;
 }
 /**
  * The upstream controller's token, honoured ONLY when the child otherwise exited cleanly non-zero.

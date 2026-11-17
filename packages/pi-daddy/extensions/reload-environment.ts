@@ -40,6 +40,12 @@ export interface ReloadLifecycle {
   workspacePinAcquisition?: Promise<ReadonlyMap<string, string>>;
   /** Catalog failure is terminal for this lifecycle too, not merely one extension object. */
   discoveryCleanupFailure?: BoundedReadCleanupError;
+  /**
+   * Agent name → the definitionId its last successful `delegate_describe` in this Pi session returned (2026-11-17).
+   * Here so it survives `/reload` with the conversation that saw the describe; `grants.ts` clears it on every
+   * other session start and on tree navigation, and an explicit root replacement does not carry it over.
+   */
+  describedDefinitions?: Map<string, string>;
 }
 type SessionOwner = object;
 

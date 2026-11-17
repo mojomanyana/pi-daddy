@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  DEFINITION_ID_SOURCES,
   LEDGER_GATE_OUTCOMES,
   buildChildLifecycleEvent,
   buildEpisodeCostGateEvent,
@@ -88,6 +89,7 @@ export function buildLedgerV3ContractFixtures() {
       },
       definitionHash: "7".repeat(64),
       definitionPackageVersion: "2.3.1",
+      definitionBinding: { definitionId: "a".repeat(64), source: "remembered" },
       executor: "process",
       taskFrom: "d0.0",
       taskFromExecutionId: "exec:00000000-0000-4000-8000-000000000000",
@@ -218,8 +220,11 @@ export async function syncLedgerV3RefusalEnum(target = schemaPath): Promise<void
   };
   schema.$defs.refusalCode.enum = [...REFUSAL_CODES];
   (schema.$defs.approvalSource as { enum: string[] }).enum = [...APPROVAL_SOURCES];
-  (schema.$defs.capabilityDecision as { properties: { gateOutcome: { enum: string[] } } }).properties.gateOutcome.enum =
-    [...LEDGER_GATE_OUTCOMES];
+  const decision = schema.$defs.capabilityDecision as {
+    properties: { gateOutcome: { enum: string[] }; definitionIdSource: { enum: string[] } };
+  };
+  decision.properties.gateOutcome.enum = [...LEDGER_GATE_OUTCOMES];
+  decision.properties.definitionIdSource.enum = [...DEFINITION_ID_SOURCES];
   const prefixes = CAPABILITY_NAMESPACE_PREFIXES.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   schema.$defs.ledgerCapabilityIdentifier.pattern = `^(?:${prefixes.join("|")})[A-Za-z0-9@*][A-Za-z0-9@*._/-]{0,255}$`;
   if (!schema.oneOf.some((entry) => entry.$ref === "#/$defs/costGate")) schema.oneOf.push({ $ref: "#/$defs/costGate" });

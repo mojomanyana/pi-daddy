@@ -135,6 +135,7 @@ Principal binding manifest, package identity and delegated agent where applicabl
 is a separate file. Raw source-copy SHA-256 preserves every byte, including a BOM; `sourceHash` retains the
 runtime's existing decoded-text hash semantics. Changing a source path later does not rewrite the snapshot.
 Manifest `requestedDefinitionId` is the caller's claim; `definitionId` is the observed planner selection.
+An ID Daddy filled from an earlier describe is no claim, so `requestedDefinitionId` stays null there.
 Requested execution IDs are allocated occurrences, not proof that those children started. Runtime outcomes
 contain only the existing allowlisted final and process-receipt projection, in original child/step order;
 skipped steps have no invented outcome. The captured `response` holds the version 2 summary the model received,
@@ -358,7 +359,7 @@ flag, a bounded reason, the operation ID (or execution ID), and for a worker tha
 receipt's cause and signal. Complete final identities and process receipts stay in the result details, which Pi
 persists but does not send to the provider, and in opt-in public capture.
 
-Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
+Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` after a `delegate_describe` of each, which binds its `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
 
@@ -703,10 +704,14 @@ On Pi 1.0.4, the first request or native delegation reads the public selected sk
 inline and delegated ceilings. An unrelated skill with the same name is never labeled Principal. Failed
 binding has no inline fallback. Reload creates a new snapshot; observing provider tools never rereads bodies.
 
-Call `delegate_describe({agent:"build"})` and carry its `definitionId` into `delegate`, a `delegate_all`
-child, or a `delegate_chain` step. Principal bindings require that precondition. Description starts no child
-and grants no authority. A stale ID refuses before approval or launch. This hash is an observation and
-precondition, not an approval record or a learned-policy authorization.
+Call `delegate_describe({agent:"build"})` before delegating to it. Daddy remembers the returned `definitionId`
+for that agent in this Pi session and uses it when a `delegate`, a `delegate_all` child or a `delegate_chain`
+step names the agent without one; a supplied `definitionId` wins and is never remembered. Principal bindings
+require a describe (or the ID). `/reload` keeps what was described; `/new`, resume, fork and tree navigation
+drop it. Description starts no child and grants no authority. A stale ID, supplied or remembered, refuses
+before approval or launch until the agent is described again. Results and the ledger record the ID used and
+its source. This hash is an observation and precondition, not an approval record or a learned-policy
+authorization.
 
 The description also returns `selectedResources`: version `1`, `selectedSkill` and `definition` objects
 containing `path` and `sha256`, and `resourceDirectory` for relative references. A verified Principal binding

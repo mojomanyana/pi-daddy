@@ -5,6 +5,7 @@ import { executionEvidenceContent } from "./execution-evidence.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import {
   assertDefinitionInputsBeforeAdmission,
+  bindDescribedDefinitions,
   definitionIdDescription,
   registerDefinitionDescribe,
 } from "./definition-describe.ts";
@@ -221,7 +222,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
    */
   const describeAgent = (names: string[]) =>
     `Name of a definition to spawn — its allowed-tools become the grant and its instructions ` +
-    `become the sub-agent's system prompt. Copy this together with definitionId from delegate_describe.delegationArguments. ` +
+    `become the sub-agent's system prompt. delegate_describe binds its definitionId. ` +
     `Available: ${names.join(", ") || "none"}.`;
 
   const correlationShape = buildCorrelationShape();
@@ -305,12 +306,17 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       assertDelegationAuthority(session);
       await session.ensureDefinitions?.();
-      assertDefinitionInputsBeforeAdmission(session, [params]);
+      // The call's own definitionId, else this session's last describe of the agent; checked the same way.
+      const bound = bindDescribedDefinitions(session, [params]);
+      const [spec] = bound.specs;
+      const [definitionBinding] = bound.bindings;
+      assertDefinitionInputsBeforeAdmission(session, bound.specs, bound.bindings);
       // ADR-0032: one child, same block. `_onUpdate` was discarded here, so a delegation showed the bare word
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const occurrence = newDelegationOccurrence(session, 0);
-      const operationClaim = await claimDelegationOperation(session, params, occurrence, ctx, signal);
+      const operationClaim = await claimDelegationOperation(session, spec, occurrence, ctx, signal, definitionBinding);
+      // Public capture keeps the caller's own request; the bound ID is in details and the ledger.
       const capture = publicEvidenceCall(
         session.publicEvidence,
         _toolCallId,
@@ -322,7 +328,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         session,
         {
           operation_id: params.operation_id,
-          definitionId: params.definitionId,
+          definitionId: spec.definitionId,
           task: params.task,
           dashboardSummary: params.dashboardSummary,
           agent: params.agent,
@@ -340,6 +346,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         signal,
         {
           operationClaim,
+          definitionBinding,
           onProgress: progress.sink(0),
           toolCallId: _toolCallId,
           onDefinition: (definition) => capture.selected(0, definition),
@@ -407,14 +414,17 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const children = params.children ?? [];
       // Correctable definition inputs must not consume earlier siblings' operation IDs.
       await session.ensureDefinitions?.();
-      assertDefinitionInputsBeforeAdmission(session, children);
+      const bound = bindDescribedDefinitions(session, children);
+      assertDefinitionInputsBeforeAdmission(session, bound.specs, bound.bindings);
       if (session.capacityRefusal) throw new GovernanceRefusal(session.capacityRefusal);
       await reconcileDelegationCapacity(session);
       const occurrences = children.map((_, index) => newDelegationOccurrence(session, index));
       const claims: Array<import("../src/kernel/dispatch-operation.ts").OperationClaim | undefined> = [];
       try {
-        for (const [index, child] of children.entries())
-          claims.push(await claimDelegationOperation(session, child, occurrences[index], ctx, signal));
+        for (const [index, child] of bound.specs.entries())
+          claims.push(
+            await claimDelegationOperation(session, child, occurrences[index], ctx, signal, bound.bindings[index]),
+          );
       } catch (error) {
         await Promise.all(claims.map((claim) => claim?.finish?.("not-started")));
         throw error;
@@ -451,7 +461,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         children,
         occurrences.map((row, index) => claims[index]?.operation.executionId ?? row.executionId),
       );
-      const pending = children.map(async (child, index): Promise<DelegationOutcome> => {
+      const pending = bound.specs.map(async (child, index): Promise<DelegationOutcome> => {
         let enteredDelegation = false;
         try {
           // Reserve each batch share synchronously here, before another dispatch can interleave.
@@ -461,6 +471,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           enteredDelegation = true;
           return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
             operationClaim: claims[index],
+            definitionBinding: bound.bindings[index],
             capacityReservation,
             onDefinition: (definition) => capture.selected(index, definition),
             onProgress: progress.sink(index),

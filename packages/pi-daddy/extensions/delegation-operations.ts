@@ -16,6 +16,7 @@ import { GovernanceRefusal } from "../src/kernel/refusals.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import { recordDelegationDecision } from "./delegation-ledger.ts";
+import type { DefinitionBinding } from "../src/governance/ledger.ts";
 import type { GrantsSession } from "./session.ts";
 import type { ChildSpec, DelegationToolContext } from "./run-delegation.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
@@ -130,6 +131,8 @@ export async function claimDelegationOperation(
   ids: ExecutionOccurrenceIds,
   ctx: DelegationToolContext,
   signal?: AbortSignal,
+  /** Trusted: bound by the calling tool from its own arguments and the session's describe memory. */
+  definitionBinding?: DefinitionBinding,
 ): Promise<OperationClaim | undefined> {
   const operationScope = session.reloadLifecycle?.operationFinals;
   const operationId = spec.operation_id;
@@ -138,7 +141,7 @@ export async function claimDelegationOperation(
   if (!validOperationId(operationId)) throw Error("Invalid operation_id");
   if (signal?.aborted) throw Error("Operation request aborted");
   await session.ensureDefinitions?.();
-  assertDefinitionIdentity(session, spec);
+  assertDefinitionIdentity(session, spec, definitionBinding?.source);
   const context = { ...(await session.delegationContext()), ...session.parentToolContext?.(ctx) };
   const model = spec.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
   const preview = planDelegation(
@@ -202,7 +205,7 @@ export async function claimDelegationOperation(
     : Error(preview.reason ?? "Operation request is not authorized");
   const evidenceErrors: unknown[] = [];
   try {
-    await recordDelegationDecision({ session, plan: preview, ids, agent: spec.agent });
+    await recordDelegationDecision({ session, plan: preview, ids, agent: spec.agent, definitionBinding });
   } catch (error) {
     // A refused request cannot execute, even if its audit append fails. Keep this
     // failure visible without making independent no-start evidence depend on it.

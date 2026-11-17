@@ -46,6 +46,14 @@ export const LEDGER_EVENT_KINDS = [
 export type LedgerEventKind = (typeof LEDGER_EVENT_KINDS)[number];
 export const LEDGER_GATE_OUTCOMES = ["declined", "dismissed", "expired", "aborted", "no-ui", "error"] as const;
 export type LedgerGateOutcome = (typeof LEDGER_GATE_OUTCOMES)[number];
+/** Where a delegation's definitionId came from: its own arguments, or this session's last describe of the agent. */
+export const DEFINITION_ID_SOURCES = ["supplied", "remembered"] as const;
+export type DefinitionIdSource = (typeof DEFINITION_ID_SOURCES)[number];
+/** The definitionId a delegation was checked against, and its source. Never task text or a path. */
+export interface DefinitionBinding {
+  definitionId: string;
+  source: DefinitionIdSource;
+}
 
 export interface LedgerEventBase {
   /** Optional only on the legacy-compatible `GrantRecord` public type; every v3 event builder writes it. */
@@ -155,6 +163,13 @@ export interface GrantRecord extends LedgerEventBase {
   /** Installed package version exposed for the definition, when available. */
   definitionPackageVersion?: string;
   /**
+   * The selected definitionId this delegation was checked against (2026-11-17), present only when one was used,
+   * with `definitionIdSource` saying whether the call supplied it or Daddy filled it from this session's last
+   * `delegate_describe` of the agent. An identifier like `definitionHash`; it grants and approves nothing.
+   */
+  definitionId?: string;
+  definitionIdSource?: DefinitionIdSource;
+  /**
    * The context handoff this child RECEIVED (ADR-0078): the mode whose capability survived, and what crossed.
    * Absent means nothing crossed, which is the default and the overwhelming majority of records.
    */
@@ -244,6 +259,7 @@ export function buildRecord(args: {
   definitionDigest?: DefinitionDigest;
   definitionHash?: string;
   definitionPackageVersion?: string;
+  definitionBinding?: DefinitionBinding;
   handoff?: GrantRecord["handoff"];
   /** Where the child ran (ADR-0031). Required: the probe's answer survives nowhere else. */
   executor: ExecutorKind;
@@ -269,6 +285,10 @@ export function buildRecord(args: {
   }
   if (args.definitionHash && !/^[a-f0-9]{64}$/i.test(args.definitionHash)) {
     throw new TypeError("definitionHash must be a SHA-256 hex digest");
+  }
+  const binding = args.definitionBinding;
+  if (binding && (!/^[a-f0-9]{64}$/.test(binding.definitionId) || !DEFINITION_ID_SOURCES.includes(binding.source))) {
+    throw new TypeError("definitionBinding must name a SHA-256 definitionId and a known source");
   }
   // R-46: the scalar is a SUMMARY, emitted only when it cannot mislead. `buildRecord` derives it rather
   // than accepting it, so a call site cannot supply one that disagrees with the map beside it.
@@ -325,6 +345,7 @@ export function buildRecord(args: {
     ...(args.definitionDigest ? { definitionDigest: args.definitionDigest } : {}),
     ...(args.definitionHash ? { definitionHash: args.definitionHash } : {}),
     ...(args.definitionPackageVersion ? { definitionPackageVersion: args.definitionPackageVersion } : {}),
+    ...(binding ? { definitionId: binding.definitionId, definitionIdSource: binding.source } : {}),
   };
   if (args.taskDigest !== undefined) assertLedgerV3Wire(record);
   return record;

@@ -98,5 +98,7 @@
     "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
   },
   "definitionHash": "7777777777777777777777777777777777777777777777777777777777777777",
-  "definitionPackageVersion": "2.3.1"
+  "definitionPackageVersion": "2.3.1",
+  "definitionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "definitionIdSource": "remembered"
 }

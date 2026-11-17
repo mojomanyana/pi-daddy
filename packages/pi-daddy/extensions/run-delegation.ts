@@ -299,6 +299,12 @@ async function runOneDelegationImplementation(
     /** Approvals already obtained by the caller — see `planWithApprovals`. `delegate_chain` uses it. */
     preApproved?: InheritableApproval[];
     /**
+     * The definitionId `spec` carries and where it came from (2026-11-17). Trusted: bound by the calling tool from
+     * its own arguments and this session's describe memory, never read from model input. Recorded, not decisive:
+     * the identity check compares `spec.definitionId` with the current selection either way.
+     */
+    definitionBinding?: import("../src/governance/ledger.ts").DefinitionBinding;
+    /**
      * The child whose output composed this child's task (ADR-0033).
      *
      * Recorded, never acted on: it exists so "who wrote this instruction?" is answerable from the trail, which is
@@ -336,7 +342,7 @@ async function runOneDelegationImplementation(
   let executorEntered = false;
   try {
     await session.ensureDefinitions?.();
-    assertDefinitionIdentity(session, spec);
+    assertDefinitionIdentity(session, spec, options.definitionBinding?.source);
 
     const { toolCallId, onProgress, preApproved, taskFrom, taskFromExecutionId, approvalFacts } = options;
     // pi resolves a BARE model id to an unauthenticated provider and the child dies at startup — the id
@@ -483,6 +489,7 @@ async function runOneDelegationImplementation(
         taskFromExecutionId,
         approval: approvalOutcome,
         approvalFacts,
+        definitionBinding: options.definitionBinding,
       });
     } catch (error) {
       plan = {
@@ -560,10 +567,13 @@ export async function runOneDelegation(
   const [session, spec, ids, , ctx, signal] = args;
   const finalScope = operationFinalScope(session);
   const options = args[6] ?? {};
-  const claim = options.operationClaim ?? (await claimDelegationOperation(session, spec, ids, ctx, signal));
+  const binding = options.definitionBinding;
+  const bindOutcome = (outcome: DelegationOutcome) =>
+    binding ? Object.assign(outcome, { definitionBinding: { ...binding } }) : outcome;
+  const claim = options.operationClaim ?? (await claimDelegationOperation(session, spec, ids, ctx, signal, binding));
   if (claim?.reused) {
     options.capacityReservation?.finalize({ state: "not-started", reason: "existing operation reused" });
-    return existingOperationOutcome(claim, session.depth + 1);
+    return bindOutcome(existingOperationOutcome(claim, session.depth + 1));
   }
   let executorEntered = false;
   try {
@@ -586,7 +596,7 @@ export async function runOneDelegation(
         result.operation = { ...claim.operation, state: "uncertain", reused: false };
       }
     }
-    return result;
+    return bindOutcome(result);
   } catch (error) {
     if (claim)
       await claim.finish!(
