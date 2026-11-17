@@ -36,6 +36,8 @@ import { executionEvidence, executionEvidenceSummary } from "../extensions/execu
 import { buildRecord } from "../src/governance/ledger.ts";
 import { validateLedgerV3Event } from "../src/governance/ledger-v3-validation.ts";
 import type { DelegationOutcome } from "../extensions/execute-child.ts";
+import { childFailureOutcome } from "../extensions/fanout-outcome.ts";
+import { delegationUsage, observedUsageOf, withObservedUsage } from "../src/executors/child-usage.ts";
 import type { GrantsSession } from "../extensions/session.ts";
 import type { ExecutionOccurrenceIds } from "../extensions/execution-occurrence.ts";
 
@@ -380,6 +382,58 @@ test("a retry that throws after its child started rejects loudly and names the f
       return true;
     },
   );
+});
+
+test("both attempts' child usage is reported: on the returned outcome and on an error thrown after the retry ran", async () => {
+  // Integration with child usage (2026-11-17). Each attempt used the model and has its own lifecycle record; the
+  // delegation reports their sum, and `retry.first` keeps the first attempt's own observation.
+  setEnv(ENV_CHILD_IDLE_TIMEOUT, "1");
+  const usage = (tokens: number, cost: number) => ({
+    input: tokens,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: tokens,
+    cost: { input: cost, output: 0, cacheRead: 0, cacheWrite: 0, total: cost },
+  });
+  const one = { usage: usage(1, 0.5), measured: 1, unmeasured: 0 };
+  const two = { usage: usage(2, 0.25), measured: 1, unmeasured: 0 };
+  const both = { usage: usage(3, 0.75), measured: 2, unmeasured: 0 };
+  const input = () => ({
+    session: owner(),
+    ids,
+    budget: undefined,
+    signal: undefined,
+    operation: false,
+    attempt: observed(),
+  });
+  const returned = await replayIfSafe(failedFirst({ observedUsage: one }), input(), async () =>
+    second({ observedUsage: two }),
+  );
+  assert.deepEqual(returned.observedUsage, both);
+  assert.deepEqual(returned.retry?.first.observedUsage, one);
+  assert.deepEqual(delegationUsage([returned]), {
+    usage: both.usage,
+    childUsage: { reported: true, cost: 0.75, measured: 2, unmeasured: 0, coverage: "complete" },
+  });
+  const unread = await replayIfSafe(failedFirst({ observedUsage: { measured: 0, unmeasured: 1 } }), input(), async () =>
+    second({ observedUsage: two }),
+  );
+  assert.deepEqual(unread.observedUsage, { usage: two.usage, measured: 1, unmeasured: 1 });
+  const plain = await replayIfSafe(failedFirst(), input(), async () => second());
+  assert.equal("observedUsage" in plain, false, "nothing observed, nothing invented");
+  for (const lost of [new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", "executor lost")), new Error("lost")]) {
+    const caught = await replayIfSafe(failedFirst({ observedUsage: one }), input(), async (_ids, _r, observe) => {
+      observe.onExecutorEntry();
+      throw withObservedUsage(lost, two);
+    }).then(
+      () => assert.fail("the retry's executor failure must reject"),
+      (error: unknown) => error,
+    );
+    assert.notEqual(caught, lost, "a new error naming the first failure");
+    assert.deepEqual(observedUsageOf(caught), both, lost.message);
+    assert.deepEqual(childFailureOutcome(caught, 1).observedUsage, both, "a fan-out reports both attempts");
+  }
 });
 
 test("composition refusals: switch, operation, Herdr, cancellation, cleanup, approval and deadline start nothing", async () => {

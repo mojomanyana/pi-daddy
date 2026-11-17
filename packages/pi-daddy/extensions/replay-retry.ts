@@ -18,6 +18,7 @@ import { ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
 import { newExecutionId } from "../src/kernel/execution-id.ts";
 import { GovernanceRefusal } from "../src/kernel/refusals.ts";
 import { replayRetryDecision, replayRetrySwitch } from "../src/kernel/replay-safe.ts";
+import { attemptsUsage, observedUsageOf, withObservedUsage } from "../src/executors/child-usage.ts";
 
 /** What the first attempt's own path observed: approvals it spent and the deadline it recorded. */
 export interface AttemptObservation {
@@ -92,18 +93,26 @@ export async function replayIfSafe(
   } catch (error) {
     if (!entered) return noted(first, String(error instanceof Error ? error.message : error));
     const note = `after an automatic retry of a replay-safe child whose first attempt failed (${decision.cause})`;
+    // Both attempts ran: the error the caller reports carries both observations, as an outcome would.
+    const usage = attemptsUsage(first.observedUsage, observedUsageOf(error));
+    const carried = <T>(replacement: T): T => (usage ? withObservedUsage(replacement, usage) : replacement);
     if (error instanceof GovernanceRefusal)
-      throw new GovernanceRefusal({
-        code: error.code,
-        message: `${error.message}; ${note}`,
-        ...(error.details ? { details: error.details } : {}),
-      });
-    throw new Error(`${String(error instanceof Error ? error.message : error)}; ${note}`, { cause: error });
+      throw carried(
+        new GovernanceRefusal({
+          code: error.code,
+          message: `${error.message}; ${note}`,
+          ...(error.details ? { details: error.details } : {}),
+        }),
+      );
+    throw carried(new Error(`${String(error instanceof Error ? error.message : error)}; ${note}`, { cause: error }));
   }
   // A refusal at the retry's own planning started nothing: the first attempt is still the answer.
   if (!second.work && !second.final && !second.cleanup) return noted(first, second.reason ?? "refused");
+  // Child usage (2026-11-17): the delegation reports both attempts' usage; `retry.first` keeps the first's own.
+  const observedUsage = attemptsUsage(first.observedUsage, second.observedUsage);
   return {
     ...second,
+    ...(observedUsage ? { observedUsage } : {}),
     ...(second.ok ? {} : { reason: [second.reason, `first attempt: ${first.reason}`].filter(Boolean).join("; ") }),
     retry: { attempts: 2, firstFailure: decision.cause, executionId: ids.executionId, first },
   };

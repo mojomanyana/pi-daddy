@@ -59,7 +59,10 @@ export interface DelegationOutcome {
   diagnosticsTruncated?: boolean;
   /** The definitionId the identity check used and whether the call supplied it or Daddy remembered it. */
   definitionBinding?: import("./definition-describe.ts").DefinitionBinding;
-  /** This child's model usage and its delegations', as observed at settlement; reported to the parent session. */
+  /**
+   * This child's model usage and its delegations', as observed at settlement; reported to the parent session. After
+   * an automatic retry it covers both attempts (`retry.first` keeps the first attempt's own).
+   */
   observedUsage?: ObservedChildUsage;
   /**
    * The automatic retry of a replay-safe child (decision of 2026-11-17). Present only when the retry ran; this

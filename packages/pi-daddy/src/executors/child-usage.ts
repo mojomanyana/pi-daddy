@@ -224,6 +224,16 @@ export function delegationUsage(
   };
 }
 
+/**
+ * One child's attempts together: a replay-safe child that failed is run once more in the same call, and both
+ * attempts used the model (integration with the automatic retry, 2026-11-17). Added as two children are, so each
+ * attempt counts as one execution; undefined when no attempt was observed at all.
+ */
+export function attemptsUsage(...attempts: (ObservedChildUsage | undefined)[]): ObservedChildUsage | undefined {
+  const observed = attempts.filter((attempt): attempt is ObservedChildUsage => attempt !== undefined);
+  return observed.length === 0 ? undefined : observed.reduce(addObserved, NONE);
+}
+
 const thrown = new WeakMap<object, ObservedChildUsage>();
 /** A child that ran and then threw keeps its observation on the error, so a fan-out that reports it can count it. */
 export function withObservedUsage<T>(error: T, usage: ObservedChildUsage): T {

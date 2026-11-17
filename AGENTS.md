@@ -260,6 +260,10 @@ failure, and both capability decisions stay in the ledger.
 Rejected: reusing the first execution id (the runtime journal, capacity and receipts are per occurrence), retrying
 under the operation, more than one retry, backoff or a configurable count. Tests use inert `pi` scripts; no model
 was run, so how a coordinating model reads a retried or replayable result is not established.
+2026-11-17, stacking with child usage: both attempts used the model and each has its own lifecycle record, so a
+retried outcome's `observedUsage`, and an error thrown after the retry's child started, carries both, and the
+delegation reports their sum to the Pi session (`retry.first` keeps the first attempt's own). Before, only the second
+attempt reached the session's totals.
 
 ### 2026-11-17 — Child model usage is included in the delegating Pi session's totals
 
