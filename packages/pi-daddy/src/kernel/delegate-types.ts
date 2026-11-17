@@ -91,6 +91,12 @@ export interface DelegationContext {
    */
   parentTools?: readonly import("./parent-tools.ts").ParentToolDescriptor[];
   /**
+   * The root's current provider and model, from the live tool context of the delegation being planned. A child
+   * is given a parent-run tool only when the `--model` it is planned with names the same pair; absent means
+   * unknown, which admits nothing. `"preview"` comes only from listings with no delegation in hand.
+   */
+  rootModel?: import("./parent-tools.ts").ModelRef | "preview";
+  /**
    * Extra per-child environment supplied by the composition layer (today: the activity timeline's local
    * observation identity). Evaluated once the child's execution id is known. The kernel refuses any key in
    * the `PI_DADDY_` namespace, so nothing supplied here can widen a grant, a depth or an approval
@@ -227,6 +233,11 @@ export interface Delegation {
    * for. Absent means the child has no parent-run tool and its arguments and environment are what they always were.
    */
   parentTools?: string[];
+  /**
+   * With `parentTools`: the `provider/id` this child is given as `--model`, which was the root's own model when
+   * planned. The root compares it with its model again at launch and at every call.
+   */
+  parentToolModel?: string;
   /** Ledger id for this child's readable logical position, if the caller assigned one (F8). */
   childId?: string;
   /** Unique identity for this occurrence, if the caller assigned one. */

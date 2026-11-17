@@ -7,9 +7,10 @@
  *    tool the child was not granted, or without the owner token;
  *  - leaving a call running after its child disconnects, settles or the owner closes, or holding the reply
  *    when the tool ignores its signal;
- *  - allowing two calls in flight for one child;
+ *  - allowing two calls in flight for one child, or a second run while a cancelled one is still running;
  *  - reporting a waiting child as idle, or an idle one as working;
- *  - widening the 4096-character line for any action other than this one, or not bounding this one;
+ *  - widening the 4096-character line for any action other than this one, or raising, removing or loosening this
+ *    one's bound (an authenticated call one character over it must get no reply and run nothing);
  *  - forwarding a thrown error's text, which can carry parent state, instead of a fixed refusal.
  */
 import assert from "node:assert/strict";
@@ -120,7 +121,12 @@ test("a call ends with its child: disconnect, settlement and owner close each ca
     leaving.abort();
     await assert.rejects(first, /aborted/);
     await until(() => run.calls[0].signal.aborted, "parent-side cancellation");
-    await until(() => child.activity() === "1:idle", "slot released");
+    await until(() => child.activity() === "1:idle", "reply slot released");
+    // This run ignores its signal and is still going in the parent, so the same child's next call is refused
+    // until it settles: one run per child at a time, not only one reply.
+    assert.deepEqual(await within(ask(), "a call while the cancelled run goes on"), refused(PARENT_TOOL_REFUSALS.busy));
+    assert.equal(run.calls.length, 1);
+    run.settle(answer("too late for anyone"));
 
     // The child settling (registration closed) cancels a call even when the tool ignores its signal.
     const second = ask();
@@ -192,11 +198,6 @@ test("only this action carries a longer request line, and it is bounded too", as
       JSON.stringify({ ...owner.reference, action, pad: "x".repeat(pad) }) + "\n";
     assert.match(await rawLine(owner.reference.socketPath, padded("read", 100)), /"ok":true/);
     assert.equal(await rawLine(owner.reference.socketPath, padded("read", 5000)), "", "other actions keep 4096");
-    assert.equal(
-      await rawLine(owner.reference.socketPath, "x".repeat(MAX_PARENT_TOOL_REQUEST_CHARS + 1)),
-      "",
-      "an unterminated line is cut at the bound",
-    );
     const seen: unknown[] = [];
     const child = owner.parentTools.register({
       executionId: "exec-1",
@@ -206,6 +207,26 @@ test("only this action carries a longer request line, and it is bounded too", as
         return answer("ok");
       },
     });
+    // An authenticated, well-formed call for a granted tool, padded outside the call so only the line's length
+    // differs: at the bound it is answered and run; one character over, the owner closes without a reply and runs
+    // nothing. Breaks if the bound is raised, removed or made inclusive (`auto-mode-policy.ts`'s line check).
+    const small = { executionId: "exec-1", key: child.key, tool: "scout_research", arguments: { question: "q" } };
+    const line = (chars: number) => {
+      const bare = JSON.stringify({ ...owner.reference, action: "parent-tool", call: small, pad: "" });
+      const pad = "x".repeat(chars - bare.length);
+      return JSON.stringify({ ...owner.reference, action: "parent-tool", call: small, pad });
+    };
+    // The bound counts what the owner has read, newline included.
+    const atBound = line(MAX_PARENT_TOOL_REQUEST_CHARS - 1);
+    assert.equal(atBound.length + 1, MAX_PARENT_TOOL_REQUEST_CHARS);
+    assert.equal(await rawLine(owner.reference.socketPath, line(MAX_PARENT_TOOL_REQUEST_CHARS) + "\n"), "");
+    assert.deepEqual(seen, [], "a line over the bound runs nothing");
+    assert.deepEqual(JSON.parse(await rawLine(owner.reference.socketPath, atBound + "\n")), {
+      ok: true,
+      value: answer("ok"),
+    });
+    assert.deepEqual(seen, [{ question: "q" }]);
+    seen.length = 0;
     const big = { question: "q".repeat(MAX_PARENT_TOOL_ARGUMENT_BYTES - 64) };
     const call = { executionId: "exec-1", key: child.key, tool: "scout_research", arguments: big };
     assert.deepEqual(await callParentTool(owner.reference, call), answer("ok"));

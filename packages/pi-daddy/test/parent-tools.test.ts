@@ -8,6 +8,8 @@
  *  - admitting a parent-run tool with any one condition missing: a non-root session, no owner channel, no child
  *    entrypoint, no observed parent tool (host without nested calls, or the kill switch), an `ext:` alias, or an
  *    ambiguous inventory;
+ *  - admitting one for a child whose `--model` is not the root's current provider and model, or whose model or
+ *    the root's is unknown, or refusing that without the one sentence that says so;
  *  - changing the existing child-delivery refusal's code or words on any of those paths;
  *  - delivering the key in the plan, or any `-e` other than Daddy's own entrypoint;
  *  - letting a gated parent-run tool past the gate without a human (or Auto) answer;
@@ -22,7 +24,7 @@ import { shouldSeekApproval } from "../src/kernel/approval.ts";
 import { classifyToolNames, makeCatalog } from "../src/kernel/catalog.ts";
 import { childToolDeliveryRefusal } from "../src/kernel/child-tools.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
-import { planDelegation, type DelegationContext } from "../src/kernel/delegate.ts";
+import { planDelegation, type DelegationContext, type DelegationRequest } from "../src/kernel/delegate.ts";
 import {
   ENV_AUTO_MODE_REF,
   ENV_EXECUTION_ID,
@@ -35,12 +37,14 @@ import {
   PARENT_PROXIED_TOOLS,
   PARENT_TOOL_REFUSALS,
   fenceParentToolResult,
+  modelRefOf,
   parentToolDescriptor,
   parentToolResultText,
   parentToolsSwitch,
   parseParentToolBinding,
   parseParentToolCall,
   parseParentToolReply,
+  sameModel,
 } from "../src/kernel/parent-tools.ts";
 
 const ref = { socketPath: "/tmp/daddy-auto-test.sock", token: "a".repeat(48), ownerId: "b".repeat(32) };
@@ -55,6 +59,9 @@ const scout = {
     additionalProperties: false,
   },
 };
+/** The root session's current model, and the `--model` a child that keeps it is given. */
+const ROOT = { provider: "anthropic", id: "claude-sonnet-5" };
+const MODEL = "anthropic/claude-sonnet-5";
 const builtin = (name: string) => ({ name, sourceInfo: { source: "builtin", path: `builtin:${name}` } });
 const external = (name: string, path = `/selected/${name}.ts`) => ({ name, sourceInfo: { source: "package", path } });
 const context = (over: Partial<DelegationContext> = {}): DelegationContext => ({
@@ -67,8 +74,12 @@ const context = (over: Partial<DelegationContext> = {}): DelegationContext => ({
   catalog: makeCatalog(classifyToolNames(["read", "scout_research", "bookie_search"])),
   parentToolExtensionPath: PROXY,
   parentTools: [scout],
+  rootModel: ROOT,
   ...over,
 });
+/** A dispatch plan. The child is given the root's own model, as a delegation that inherits it is, unless a case says. */
+const planFor = (request: DelegationRequest, ctx: DelegationContext) =>
+  planDelegation({ model: MODEL, ...request }, ctx);
 /** The existing refusal, verbatim, so a change to its words fails here rather than reading as unchanged. */
 const unavailable = (tools: string, note = "") => ({
   code: "UNKNOWN_TOOL",
@@ -87,7 +98,7 @@ test("the allowlist is exactly scout_research, frozen, and Bookie recall is not 
   assert.throws(() => (PARENT_PROXIED_TOOLS as string[]).push("bookie_search"));
   for (const name of ["bookie_search", "bookie_read", "bookie_context_read", "read", "scout_*", "Scout_Research"])
     assert.equal(parentToolDescriptor({ ...scout, name }), undefined, name);
-  const bookie = planDelegation(
+  const bookie = planFor(
     { task: "recall", tools: ["bookie_search"] },
     context({ parentTools: [scout, { ...scout, name: "bookie_search" }] }),
   );
@@ -95,7 +106,7 @@ test("the allowlist is exactly scout_research, frozen, and Bookie recall is not 
 });
 
 test("a root admits scout_research when every condition holds, with Daddy's entrypoint and public metadata only", () => {
-  const plan = planDelegation({ task: "research the release notes", tools: ["read", "scout_research"] }, context());
+  const plan = planFor({ task: "research the release notes", tools: ["read", "scout_research"] }, context());
   assert.equal(plan.ok, true, plan.reason);
   assert.deepEqual(plan.parentTools, ["scout_research"]);
   assert.equal(plan.args[plan.args.indexOf("--tools") + 1], "read,scout_research");
@@ -108,7 +119,7 @@ test("a root admits scout_research when every condition holds, with Daddy's entr
   assert.deepEqual(JSON.parse(plan.env[ENV_PROXIED_TOOLS]), [scout]);
   assert.deepEqual(JSON.parse(plan.env[ENV_AUTO_MODE_REF]), ref);
   assert.equal(plan.env[ENV_PROXIED_TOOLS_KEY], undefined, "the key is minted at launch, never planned");
-  const plain = planDelegation({ task: "read only", tools: ["read"] }, context());
+  const plain = planFor({ task: "read only", tools: ["read"] }, context());
   assert.equal(plain.ok, true);
   assert.equal(plain.parentTools, undefined);
   assert.equal(plain.env[ENV_PROXIED_TOOLS], undefined);
@@ -126,7 +137,7 @@ test("every missing condition leaves the existing refusal, in its exact code and
     ["a malformed observed descriptor", { parentTools: [{ ...scout, parameters: [] as never }] }],
   ];
   for (const [label, over] of cases) {
-    const plan = planDelegation({ task: "research", tools: ["scout_research"] }, context(over));
+    const plan = planFor({ task: "research", tools: ["scout_research"] }, context(over));
     assert.deepEqual(plan.refusal, unavailable("scout_research"), label);
     assert.equal(plan.reason, unavailable("scout_research").message, label);
     assert.equal(shouldSeekApproval(plan.result), false, label);
@@ -134,7 +145,80 @@ test("every missing condition leaves the existing refusal, in its exact code and
   }
   // Only the exact `tool:` id names it; an `ext:` alias for the same Pi tool stays undeliverable.
   assert.deepEqual(childToolDeliveryRefusal(["ext:scout/scout_research"], context()), unavailable("scout_research"));
-  assert.equal(childToolDeliveryRefusal(["tool:scout_research"], context()), undefined);
+  assert.equal(childToolDeliveryRefusal(["tool:scout_research"], { ...context(), childModel: MODEL }), undefined);
+});
+
+test("same provider and model only: the child's --model must be the root's current pair, and unknown is not", () => {
+  // Breaks if the planner compares only the provider or only the id, reads the child's model from anything but
+  // the `--model` it passes, admits a missing or malformed side, or drops the sentence naming the reason.
+  const note =
+    " This session runs scout_research for a sub-agent only when the sub-agent uses this session's own provider " +
+    "and model, and this delegation's model is different or not known.";
+  const same = planFor({ task: "research", tools: ["scout_research"] }, context());
+  assert.equal(same.ok, true, same.reason);
+  assert.equal(same.args[same.args.indexOf("--model") + 1], MODEL);
+  assert.equal(same.parentToolModel, MODEL, "the launch and call re-checks compare against this");
+  const cases: Array<[string, Partial<DelegationRequest>, Partial<DelegationContext>]> = [
+    ["another provider, same model id", { model: "openai/claude-sonnet-5" }, {}],
+    ["the same provider, another model", { model: "anthropic/claude-haiku-5" }, {}],
+    ["a prefix of the root's id", { model: "anthropic/claude-sonnet" }, {}],
+    ["the child's model not known (Pi's configured default)", { model: undefined }, {}],
+    ["a separate --provider, which Pi resolves its own way", { provider: "anthropic" }, {}],
+    ["the root's model not known", {}, { rootModel: undefined }],
+    ["the root's model malformed", {}, { rootModel: { provider: "", id: "claude-sonnet-5" } }],
+  ];
+  for (const [label, request, over] of cases) {
+    const plan = planFor({ task: "research", tools: ["scout_research"], ...request }, context(over));
+    assert.deepEqual(plan.refusal, unavailable("scout_research", note), label);
+    assert.equal(shouldSeekApproval(plan.result), false, label);
+    assert.deepEqual(plan.args, [], label);
+    assert.equal(plan.parentToolModel, undefined, label);
+  }
+  // The sentence names only the tool the model rule withholds, not every unavailable one.
+  const mixed = planFor(
+    { task: "research and recall", tools: ["scout_research", "bookie_search"], model: "openai/claude-sonnet-5" },
+    context(),
+  );
+  assert.deepEqual(mixed.refusal, {
+    ...unavailable("bookie_search, scout_research", note),
+    details: { kind: "child-tool-unavailable", tools: "bookie_search,scout_research" },
+  });
+  // A listing with no delegation in hand leaves the model to dispatch; nothing else is relaxed by it.
+  const preview = planFor(
+    { task: "research", tools: ["scout_research"], model: undefined },
+    context({ rootModel: "preview" }),
+  );
+  assert.equal(preview.ok, true, preview.reason);
+  assert.equal(preview.parentToolModel, undefined, "launch then refuses: there is no model to compare");
+  const previewElsewhere = planFor(
+    { task: "research", tools: ["scout_research"] },
+    context({ rootModel: "preview", depth: 1, parentTools: undefined }),
+  );
+  assert.deepEqual(previewElsewhere.refusal, unavailable("scout_research"));
+});
+
+test("sameModel reads the child's model as Pi does and compares provider and id exactly", () => {
+  const root = { provider: "openrouter", id: "meta/llama-4" };
+  assert.equal(sameModel("openrouter/meta/llama-4", root), true, "an id may itself contain a slash");
+  assert.equal(
+    sameModel("a/b/c", { provider: "a/b", id: "c" }),
+    false,
+    "the provider is what precedes the first slash",
+  );
+  for (const child of [
+    "OpenRouter/meta/llama-4",
+    "openrouter/meta/llama-4 ",
+    "openrouter/",
+    "/meta/llama-4",
+    "meta/llama-4",
+  ])
+    assert.equal(sameModel(child, root), false, JSON.stringify(child));
+  for (const bad of [undefined, null, {}, { provider: "openrouter" }, { provider: "openrouter", id: 7 }, "openrouter"])
+    assert.equal(sameModel("openrouter/meta/llama-4", bad as never), false, JSON.stringify(bad));
+  assert.equal(sameModel(undefined, root), false);
+  assert.deepEqual(modelRefOf({ provider: "p", id: "m", api: "x", baseUrl: "https://e" }), { provider: "p", id: "m" });
+  assert.equal(modelRefOf({ provider: "p", id: "m\n" }), undefined);
+  assert.equal(modelRefOf({ provider: "p".repeat(513), id: "m" }), undefined);
 });
 
 test("the definition must declare it and the session must hold it; neither is widened", () => {
@@ -147,17 +231,17 @@ test("the definition must declare it and the session must hold it; neither is wi
   });
   const definitions = new Map([["scout-public", definition("scout_research")]]);
   const ownGrant = ["agent:scout-public", "tool:scout_research"];
-  const ok = planDelegation({ task: "q", agent: "scout-public" }, context({ ownGrant, definitions }));
+  const ok = planFor({ task: "q", agent: "scout-public" }, context({ ownGrant, definitions }));
   assert.equal(ok.ok, true, ok.reason);
   assert.deepEqual(ok.parentTools, ["scout_research"]);
   assert.deepEqual(ok.effective, ["tool:scout_research"]);
-  const notHeld = planDelegation(
+  const notHeld = planFor(
     { task: "q", agent: "scout-public" },
     context({ ownGrant: ["agent:scout-public"], definitions }),
   );
   assert.equal(notHeld.refusal?.code, "CAPABILITY_ESCALATION");
   assert.deepEqual(notHeld.result.denied, ["tool:scout_research"]);
-  const undeclared = planDelegation(
+  const undeclared = planFor(
     { task: "q", agent: "scout-public" },
     context({ ownGrant: [...ownGrant, "tool:read"], definitions: new Map([["scout-public", definition("read")]]) }),
   );
@@ -166,15 +250,12 @@ test("the definition must declare it and the session must hold it; neither is wi
 });
 
 test("a gated parent-run tool waits for an answer like any other gate", () => {
-  const gated = planDelegation(
-    { task: "research", tools: ["scout_research"] },
-    context({ gated: ["tool:scout_research"] }),
-  );
+  const gated = planFor({ task: "research", tools: ["scout_research"] }, context({ gated: ["tool:scout_research"] }));
   assert.equal(gated.refusal?.code, "GATED_UNAPPROVED");
   assert.deepEqual(gated.result.gatedBlocked, ["tool:scout_research"]);
   assert.equal(shouldSeekApproval(gated.result), true);
   assert.deepEqual(gated.args, []);
-  const approved = planDelegation(
+  const approved = planFor(
     { task: "research", tools: ["scout_research"] },
     context({
       gated: ["tool:scout_research"],
@@ -191,7 +272,7 @@ test("a parent-run tool is not chained to a second level, and the refusal says w
     parentTools: undefined,
     childToolSources: [builtin("read"), external("scout_research", PROXY)],
   });
-  const chained = planDelegation({ task: "research", tools: ["scout_research"] }, descendant);
+  const chained = planFor({ task: "research", tools: ["scout_research"] }, descendant);
   assert.deepEqual(
     chained.refusal,
     unavailable(
@@ -201,12 +282,9 @@ test("a parent-run tool is not chained to a second level, and the refusal says w
     ),
   );
   // Even a descendant that somehow observed a real offer cannot pass it on: only a root decides.
-  const offered = planDelegation(
-    { task: "research", tools: ["scout_research"] },
-    { ...descendant, parentTools: [scout] },
-  );
+  const offered = planFor({ task: "research", tools: ["scout_research"] }, { ...descendant, parentTools: [scout] });
   assert.equal(offered.ok, false);
-  const ordinary = planDelegation(
+  const ordinary = planFor(
     { task: "research", tools: ["scout_research"] },
     context({ depth: 1, parentTools: undefined }),
   );
@@ -374,7 +452,11 @@ test("the startup summary lists a parent-run definition as spawnable and names o
     summariseSpawnable(
       definitions,
       async (name) => ({
-        plan: planDelegation({ task: "(preview)", agent: name }, context({ ownGrant, definitions, ...over })),
+        // The startup summary's own preview: no delegation in hand, so no model yet (`rootModel: "preview"`).
+        plan: planDelegation(
+          { task: "(preview)", agent: name },
+          context({ ownGrant, definitions, rootModel: "preview", ...over }),
+        ),
       }),
       { mayDelegate: true, depth: 0, maxDepth: 2 },
     ).then((summary) => renderSpawnableSummary(summary, definitions.size));

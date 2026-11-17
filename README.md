@@ -405,7 +405,7 @@ configuration where both exist.
 | Area | Variables |
 | :--- | :--- |
 | Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
-| Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS` |
+| Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS` |
 | Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT` |
 | Activity | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT` |
 
@@ -649,3 +649,14 @@ entrypoint. External extension, MCP and SDK-only tools currently refuse with `ch
 Keep that work in the parent or select a definition using supported child tools; permission alone cannot
 install a child provider. Ambient extensions stay disabled and `--tools` remains exact. A refused fan-out
 child does not prevent an independent valid sibling from running; a chain refuses before any step starts.
+
+One exception, a new path for authority: a tool on Daddy's fixed allowlist, currently only `scout_research`, can
+be run **by the root session for its direct child**, through the root's own tool pipeline and permission prompts,
+and only when the child uses the root's own provider and model. A child that keeps the root's model qualifies; a
+delegation naming another provider or model, or one whose model is not known, is refused before launch with a
+sentence saying so. The root checks the model again at launch and at every call, so after `/model` in the root a
+running child's next call is refused. Only provider and model id are compared; the child resolves the endpoint
+and credentials itself. The tool runs with the root's model, credentials, settings and Docker, and what it saves
+is the root's: Scout saves the brief under the root session, where it becomes the root's latest saved research.
+Only bounded, fenced text crosses to the child. `PI_DADDY_PARENT_TOOLS=0` restores the refusal. The package
+README lists every bound.

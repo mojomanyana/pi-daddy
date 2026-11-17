@@ -14,15 +14,20 @@
  *  - admitting the tool on a host without nested calls, or with the kill switch off or malformed, or changing
  *    the refusal's words there; not naming a malformed switch at startup;
  *  - skipping the human for a gated parent-run tool, or launching after a denial;
- *  - turning a refusal in the parent's own tool pipeline into success for the child;
+ *  - turning a refusal in the parent's own tool pipeline into success for the child, or forwarding the text of an
+ *    exception thrown outside it;
+ *  - admitting a child whose model is not the root's current provider and model, or not re-checking the live
+ *    conditions (switch, host, the root's own grant, the root's model) at launch and at every call;
  *  - `delegate_describe` and the startup summary not saying which declared tools the parent runs.
  */
 import assert from "node:assert/strict";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import grantsExtension from "../extensions/grants.ts";
 import { PARENT_TOOL_EXTENSION_PATH } from "../extensions/parent-tool-host.ts";
+import { createGrantsSession } from "../extensions/session.ts";
 import { callParentTool } from "../src/governance/parent-tool-calls.ts";
 import { ENV_HERDR, ENV_PARENT_TOOLS, ENV_WORKSPACE_REGISTRY } from "../src/kernel/env-names.ts";
 import { PARENT_TOOL_REFUSALS } from "../src/kernel/parent-tools.ts";
@@ -57,6 +62,13 @@ const SCOUT_PUBLIC =
   "allowed-tools: scout_research\n---\n\n# Scout public research\n\nAnswer through `scout_research`.\n";
 
 type Outcome = { result?: unknown; isError?: boolean };
+/** The root's model in every case below unless a case changes it; a child that inherits it gets `ROOT_MODEL`. */
+const ROOT = { provider: "anthropic", id: "claude-sonnet-5" };
+const ROOT_MODEL = "anthropic/claude-sonnet-5";
+/** Models Pi's catalogue knows here, so a delegation naming one passes Daddy's model preflight. */
+const CATALOGUE = new Set([ROOT_MODEL, "openai/claude-sonnet-5", "anthropic/claude-haiku-5"]);
+const EXTENSION_PATH = fileURLToPath(new URL("../extensions/grants.ts", import.meta.url));
+const OBSERVER_PATH = fileURLToPath(new URL("../extensions/activity-timeline.ts", import.meta.url));
 
 /**
  * A fake child `pi`: records what it was given, loads the entrypoint its `-e` names, calls the registered tool
@@ -100,7 +112,15 @@ note({ args, key: process.env.PI_DADDY_PROXIED_TOOLS_KEY ?? null, ref: process.e
 
 async function harness(
   env: Record<string, string>,
-  options: { nested?: boolean; outcome?: Outcome; definitions?: boolean; hang?: boolean; delayMs?: number } = {},
+  options: {
+    nested?: boolean;
+    outcome?: Outcome;
+    definitions?: boolean;
+    hang?: boolean;
+    delayMs?: number;
+    /** `executeTool` throws this, as Pi's does for a context that has gone stale. */
+    throws?: Error;
+  } = {},
 ) {
   const dir = await tempDir("grants-parent-tools-");
   for (const key of KEYS) if (!saved.has(key)) saved.set(key, process.env[key]);
@@ -133,13 +153,19 @@ async function harness(
       },
     },
     signal: undefined,
-    modelRegistry: { find: () => undefined },
+    // Read through on every access, as Pi's context does, so a case can change it between planning and a call.
+    model: { ...ROOT },
+    modelRegistry: {
+      find: (provider: string, id: string) =>
+        CATALOGUE.has(`${provider}/${id}`) ? { provider, id, reasoning: false } : undefined,
+    },
   };
   if (options.nested !== false)
     Object.assign(ctx, {
       tools: active.map((name) => ({ name })),
       executeTool: async (name: string, args: unknown, opts?: { signal?: AbortSignal }) => {
         executed.push({ name, args, signal: opts?.signal });
+        if (options.throws) throw options.throws;
         if (options.hang) await new Promise((resolve) => opts?.signal?.addEventListener("abort", resolve));
         if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
         return (
@@ -153,25 +179,30 @@ async function harness(
         );
       },
     });
-  grantsExtension({
-    on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => void hooks.set(name, handler),
-    registerTool: (spec: { name: string }) => void registered.set(spec.name, spec),
-    registerCommand: () => {},
-    getAllTools: () => [...native, scoutInfo],
-    getActiveTools: () => active,
-    setActiveTools: () => {},
-    // Pi's selected skills, as the real host reports them; definitions then carry their exact identity.
-    getCommands: () =>
-      options.definitions
-        ? [
-            {
-              source: "skill",
-              name: "skill:scout-public",
-              sourceInfo: { path: join(dir, ".pi", "skills", "scout-public", "SKILL.md") },
-            },
-          ]
-        : [],
-  } as never);
+  // Handed in, as Pi's loader may, so a case can change the root's own grant after a child has started.
+  const session = createGrantsSession(EXTENSION_PATH, undefined, OBSERVER_PATH);
+  grantsExtension(
+    {
+      on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => void hooks.set(name, handler),
+      registerTool: (spec: { name: string }) => void registered.set(spec.name, spec),
+      registerCommand: () => {},
+      getAllTools: () => [...native, scoutInfo],
+      getActiveTools: () => active,
+      setActiveTools: () => {},
+      // Pi's selected skills, as the real host reports them; definitions then carry their exact identity.
+      getCommands: () =>
+        options.definitions
+          ? [
+              {
+                source: "skill",
+                name: "skill:scout-public",
+                sourceInfo: { path: join(dir, ".pi", "skills", "scout-public", "SKILL.md") },
+              },
+            ]
+          : [],
+    } as never,
+    session,
+  );
   await hooks.get("session_start")!({}, ctx);
   await hooks.get("before_provider_request")!({ payload: { tools: active.map((name) => ({ name })) } }, ctx);
   const children = async () =>
@@ -180,7 +211,7 @@ async function harness(
       .filter(Boolean)
       .map((line) => JSON.parse(line));
   const close = () => hooks.get("session_shutdown")!({ reason: "quit" }, ctx);
-  return { dir, ctx, tools: registered, executed, children, notes, close, prompts: () => prompts };
+  return { dir, ctx, session, tools: registered, executed, children, notes, close, prompts: () => prompts };
 }
 
 /** The child's printed answer, as returned in the delegate result's text. */
@@ -423,8 +454,30 @@ test("a child that exits mid-call cancels the parent's run of the tool", async (
   }
 });
 
-test("each call is checked again in the root: a switch or host change after launch refuses, and nothing runs", async () => {
-  for (const change of ["kill switch", "host no longer lists the tool"]) {
+test("each call is checked again in the root: a change after launch refuses, and nothing runs", async () => {
+  // Breaks if the per-call re-check drops any one condition: the switch, the host's callable tools, the root's
+  // own grant (`liveParentTools`' grant filter), or the root's current model (`runParentTool`'s model check).
+  const cases: Array<[string, (f: Awaited<ReturnType<typeof harness>>) => void, string]> = [
+    ["kill switch", () => void (process.env[ENV_PARENT_TOOLS] = "0"), PARENT_TOOL_REFUSALS.unavailable],
+    ["host no longer lists the tool", (f) => void (f.ctx.tools = [{ name: "read" }]), PARENT_TOOL_REFUSALS.unavailable],
+    [
+      "the root's own grant no longer holds the tool",
+      (f) => void (f.session.ownGrant = f.session.ownGrant.filter((id) => id !== "tool:scout_research")),
+      PARENT_TOOL_REFUSALS.unavailable,
+    ],
+    [
+      "the root switched to another model (/model)",
+      (f) => void (f.ctx.model = { provider: "anthropic", id: "claude-haiku-5" }),
+      PARENT_TOOL_REFUSALS.otherModel,
+    ],
+    [
+      "the root switched to another provider",
+      (f) => void (f.ctx.model = { ...ROOT, provider: "openai" }),
+      PARENT_TOOL_REFUSALS.otherModel,
+    ],
+    ["the root's model is no longer known", (f) => void delete f.ctx.model, PARENT_TOOL_REFUSALS.otherModel],
+  ];
+  for (const [change, apply, reason] of cases) {
     const f = await harness({ PI_DADDY_GRANT: "tool:read,tool:scout_research,tool:delegate" });
     const go = join(f.dir, "go");
     process.env.FIXTURE_WAIT_FOR = go;
@@ -434,15 +487,14 @@ test("each call is checked again in the root: a switch or host change after laun
         .execute("parent-call", { task: "research", tools: ["scout_research"] }, undefined, undefined, f.ctx);
       const deadline = Date.now() + 20_000;
       while ((await f.children()).length < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
-      if (change === "kill switch") process.env[ENV_PARENT_TOOLS] = "0";
-      else f.ctx.tools = [{ name: "read" }];
+      const [launch] = await f.children();
+      assert.equal(launch.args[launch.args.indexOf("--model") + 1], ROOT_MODEL, `${change}: inherited at planning`);
+      apply(f);
       await writeFile(go, "");
       const reply = childReply(await running);
       assert.deepEqual(
         reply,
-        {
-          error: "scout_research was not run: the parent session refused it " + `(${PARENT_TOOL_REFUSALS.unavailable})`,
-        },
+        { error: `scout_research was not run: the parent session refused it (${reason})` },
         change,
       );
       assert.deepEqual(f.executed, [], change);
@@ -451,6 +503,111 @@ test("each call is checked again in the root: a switch or host change after laun
       delete process.env[ENV_PARENT_TOOLS];
       await f.close();
     }
+  }
+});
+
+test("same provider and model only: a child on another, or an unknown, model is refused before launch", async () => {
+  // Breaks if the planner stops comparing the child's `--model` with the root's current model, compares only
+  // one of provider and id, treats an unknown model as the same, or drops the sentence that names the reason.
+  const refusal =
+    "delegation refused: child tool unavailable: scout_research — the parent catalog is not child delivery. " +
+    "Governed children load native Pi tools and Daddy's explicit entrypoint only; external extensions, MCP and " +
+    "SDK-only tools have no qualified child provider here. Keep this work in the parent or choose a definition " +
+    "using supported child tools. Additional permission cannot install or qualify a provider. This session runs " +
+    "scout_research for a sub-agent only when the sub-agent uses this session's own provider and model, and this " +
+    "delegation's model is different or not known.";
+  const cases: Array<[string, string | undefined, boolean]> = [
+    ["the same provider and model, named explicitly", ROOT_MODEL, true],
+    ["another provider, same model id", "openai/claude-sonnet-5", false],
+    ["the same provider, another model", "anthropic/claude-haiku-5", false],
+    ["no model known for the root or the child", undefined, false],
+  ];
+  for (const [label, model, admitted] of cases) {
+    const f = await harness({ PI_DADDY_GRANT: "tool:read,tool:scout_research,tool:delegate" });
+    try {
+      if (model === undefined) delete f.ctx.model;
+      const call = { task: "research", tools: ["scout_research"], ...(model ? { model } : {}) };
+      const run = f.tools.get("delegate").execute("parent-call", call, undefined, undefined, f.ctx);
+      if (admitted) {
+        const result = (await run) as any;
+        assert.equal(result.isError, false, label);
+        const [launch] = await f.children();
+        assert.equal(launch.args[launch.args.indexOf("--model") + 1], model, label);
+        assert.equal(f.executed.length, 1, label);
+      } else {
+        await assert.rejects(run, (error: Error) => error.message === refusal, label);
+        assert.deepEqual(await f.children(), [], `${label}: no child started`);
+        assert.deepEqual(f.executed, [], label);
+      }
+    } finally {
+      await f.close();
+    }
+  }
+});
+
+test("a change while a gate prompt is open is caught at launch, in the planner's words; nothing starts", async () => {
+  // Breaks if `openParentTools` stops re-checking the live conditions before launch: the plan was made before
+  // the prompt, and without that check the child would start holding a tool its root no longer runs for it.
+  const base =
+    "child tool unavailable: scout_research — the parent catalog is not child delivery. " +
+    "Governed children load native Pi tools and Daddy's explicit entrypoint only; external extensions, MCP and " +
+    "SDK-only tools have no qualified child provider here. Keep this work in the parent or choose a definition " +
+    "using supported child tools. Additional permission cannot install or qualify a provider.";
+  const modelNote =
+    " This session runs scout_research for a sub-agent only when the sub-agent uses this session's own provider " +
+    "and model, and this delegation's model is different or not known.";
+  const cases: Array<[string, (f: Awaited<ReturnType<typeof harness>>) => void, string]> = [
+    ["kill switch", () => void (process.env[ENV_PARENT_TOOLS] = "0"), base],
+    [
+      "the root switched model",
+      (f) => void (f.ctx.model = { provider: "anthropic", id: "claude-haiku-5" }),
+      base + modelNote,
+    ],
+  ];
+  for (const [change, apply, message] of cases) {
+    const f = await harness({
+      PI_DADDY_GRANT: "tool:read,tool:scout_research,tool:delegate",
+      PI_DADDY_GATED: "tool:scout_research",
+    });
+    try {
+      Object.assign(f.ctx, { hasUI: true, mode: "rpc" });
+      (f.ctx.ui as { select: () => Promise<string> }).select = async () => {
+        apply(f);
+        return "Allow once";
+      };
+      await assert.rejects(
+        f.tools
+          .get("delegate")
+          .execute("parent-call", { task: "research", tools: ["scout_research"] }, undefined, undefined, f.ctx),
+        (error: Error) => error.message === message,
+        change,
+      );
+      assert.deepEqual(await f.children(), [], `${change}: no child started`);
+      assert.deepEqual(f.executed, [], change);
+    } finally {
+      delete process.env[ENV_PARENT_TOOLS];
+      await f.close();
+    }
+  }
+});
+
+test("an exception from the root's executeTool reaches the child as a fixed refusal, never its message", async () => {
+  // Breaks if `runParentTool` forwards the thrown text (here, Pi's stale-context message naming a parent path).
+  const f = await harness(
+    { PI_DADDY_GRANT: "tool:read,tool:scout_research,tool:delegate" },
+    { throws: new Error("This extension ctx is stale after session replacement: /home/operator/.pi/session-1") },
+  );
+  try {
+    const result = (await f.tools
+      .get("delegate")
+      .execute("parent-call", { task: "research", tools: ["scout_research"] }, undefined, undefined, f.ctx)) as any;
+    assert.deepEqual(childReply(result), {
+      error: `scout_research was not run: the parent session refused it (${PARENT_TOOL_REFUSALS.unavailable})`,
+    });
+    assert.equal(f.executed.length, 1, "the root did try, through its own executeTool");
+    assert.doesNotMatch(JSON.stringify(result), /stale|session-1/);
+  } finally {
+    await f.close();
   }
 });
 

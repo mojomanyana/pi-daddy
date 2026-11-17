@@ -19,6 +19,7 @@ import { createGrantsSession } from "../extensions/session.ts";
 import { classifyToolNames, makeCatalog } from "../src/kernel/catalog.ts";
 import { snapshotChildTools, type ChildToolSource } from "../src/kernel/child-tools.ts";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
+import { modelRefOf } from "../src/kernel/parent-tools.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import { toolSources } from "./tool-sources-fixture.ts";
 
@@ -77,9 +78,11 @@ function fixture(options: Options = {}) {
   if (options.parentTools) {
     // A root with an owner channel and the child entrypoint, as `bindParentTools` wires it.
     session.autoMode = { reference: { socketPath: "/fixture/owner.sock", token: "t", ownerId: "o" } } as never;
-    session.parentToolContext = () => ({
+    // Without a delegation's tool context there is no child model yet, so the model rule is left to dispatch.
+    session.parentToolContext = (host) => ({
       parentToolExtensionPath: "/fixture/parent-tool-proxy.ts",
       parentTools: options.parentTools,
+      rootModel: host ? modelRefOf(host.model) : "preview",
     });
   }
 
@@ -283,4 +286,38 @@ test("a parent-run context that throws is treated as none offered", () => {
   };
   f.registration.refreshSpawnable();
   assert.deepEqual(f.advertised(), []);
+});
+
+test("the list assumes a delegation that keeps this session's model; dispatch on another model is refused", async () => {
+  // Breaks if the list starts applying a model it cannot know (scout-public would vanish although a delegation
+  // that keeps this session's model is admitted), or if dispatch stops applying the same-model rule.
+  const research = { name: "scout_research", description: "Public research.", parameters: { type: "object" } };
+  const f = fixture({
+    inventory: parentInventory,
+    extensionPath,
+    definitions: { "native-only": "Read Grep", "scout-public": "scout_research" },
+    parentTools: [research],
+  });
+  assert.deepEqual(f.advertised(), ["native-only", "scout-public"]);
+  const host = { model: { provider: "fixture", id: "root-model" } };
+  const dispatch = async (agent: string, model: string) =>
+    (
+      await planWithApprovals(
+        f.session,
+        { task: "(dispatch)", agent, model },
+        { ...f.session.parentToolContext!(host) },
+        null,
+      )
+    ).plan;
+  for (const name of f.advertised()) assert.equal((await dispatch(name, "fixture/root-model")).ok, true, name);
+  assert.equal((await dispatch("native-only", "fixture/other-model")).ok, true);
+  const other = await dispatch("scout-public", "fixture/other-model");
+  assert.equal(other.refusal?.code, "UNKNOWN_TOOL");
+  assert.ok(
+    other.refusal?.message.endsWith(
+      "This session runs scout_research for a sub-agent only when the sub-agent uses this session's own provider " +
+        "and model, and this delegation's model is different or not known.",
+    ),
+    other.refusal?.message,
+  );
 });

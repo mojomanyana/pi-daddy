@@ -9,7 +9,8 @@
  *
  * What runs the real tool is handed in (`ParentToolGrant.run`); this layer knows no Pi and no tool. A call lives
  * no longer than the child that asked: closing its registration or its connection cancels it, and the child's
- * own wall-clock bound therefore bounds the call.
+ * own wall-clock bound therefore bounds the call. Cancelling answers the child at once; a run slow to honour its
+ * signal can go on in the parent after that, and while it does the same child's next call is refused as busy.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createConnection } from "node:net";
@@ -55,7 +56,10 @@ export function createParentToolCalls(): ParentToolCalls {
     grant: ParentToolGrant;
     key: Buffer;
     calls: number;
+    /** The call whose reply is pending: what activity reports and what cancellation aborts. */
     inFlight?: AbortController;
+    /** The run itself, until it settles. A run slow to honour its signal outlives its reply and keeps the slot. */
+    running?: Promise<unknown>;
   }
   const entries = new Map<string, Entry>();
   let closed = false;
@@ -85,16 +89,27 @@ export function createParentToolCalls(): ParentToolCalls {
       if (!entry || offered.length !== entry.key.length || !timingSafeEqual(offered, entry.key))
         return refused(PARENT_TOOL_REFUSALS.unknownChild);
       if (!entry.grant.tools.includes(request.tool)) return refused(PARENT_TOOL_REFUSALS.notGranted);
-      if (entry.inFlight) return refused(PARENT_TOOL_REFUSALS.busy);
+      if (entry.inFlight || entry.running) return refused(PARENT_TOOL_REFUSALS.busy);
       if (signal.aborted) return refused(PARENT_TOOL_REFUSALS.cancelled);
       const controller = new AbortController();
       entry.inFlight = controller;
       const stop = () => controller.abort();
       signal.addEventListener("abort", stop, { once: true });
+      let done = false;
+      const running = (async () => entry.grant.run(request.tool, request.arguments, controller.signal))().finally(
+        () => void (done = true),
+      );
+      // One run per child at a time means in the parent, not only on the wire: the slot is free when it settles.
+      let slot: Promise<void> | undefined;
+      const release = () => {
+        if (entry.running === slot) entry.running = undefined;
+      };
+      slot = running.then(release, release);
+      entry.running = slot;
       try {
-        // Raced against cancellation: a tool that ignores its signal must not hold the reply or the slot.
+        // Raced against cancellation: a tool that ignores its signal must not hold the reply.
         return await Promise.race([
-          entry.grant.run(request.tool, request.arguments, controller.signal),
+          running,
           new Promise<ParentToolReply>((resolve) =>
             controller.signal.addEventListener("abort", () => resolve(refused(PARENT_TOOL_REFUSALS.cancelled)), {
               once: true,
@@ -106,6 +121,7 @@ export function createParentToolCalls(): ParentToolCalls {
       } finally {
         signal.removeEventListener("abort", stop);
         if (entry.inFlight === controller) entry.inFlight = undefined;
+        if (done) release();
         entry.calls += 1;
       }
     },

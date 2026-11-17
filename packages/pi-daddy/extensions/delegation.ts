@@ -160,6 +160,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
    * `session.delegationContext` hands it: the tool inventory, the extension path, and the parent-run facts
    * (depth, owner channel and the inventory preview of tools this root can run for a child). The planner's
    * per-call `context:` handling adds and removes no tool name, so the declared ceiling alone decides delivery.
+   * One parent-run condition is per delegation: the child's model must be the root's own. The preview leaves
+   * it to dispatch (`rootModel: "preview"`), so a definition is listed when a delegation that keeps this
+   * session's model would be admitted, and a delegation on another model is refused with the reason.
    *
    * Both filters only remove names. This runs inside `session_start`, `ensureDefinitions` and the
    * provider-request hook, so the delivery filter must not throw: Pi's `getAllTools` asserts a bound, live

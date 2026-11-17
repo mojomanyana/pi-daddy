@@ -729,19 +729,36 @@ calling it asks the root, over the owner socket descendants already use, to run 
 `ctx.executeTool` inside the waiting `delegate`, `delegate_all` or `delegate_chain` call. The root's own hooks
 and permission prompts therefore decide each call, and Pi records it as a nested call of that delegation.
 Admission requires all of: a root session; a definition ceiling and grant naming `tool:scout_research` exactly
-(an `ext:` alias does not count); the root holding the tool and Pi reporting it callable from another tool; and
-the delegation's tool context offering `executeTool`. A gated capability is asked about at delegation, like any
-other. Each call is checked again in the root against the same conditions and against the execution id and a
-per-execution key of the running child it was granted to; an unknown, finished or different child is refused.
-Arguments are limited to 64 KiB of JSON and results to 64 KiB of text. Only text crosses, fenced as untrusted
-evidence; `details`, images and other parts do not. One call per child runs at a time, and a call is cancelled
-when its child settles, exits or disconnects; waiting on it counts as child activity, so the child's wall-clock
-limit is what bounds it. A child cannot pass such a tool to its own child. The tool runs with the root's model,
-credentials and settings, not the child's. `delegate_describe` lists such tools as `parentRunTools`, and the
-startup summary names the definitions that use them. `PI_DADDY_PARENT_TOOLS=0` turns the path off and restores
-the refusal above; any value other than `1` or `0` also turns it off and is reported at startup. Bookie recall
-tools are deliberately not on the allowlist: Bookie authorizes disclosure for the model of the session that runs
-its tool, which here would be the root's while the text reaches the child's model.
+(an `ext:` alias does not count); the root holding the tool and Pi reporting it callable from another tool; the
+delegation's tool context offering `executeTool`; and **the child using the root's own provider and model**. The
+last means the `provider/id` Daddy passes the child as `--model` names exactly the provider and id of the root's
+current model. A child that keeps the root's model (the default) qualifies; an explicit `model`, a per-definition
+setting or authored `runtime-preferences` naming any other pair does not; and a child with no `--model` (Pi's
+configured default) or a root with no model is unknown, which does not qualify either. Such a delegation gets
+the refusal above with one more sentence saying the model is the reason. Only provider and id are compared: the
+child resolves the api, endpoint and credentials for that pair itself after it starts, which the root does not
+observe. A gated capability is asked about at delegation, like any other. The root checks again at launch and at
+every call, against the same conditions, its own grant, the model Pi reports for it at that moment, and the
+execution id and per-execution key of the running child it was granted to; an unknown, finished or different
+child is refused, and after `/model` in the root a running child's next call is refused. Arguments are limited to
+64 KiB of JSON and results to 64 KiB of text. Only text crosses, fenced as untrusted evidence; `details`, images
+and other parts do not. A thrown tool error or a block by the root's own permission hooks crosses as an error
+result with its text; failures outside Pi's tool pipeline cross as a fixed refusal. One call per child runs in the
+root at a time, until that run settles; a call is cancelled when its child settles, exits or disconnects, and
+waiting on it counts as child activity, so the child's wall-clock limit is what bounds it. A child cannot pass
+such a tool to its own child. `delegate_describe` lists such tools as `parentRunTools` for a child that keeps
+the root's model; the agent list and the startup summary leave the model to each delegation.
+
+The tool runs in the root session, with the root's model, credentials, settings, working directory and Docker,
+and what it writes is the root's. Scout's `scout_research` saves its brief under the root session's directory in
+`~/.pi-scout-research/briefs/`, appends it to the root session, where it becomes the root's latest saved Scout
+research (the reference the root model is then shown, in place of the root's own earlier one), and adds it to
+the root's workspace research inventory, which keeps a bounded number of entries. Scout's answer text, including
+the saved brief's path under the root's home directory, is what crosses to the child. `PI_DADDY_PARENT_TOOLS=0`
+turns the path off and restores the refusal above; any value other than `1` or `0` also turns it off and is
+reported at startup. Bookie recall tools are deliberately not on the allowlist: Bookie authorizes disclosure for
+the model of the session that runs its tool, which here would be the root's while the text reaches the child's
+model, and the same-model rule compares provider and id only, not the endpoint Bookie's approval binds.
 
 ### Optional retained-result consumers
 

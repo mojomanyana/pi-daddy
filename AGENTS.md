@@ -250,6 +250,31 @@ in another cwd with other provider settings). Nothing in Daddy can prove at call
 human-approved destination. Adding Bookie needs Bookie to accept and verify the consuming destination itself, and
 Daddy to pin and attest the child's resolved destination for that check; until both exist, do not add it.
 
+**2026-11-17, after independent review — same model only.** Owner: "Same model only. Allow the proxied call only
+when the sub-agent runs on the same provider and model as the parent; otherwise refuse as today. Document that
+the brief is saved under the parent session." The review had found that the Bookie argument above applies to
+Scout too: `scout_research` binds its run to the destination of the session running it (the root's) and can
+quote operator-selected inputs, while its answer reaches the child's model. The rule: what Daddy can observe of
+a child's model before launch is the one `provider/id` it passes as `--model` (an explicit `model`, a
+per-definition session or project setting, authored `runtime-preferences`, or by default the root's own current
+model; definitions have no `model:` field). A parent-run tool is admitted only when that value, read as Pi
+reads it (provider before the first slash), names exactly the provider and id of the root's current `ctx.model`.
+No `--model` (Pi's configured default), a separate `--provider`, or a root without a model is unknown, and
+unknown is not the same. The planner decides with the delegating call's model; the root checks again at launch
+(a gate prompt sits between) and at every call against the model Pi reports then, so `/model` in the root
+refuses a running child's next call. Otherwise the 2026-11-13 refusal stands, with one added sentence naming the
+model as the reason. Only provider and id are compared: the child resolves api, endpoint and credentials itself
+after launch, from the same agent directory and environment but without extensions, and Daddy does not observe
+that. Listings with no delegation in hand (agent list, `/grants`, startup summary) leave the model to dispatch.
+Also corrected here, not by the owner's words above: `scout_research` is not read-only in the root. It spends
+the root's model, credentials and Docker (with egress to child-chosen `sourceUrls`), saves its brief under the
+root session (`~/.pi-scout-research/briefs/<digest of the root session id>/`), appends it to the root session
+as the root's latest saved research (the root model is then shown the child's reference instead of its own
+earlier one), and indexes it in the root's bounded workspace inventory. Its answer text, including that brief's
+path, crosses. A thrown tool error or a root `tool_call` block crosses as an error result with its text; only
+failures outside Pi's pipeline become Daddy's fixed refusals. One call per child means one run in the root: a
+cancelled run that ignores its signal keeps the child's slot until it settles.
+
 ### 2026-11-16 — Tool inventory observations precede settled availability claims
 
 Before the first native callable-tool observation, an unknown extension capability in the startup summary

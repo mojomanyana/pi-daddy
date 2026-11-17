@@ -9,7 +9,8 @@
  * Breaks if: the planner stops admitting the allowlisted tool for a definition that declares it; the child is
  * not given Daddy's entrypoint, descriptor or key; the root runs the tool other than as a nested call of the
  * waiting `delegate` (so outside its own tool pipeline); the child's arguments are altered; `details` cross;
- * the text is not fenced; or the kill switch stops restoring the existing refusal.
+ * the text is not fenced; the kill switch stops restoring the existing refusal; a child on another model than the
+ * root's is admitted; or the root stops comparing its own live model (after `/model`) at the child's call.
  */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -18,7 +19,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { CHILD_QUESTION, SCOUT_TEXT } from "./parent-run-extension.ts";
+import { CHILD_QUESTION, OTHER_MODEL, SCOUT_TEXT } from "./parent-run-extension.ts";
 import { MODEL, PROVIDER } from "./scripted-provider.ts";
 
 const SCOUT_PUBLIC =
@@ -181,6 +182,48 @@ test("with the kill switch off the same delegation is refused before launch, as 
     assert.match(textOf(delegated.result), /^delegation refused: child tool unavailable: scout_research — /);
   } finally {
     await rm(run.root, { recursive: true, force: true });
+  }
+});
+
+test("a child on another model than the root's is refused before launch, with the reason", async () => {
+  const run = await runRoot({ DADDY_PARENT_RUN_CHILD_MODEL: `${PROVIDER}/${OTHER_MODEL}` });
+  try {
+    assert.equal(run.result.code, 0, run.result.stderr);
+    assert.equal(run.launched, 0);
+    assert.deepEqual(run.calls, []);
+    const delegated = run.events.find((e) => e.type === "tool_execution_end" && e.toolName === "delegate");
+    assert.equal(delegated.isError, true);
+    const text = textOf(delegated.result);
+    assert.match(text, /^delegation refused: child tool unavailable: scout_research — /);
+    assert.ok(
+      text.endsWith(
+        "This session runs scout_research for a sub-agent only when the sub-agent uses this session's own " +
+          "provider and model, and this delegation's model is different or not known.",
+      ),
+      text,
+    );
+  } finally {
+    await rm(run.root, { recursive: true, force: true });
+  }
+});
+
+test("after the root switches model, its running child's call is refused in the root and nothing runs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "daddy-parent-run-switch-"));
+  const run = await runRoot({ DADDY_PARENT_RUN_SWITCHED: join(root, "switched") });
+  try {
+    assert.equal(run.result.code, 0, run.result.stderr);
+    assert.equal(run.launched, 1, "admitted on the root's model, then the root changed model");
+    assert.deepEqual(run.calls, [], "the root's tool did not run");
+    const delegated = run.events.find((e) => e.type === "tool_execution_end" && e.toolName === "delegate");
+    assert.equal(delegated.isError, false, textOf(delegated.result));
+    assert.equal(
+      textOf(delegated.result).split("\n").slice(0, 2).join("\n"),
+      "CHILD RECEIVED:\nscout_research was not run: the parent session refused it " +
+        "(the parent session no longer uses the provider and model this child was started with)",
+    );
+  } finally {
+    await rm(run.root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
 

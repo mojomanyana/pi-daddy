@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ceilingForDefinition, digestDefinition } from "../src/kernel/definitions.ts";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
-import { liveParentTools } from "./parent-tool-host.ts";
+import { hostModel, liveParentTools } from "./parent-tool-host.ts";
 import type { GrantsSession } from "./session.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
@@ -86,9 +86,10 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
         definitionId: definition.definitionId,
         delegationArguments: { agent: params.agent, definitionId: definition.definitionId },
         selectedResources: definition.selectedResources ?? null,
-        // Declared tools this session would run for the child itself, through its own tool pipeline (2026-11-17).
-        // Like the rest of this answer, an observation: it grants nothing and admission still decides.
-        parentRunTools: liveParentTools(session, ceilingForDefinition(definition).capabilities, ctx),
+        // Declared tools this session would run for the child itself, through its own tool pipeline (2026-11-17),
+        // for a child on this session's own provider and model, which is the only kind it runs them for. Like the
+        // rest of this answer, an observation: it grants nothing and admission still decides.
+        parentRunTools: liveParentTools(session, ceilingForDefinition(definition).capabilities, ctx, hostModel(ctx)),
       };
       const capture = publicEvidenceCall(session.publicEvidence, _id, "delegate_describe", [{ agent: params.agent }]);
       capture.selected(0, definition);

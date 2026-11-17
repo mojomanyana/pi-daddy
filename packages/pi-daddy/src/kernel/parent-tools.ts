@@ -10,7 +10,8 @@
  *
  *  - which names may ever be run for a child (`PARENT_PROXIED_TOOLS`);
  *  - when a plan may deliver one (`parentProxiedTools`), which the planner applies and the parent applies again
- *    to every call, so "checked again at call time against the same conditions" is the same function;
+ *    at launch and to every call, so "checked again at call time against the same conditions" is the same
+ *    function; one of those conditions is that the child uses the root's own provider and model (`sameModel`);
  *  - what a request and a reply look like and how large each may be;
  *  - how a result becomes text, and how that text is fenced as untrusted evidence.
  *
@@ -89,6 +90,39 @@ export function parentToolDescriptor(tool: unknown): ParentToolDescriptor | unde
   });
 }
 
+/** A model as Pi names it: the provider and the model id within that provider. */
+export interface ModelRef {
+  readonly provider: string;
+  readonly id: string;
+}
+
+/** Read a provider and model id from a Pi model, or nothing. Anything unusual is unknown, and unknown is not equal. */
+export function modelRefOf(model: unknown): ModelRef | undefined {
+  if (!isRecord(model)) return undefined;
+  const { provider, id } = model;
+  const usable = (value: unknown): value is string =>
+    typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\s\x00-\x1f\x7f]/.test(value);
+  return usable(provider) && usable(id) ? { provider, id } : undefined;
+}
+
+/**
+ * Does a child started with `--model <childModel>` use the same provider and model as the root does now?
+ *
+ * The owner's rule for parent-run tools (2026-11-17): same model only. `childModel` is the exact `provider/id`
+ * the plan passes the child; Pi in the child reads the part before the first slash as the provider, so this
+ * does too. Either side missing or unusual is unknown, and unknown is not the same. Only provider and id are
+ * compared: the child resolves the api, endpoint and credentials for that pair itself, in its own process,
+ * after launch, where the root cannot observe them.
+ */
+export function sameModel(childModel: string | undefined, rootModel: ModelRef | undefined): boolean {
+  const root = modelRefOf(rootModel);
+  if (typeof childModel !== "string" || !root) return false;
+  const slash = childModel.indexOf("/");
+  const child =
+    slash > 0 ? modelRefOf({ provider: childModel.slice(0, slash), id: childModel.slice(slash + 1) }) : undefined;
+  return child !== undefined && child.provider === root.provider && child.id === root.id;
+}
+
 /** What the planner, and later each call, must know to decide whether a tool may be run by the parent. */
 export interface ParentToolFacts {
   depth?: number;
@@ -103,22 +137,18 @@ export interface ParentToolFacts {
   parentTools?: readonly ParentToolDescriptor[];
   /** The host's current public tool origins; used only to name a refused second level. */
   childToolSources?: readonly ChildToolSource[];
+  /**
+   * The root session's current model, read from the live tool context of the delegation being decided.
+   * `"preview"` is set only by listings that have no delegation in hand (the agent list, `/grants`, the startup
+   * summary): the child's model is chosen per delegation, so they leave the model rule to dispatch.
+   */
+  rootModel?: ModelRef | "preview";
+  /** The exact `provider/id` the plan passes the child as `--model`. Set by the planner and the re-checks. */
+  childModel?: string;
 }
 
-/**
- * The tools a set of capabilities may reach through the parent. Every condition must hold; a missing fact
- * means none, and the caller's existing refusal then stands unchanged.
- *
- *  1. The session deciding is a root. A deeper session's copy of the tool is itself a parent-run tool, and a
- *     second level is refused rather than chained.
- *  2. There is an owner channel and a child entrypoint to load.
- *  3. The name is on the allowlist and the capabilities name it exactly as `tool:<name>`.
- *  4. The composition observed exactly one such tool as callable on a host that can run one tool from another.
- */
-export function parentProxiedTools(
-  capabilities: readonly Capability[],
-  facts: ParentToolFacts,
-): ParentToolDescriptor[] {
+/** Conditions 1-4 below: the tools this root could run for a child, before the child's model is considered. */
+function offeredParentTools(capabilities: readonly Capability[], facts: ParentToolFacts): ParentToolDescriptor[] {
   if (facts.depth !== 0 || !facts.autoModeRef || !facts.parentToolExtensionPath || !facts.parentTools) return [];
   const offered = facts.parentTools;
   return PARENT_PROXIED_TOOLS.flatMap((name) => {
@@ -128,6 +158,37 @@ export function parentProxiedTools(
     return descriptor ? [descriptor] : [];
   });
 }
+
+const modelAllows = (facts: ParentToolFacts) =>
+  facts.rootModel === "preview" || sameModel(facts.childModel, facts.rootModel);
+
+/**
+ * The tools a set of capabilities may reach through the parent. Every condition must hold; a missing fact
+ * means none, and the caller's existing refusal then stands.
+ *
+ *  1. The session deciding is a root. A deeper session's copy of the tool is itself a parent-run tool, and a
+ *     second level is refused rather than chained.
+ *  2. There is an owner channel and a child entrypoint to load.
+ *  3. The name is on the allowlist and the capabilities name it exactly as `tool:<name>`.
+ *  4. The composition observed exactly one such tool as callable on a host that can run one tool from another.
+ *  5. The child's model is the root's current provider and model (`sameModel`); unknown is not the same.
+ */
+export function parentProxiedTools(
+  capabilities: readonly Capability[],
+  facts: ParentToolFacts,
+): ParentToolDescriptor[] {
+  return modelAllows(facts) ? offeredParentTools(capabilities, facts) : [];
+}
+
+/** The tools that condition 5 alone withholds: everything else holds, and the child's model is not the root's. */
+export function parentToolsWithheldByModel(capabilities: readonly Capability[], facts: ParentToolFacts): string[] {
+  return modelAllows(facts) ? [] : offeredParentTools(capabilities, facts).map((tool) => tool.name);
+}
+
+/** The one sentence the child-delivery refusal gains when the model rule is its reason. */
+export const parentToolModelNote = (tools: readonly string[]) =>
+  ` This session runs ${tools.join(", ")} for a sub-agent only when the sub-agent uses this session's own ` +
+  "provider and model, and this delegation's model is different or not known.";
 
 /** Is this session's own copy of an allowlisted tool the one its parent runs for it? Then it cannot go further. */
 export function isParentProxy(name: string, facts: ParentToolFacts): boolean {
@@ -156,6 +217,7 @@ export const PARENT_TOOL_REFUSALS = Object.freeze({
   unknownChild: "the request does not come from a running child that was granted a parent-run tool",
   notGranted: "this child's grant does not name the tool",
   busy: "an earlier parent-run tool call from this child is still running",
+  otherModel: "the parent session no longer uses the provider and model this child was started with",
   unavailable: "the parent session can no longer run this tool for a child",
   cancelled: "the parent-run tool call was cancelled",
   failed: "the parent session could not complete the tool call",

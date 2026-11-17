@@ -1,7 +1,13 @@
 /** Child delivery is separate from a parent's catalog and from permission to grant a tool. */
 import { toPiToolsAllowlist, type Capability } from "./resolve.ts";
 import { refusal, type StructuredRefusal } from "./refusals.ts";
-import { isParentProxy, parentProxiedTools, type ParentToolFacts } from "./parent-tools.ts";
+import {
+  isParentProxy,
+  parentProxiedTools,
+  parentToolModelNote,
+  parentToolsWithheldByModel,
+  type ParentToolFacts,
+} from "./parent-tools.ts";
 
 /** Native CLI tools shared by the qualified Pi 1.0.4 and 1.5.2 runtimes, not the display catalog. */
 const nativeTools = new Set(["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"]);
@@ -33,7 +39,8 @@ export function snapshotChildTools(tools: readonly ChildToolSource[]): readonly 
 /**
  * The one refusal for a tool a child cannot be given. Shared with the launch-time check, so a plan that admitted
  * a parent-run tool and can no longer be served is refused in exactly these words. `note` is empty except where
- * a parent-run tool would have to be chained through a second level.
+ * a parent-run tool would have to be chained through a second level, or where the child's model is not the
+ * root's (`parentToolModelNote`).
  */
 export function childToolUnavailable(tools: readonly string[], note = ""): StructuredRefusal {
   return refusal(
@@ -73,11 +80,13 @@ export function childToolDeliveryRefusal(
   if (!unavailable.length) return undefined;
   // Said only where it is the reason: this session holds the tool because ITS parent runs it.
   const chained = unavailable.filter((name) => isParentProxy(name, context));
+  // Or this root would run it, but not for a child on another (or an unknown) provider and model.
+  const otherModel = parentToolsWithheldByModel(requested, context).filter((name) => unavailable.includes(name));
   return childToolUnavailable(
     unavailable,
-    chained.length
+    (chained.length
       ? ` ${chained.join(", ")} reached this session through its own parent; a parent-run tool is not passed on ` +
-          "to a further level, so it cannot be delegated from here."
-      : "",
+        "to a further level, so it cannot be delegated from here."
+      : "") + (otherModel.length ? parentToolModelNote(otherModel) : ""),
   );
 }
