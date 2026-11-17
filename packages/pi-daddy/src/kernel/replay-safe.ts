@@ -7,13 +7,15 @@
  *
  *  - is a capability set replay-safe (`replaySafe`), and is a declared ceiling (`replaySafeCeiling`);
  *  - does a first attempt that failed qualify for its one retry (`replayRetryDecision`), judged only from facts
- *    Daddy settled itself: exit code, timeout and cancellation flags, the captured final and the cleanup receipt.
+ *    Daddy settled itself: exit code, timeout and cancellation flags, the captured final and the cleanup receipt;
+ *    under a stable operation the same answer only marks the failure replayable for the operation's owner.
  *
  * Nothing here spawns, reserves capacity, plans or reads the environment. Composition supplies the facts and runs
  * the retry through the ordinary delegation path, so the retry is planned, gated, recorded and bounded exactly as a
  * fresh delegation is.
  */
 import { isContextCapability } from "./context-handoff.ts";
+import { ENV_REPLAY_RETRY } from "./env-names.ts";
 import type { Capability } from "./resolve.ts";
 
 /**
@@ -100,7 +102,10 @@ export interface ReplayRetryFacts {
   /** The first attempt's effective capabilities, as planned. */
   capabilities: readonly Capability[];
   attempt: ReplayAttempt;
-  /** A stable operation claimed one execution identity; its admission record cannot name a second. */
+  /**
+   * A stable operation claimed one execution identity; its admission record cannot name a second. Checked last:
+   * an otherwise eligible failure is then marked replayable for the operation's owner, never retried here.
+   */
   operation: boolean;
   /** A Herdr pane is operable by a human, so a stop there cannot be told from a person's. */
   executor: "process" | "herdr";
@@ -129,18 +134,25 @@ export type ReplayRetryRefusal =
   | "deadline";
 
 /**
- * Retry once, or name the first guard that refuses. All must hold: the plan is replay-safe; the failure is
- * transient; neither the parent, a person nor a refusal before launch caused it; the first attempt's cleanup
+ * Retry once, or name the first guard that refuses. All must hold: the plan is replay-safe; the attempt failed
+ * without answering (`replayableFailure`); neither the parent's cancellation nor a refusal before launch caused it
+ * (a process killed from outside looks like a crash and is retried); the first attempt's cleanup
  * settled (or no worker started) and its observation is complete; no approval was spent on it; and at least one
  * inactivity bound remains before its wall-clock deadline, which the retry inherits.
+ *
+ * The stable-operation guard is checked last, so its refusal means every other guard held. Daddy does not retry
+ * under an operation; it reports the failure as `replayable` and the caller that owns the operation retries it
+ * under a new one (owner decision of 2026-11-17, "Principal retries once").
  */
 export function replayRetryDecision(
   facts: ReplayRetryFacts,
-): { retry: true; cause: ReplayFailure } | { retry: false; because: ReplayRetryRefusal } {
-  const refuse = (because: ReplayRetryRefusal) => ({ retry: false as const, because });
+):
+  | { retry: true; cause: ReplayFailure }
+  | { retry: false; because: "stable-operation"; replayable: ReplayFailure }
+  | { retry: false; because: Exclude<ReplayRetryRefusal, "stable-operation"> } {
+  const refuse = (because: Exclude<ReplayRetryRefusal, "stable-operation">) => ({ retry: false as const, because });
   if (!facts.enabled) return refuse("disabled");
   if (!replaySafe(facts.capabilities)) return refuse("not-replay-safe");
-  if (facts.operation) return refuse("stable-operation");
   if (facts.executor !== "process") return refuse("executor");
   if (facts.parentAborted || facts.attempt.aborted) return refuse("cancelled");
   if (facts.attempt.work === undefined) return refuse("refused");
@@ -156,5 +168,16 @@ export function replayRetryDecision(
     return refuse("cleanup-unsettled");
   if (facts.approvalSpent) return refuse("approval-spent");
   if (!(facts.remainingMs >= facts.idleMs)) return refuse("deadline");
+  if (facts.operation) return { retry: false, because: "stable-operation", replayable: cause };
   return { retry: true, cause };
+}
+
+/**
+ * What the operator is told beside the replay-safe mark (startup summary, `/grants`): exactly when this session
+ * does not retry. Every case the decision refuses for the whole session is named; per-attempt guards are not.
+ */
+export function replayRetryNotice(enabled: boolean, executor: "process" | "herdr"): string {
+  if (!enabled) return `not retried or marked replayable: switched off by ${ENV_REPLAY_RETRY}`;
+  if (executor !== "process") return "not retried or marked replayable under the Herdr executor";
+  return "retried once automatically if it fails without answering; with operation_id, marked replayable for the coordinator to retry instead";
 }

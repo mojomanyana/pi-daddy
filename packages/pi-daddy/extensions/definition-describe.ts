@@ -136,8 +136,9 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
         // for a child on this session's own provider and model, which is the only kind it runs them for. Like the
         // rest of this answer, an observation: it grants nothing and admission still decides.
         parentRunTools: liveParentTools(session, ceilingForDefinition(definition).capabilities, ctx, hostModel(ctx)),
-        // 2026-11-17: its declared tools only read, so a transient failure is retried once automatically. Every
-        // admitted plan's tools are exactly these (context modes only read), so the ceiling answers for the plan.
+        // 2026-11-17: its declared tools only read, so a failure without an answer may be run once more (see
+        // `replay-safe.ts` for when). Every admitted plan's tools are exactly these (context modes only read), so the
+        // ceiling answers for the plan.
         replaySafe: replaySafeCeiling(ceilingForDefinition(definition)),
       };
       const capture = publicEvidenceCall(session.publicEvidence, _id, "delegate_describe", [{ agent: params.agent }]);

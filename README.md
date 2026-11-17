@@ -301,14 +301,19 @@ receipt's cause and signal. Complete final identities and process receipts stay 
 persists but does not send to the provider, and in opt-in public capture.
 
 A child whose tools only read (`read`, `grep`, `find`, `ls`, plus context handoff) is replay-safe, and
-`delegate_describe` (`replaySafe`), the `/grants` allow lines and the startup summary say so. When such a child fails
-for a transient reason (it exited without a final, timed out, could not launch for want of system resources, or its
+`delegate_describe` (`replaySafe`), the `/grants` allow lines and the startup summary say so. When such a child
+fails without answering (it exited without a final, timed out, could not launch for want of system resources, or its
 model request failed), Daddy runs the same request once more in the same tool call: a new execution and process with
 the same task, definition, model and context, planned with nobody asked and bounded by the first attempt's
-wall-clock deadline. It never retries a child the parent or a person stopped, one whose cleanup is not settled, one
-that spent an approval, one carrying an `operation_id`, or one in a Herdr pane, and it never retries twice. The
-summary then carries `"retry":{"attempts":2,"firstFailure":"…"}`, the details keep the first attempt complete, and
-the ledger links the two with `retryOf`. `PI_DADDY_REPLAY_RETRY=0` turns the retry off; the mark stays.
+wall-clock deadline. A child killed from outside the tool call (a person's `kill`, the OOM killer) exits like a
+crash and is retried once. Daddy never retries a child its parent's tool call cancelled, one whose cleanup is not
+settled, one that spent an approval (on a gated tool, or a gated context handoff such as the default-gated
+`context:fork`), one in a Herdr pane, or one carrying an `operation_id`, and it never retries twice. The summary
+then carries `"retry":{"attempts":2,"firstFailure":"…"}`, the details keep the first attempt complete, and the
+ledger links the two with `retryOf`. A failure carrying an `operation_id` that would otherwise have been retried is
+returned with `"replayable":true` instead, so its coordinator can retry it once as a new operation (Principal does).
+Under the Herdr executor nothing is retried or marked. `PI_DADDY_REPLAY_RETRY=0` turns off the retry and the
+`replayable` mark; the replay-safe mark stays.
 
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` after a `delegate_describe` of each, which binds its `definitionId`; independent parallel work uses one `delegate_all` batch.
 

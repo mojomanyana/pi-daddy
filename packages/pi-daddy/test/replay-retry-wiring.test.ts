@@ -6,9 +6,13 @@
  * Production changes that break this file: not retrying an eligible read-only child, retrying a second time,
  * retrying a write-capable child, a cancelled child, a stable operation or a child whose approval was spent;
  * ignoring `PI_DADDY_REPLAY_RETRY=0`; giving the retry a fresh full deadline; losing the `retryOf` link or the first
- * attempt's receipt; not telling the model that a retry happened; feeding a chain the first attempt's identity.
+ * attempt's receipt; not telling the model that a retry happened; feeding a chain the first attempt's identity, or
+ * dropping a later step's provenance on its retry; letting a retry on the workspace-routed path ask anyone; not
+ * marking a stable operation's eligible failure `replayable`, or marking one any other guard refused; telling the
+ * operator a Herdr session retries.
  */
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
@@ -30,6 +34,9 @@ import {
   ENV_PARENT_ID,
   ENV_PUBLIC_EVIDENCE_DIR,
   ENV_REPLAY_RETRY,
+  ENV_WORKSPACE_LEASE_DIR,
+  ENV_WORKSPACE_PIN,
+  ENV_WORKSPACE_REGISTRY,
 } from "../src/kernel/env-names.ts";
 import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
@@ -52,6 +59,9 @@ const KEYS = [
   ENV_CHILD_TIMEOUT,
   ENV_CHILD_IDLE_TIMEOUT,
   ENV_PUBLIC_EVIDENCE_DIR,
+  ENV_WORKSPACE_REGISTRY,
+  ENV_WORKSPACE_LEASE_DIR,
+  ENV_WORKSPACE_PIN,
   "PATH",
   "PI_CODING_AGENT_DIR",
   "REPLAY_FIXTURE_DIR",
@@ -265,7 +275,29 @@ test("delegate_describe and the startup summary mark replay-safe definitions fro
   assert.equal((await describe("look")).replaySafe, true);
   assert.equal((await describe("fix")).replaySafe, false);
   assert.ok(
-    notes.some((note) => note.endsWith("\n  replay-safe (retried once automatically after a transient failure): look")),
+    notes.some((note) =>
+      note.endsWith(
+        "\n  replay-safe (retried once automatically if it fails without answering; with operation_id, marked " +
+          "replayable for the coordinator to retry instead): look",
+      ),
+    ),
+    JSON.stringify(notes),
+  );
+});
+
+test("under the Herdr executor the startup summary says replay-safe definitions are not retried", async () => {
+  // Review finding 1 (R-28's shape): the line promised a retry the enforcer refuses for every Herdr pane.
+  // PI_DADDY_HERDR=1 with no herdr answering settles the executor kind without running anything.
+  const { notes, session } = await harness(
+    { [ENV_GRANT]: `${GRANT},agent:look`, [ENV_HERDR]: "1" },
+    { definitions: { look: "read, grep" } },
+  );
+  assert.equal(session.executor.kind, "herdr");
+  await session.ensureDefinitions?.(); // as Pi's first request does: selected definitions are then reported
+  assert.ok(
+    notes.some((note) =>
+      note.endsWith("\n  replay-safe (not retried or marked replayable under the Herdr executor): look"),
+    ),
     JSON.stringify(notes),
   );
 });
@@ -283,7 +315,9 @@ test("PI_DADDY_REPLAY_RETRY=0 stops the retry and the marking stays", async () =
   const described = await call("delegate_describe", { agent: "look" });
   assert.equal(JSON.parse(described.content[0].text).replaySafe, true);
   assert.ok(
-    notes.some((note) => note.endsWith("\n  replay-safe (automatic retry off by PI_DADDY_REPLAY_RETRY): look")),
+    notes.some((note) =>
+      note.endsWith("\n  replay-safe (not retried or marked replayable: switched off by PI_DADDY_REPLAY_RETRY): look"),
+    ),
     JSON.stringify(notes),
   );
 });
@@ -408,22 +442,97 @@ test("both attempts are in the ledger, linked by retryOf, and the retry inherits
   assert.equal((await verifyLedger(path)).ok, true, "the closed reader accepts the link");
 });
 
-test("a stable operation is never retried, and a second identical call still reuses it", async () => {
+test("a stable operation is never retried: its eligible failure is marked replayable, and a reuse is not", async () => {
   const { call, launches } = await harness({ [ENV_GRANT]: GRANT }, { durable: true });
   const spec = { operation_id: "investigate:replay", task: "fail-once inspect", tools: ["read"] };
   const result = await call("delegate", spec);
   assert.equal(result.isError, true);
   assert.equal((await launches()).length, 1);
   assert.equal(result.details.retry, undefined);
+  assert.equal(result.details.replayable, true, "the operation's owner may retry it once");
+  assert.equal(result.details.reason, NO_FINAL, "nothing about a retry is claimed");
   assert.equal(result.details.operation.reused, false);
   assert.equal(result.details.operation.state, "settled");
   assert.equal(result.details.operation.executionId, (await launches())[0].execution);
+  const summary = evidenceFromProvider(result).outcomes[0];
+  assert.equal(summary.replayable, true);
+  assert.equal(summary.retry, undefined);
   const again = await call("delegate", spec);
   assert.equal((await launches()).length, 1, "no new child");
   assert.equal(again.isError, false, "as before this change: a reference, not a result");
   assert.equal(again.details.operation.reused, true);
   assert.equal(again.details.ok, false);
   assert.equal(again.details.operation.runtime.work, "failed");
+  assert.equal(again.details.replayable, undefined, "a reference is not an attempt");
+  assert.equal("replayable" in evidenceFromProvider(again).outcomes[0], false);
+});
+
+test("a stable operation's failure is not marked replayable when any other guard refuses", async () => {
+  const operation = (task: string, tools: string[]) => ({
+    operation_id: `investigate:${task.replaceAll(" ", "-")}`,
+    task,
+    tools,
+  });
+  const unmarked = async (name: string, result: any, launched: number, runs: () => Promise<unknown[]>) => {
+    assert.equal(result.details.ok, false, name);
+    assert.equal(result.details.replayable, undefined, name);
+    assert.equal("replayable" in evidenceFromProvider(result).outcomes[0], false, name);
+    assert.equal((await runs()).length, launched, name);
+  };
+  // Not replay-safe: the plan holds a shell.
+  {
+    const { call, launches } = await harness({ [ENV_GRANT]: `${GRANT},tool:bash`, [ENV_GATED]: "" }, { durable: true });
+    await unmarked("shell", await call("delegate", operation("fail-always shell", ["read", "bash"])), 1, launches);
+  }
+  // Kill switch off.
+  {
+    const { call, launches } = await harness({ [ENV_GRANT]: GRANT, [ENV_REPLAY_RETRY]: "0" }, { durable: true });
+    await unmarked("switched off", await call("delegate", operation("fail-always off", ["read"])), 1, launches);
+  }
+  // An approval was spent on the attempt.
+  {
+    const { call, launches, prompts } = await harness(
+      { [ENV_GRANT]: GRANT, [ENV_GATED]: "tool:grep" },
+      { durable: true, answer: "allow-once" },
+    );
+    await unmarked("approval", await call("delegate", operation("fail-always gated", ["read", "grep"])), 1, launches);
+    assert.equal(prompts.length, 1);
+  }
+  // The parent cancelled the attempt.
+  {
+    const { call, launches } = await harness({ [ENV_GRANT]: GRANT }, { durable: true });
+    const controller = new AbortController();
+    const pending = call("delegate", operation("slow-always cancelled", ["read"]), controller.signal);
+    for (let i = 0; i < 100 && (await launches()).length === 0; i += 1) await new Promise((r) => setTimeout(r, 20));
+    controller.abort();
+    const result = await pending;
+    assert.equal(result.details.aborted, true);
+    await unmarked("parent abort", result, 1, launches);
+  }
+  // The operation's status could not be recorded: a failed control step, so no mark either.
+  {
+    const { call, launches, session } = await harness({ [ENV_GRANT]: GRANT }, { durable: true });
+    const operations = session.autoMode!.operations! as { claim: (...args: any[]) => Promise<any> };
+    const claim = operations.claim.bind(operations);
+    const unfinished: Array<() => Promise<unknown>> = [];
+    operations.claim = async (...args) => {
+      const owned = await claim(...args);
+      if (!owned.reused) {
+        const finish = owned.finish.bind(owned);
+        unfinished.push(() => finish("uncertain"));
+        owned.finish = async () => {
+          throw new Error("operation registry unavailable");
+        };
+      }
+      return owned;
+    };
+    const result = await call("delegate", operation("fail-always unrecorded", ["read"]));
+    // The live registry still holds the operation as running; settle it so the owner can close.
+    for (const finish of unfinished) await finish();
+    assert.equal(result.details.control, "failed");
+    assert.match(result.details.reason, /operation status update failed: Error: operation registry unavailable$/);
+    await unmarked("control failed", result, 1, launches);
+  }
 });
 
 test("delegate_all retries per child, leaving a sibling that succeeded alone", async () => {
@@ -457,19 +566,65 @@ test("delegate_chain retries a step before deciding to continue, and the next st
   const result = await call("delegate_chain", {
     steps: [
       { task: "fail-once first", tools: ["read"] },
-      { task: "second uses {previous}", tools: ["read"] },
+      { task: "fail-once second uses {previous}", tools: ["read"] },
     ],
   });
   assert.equal(result.isError, false);
   assert.equal(result.details.aborted, false);
   const runs = await launches();
-  assert.equal(runs.length, 3);
+  assert.equal(runs.length, 4);
   assert.match(runs[2].task, /second uses[\s\S]*answer 2/, "the retry's answer composed the next task");
+  assert.equal(runs[3].task, runs[2].task, "a later step's retry has the same composed task");
   const decisions = (await ledger(path)).filter((event) => event.event === "capability_decision");
-  assert.equal(decisions.length, 3);
-  assert.equal(decisions[1].retryOf, runs[0].execution);
-  assert.equal(decisions[2].taskFromExecutionId, runs[1].execution, "provenance names the retry, not the failure");
+  assert.deepEqual(
+    decisions.map((event) => [event.executionId, event.retryOf ?? null, event.taskFromExecutionId ?? null]),
+    [
+      [runs[0].execution, null, null],
+      [runs[1].execution, runs[0].execution, null],
+      // ADR-0033 provenance names the execution that wrote the input, for the step and for its retry alike.
+      [runs[2].execution, null, runs[1].execution],
+      [runs[3].execution, runs[2].execution, runs[1].execution],
+    ],
+  );
   assert.equal(result.details.outcomes[0].retry.attempts, 2);
+  assert.equal(result.details.outcomes[1].retry.attempts, 2);
+});
+
+test("a retry on the workspace-routed path asks nobody either", async () => {
+  // Review finding 4 (M1b): the routed path plans through its own approval call, which no other test reached.
+  const dir = await tempDir("replay-retry-workspace-");
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync(
+    "git",
+    ["-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "base"],
+    { cwd: dir },
+  );
+  const config = await tempDir("replay-retry-workspace-config-");
+  const registry = join(config, "registry.json");
+  await writeFile(registry, JSON.stringify({ version: 1, workspaces: { w1: { path: dir } } }));
+  const { call, launches, prompts, session, release } = await harness(
+    {
+      [ENV_GRANT]: `${GRANT},workspace:w1`,
+      [ENV_GATED]: "",
+      [ENV_WORKSPACE_REGISTRY]: registry,
+      [ENV_WORKSPACE_LEASE_DIR]: join(config, "leases"),
+    },
+    { answer: "allow-once" },
+  );
+  const pending = call("delegate", {
+    task: "hold-once routed",
+    tools: ["read", "grep"],
+    workspace: { workspace_id: "w1", access: "read" },
+  });
+  for (let i = 0; i < 500 && (await launches()).length === 0; i += 1) await new Promise((r) => setTimeout(r, 10));
+  session.gated = ["tool:grep"];
+  await release();
+  const result = await pending;
+  assert.equal(prompts.length, 0, "the retry asked nobody");
+  assert.equal((await launches()).length, 1);
+  assert.equal(result.details.cwd, dir, "the first attempt ran in the routed workspace");
+  assert.equal(result.details.retry, undefined);
+  assert.equal(result.details.reason, `${NO_FINAL}; automatic retry not started: tool:grep requires explicit approval`);
 });
 
 test("an idle timeout is retried with the time that remains; a wall-clock timeout leaves none", async () => {

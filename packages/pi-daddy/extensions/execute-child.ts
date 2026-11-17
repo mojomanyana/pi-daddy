@@ -71,6 +71,12 @@ export interface DelegationOutcome {
     executionId: string;
     first: DelegationOutcome;
   };
+  /**
+   * A failed replay-safe attempt under a stable operation that passed every other retry guard (decision of
+   * 2026-11-17, "Principal retries once"). Daddy did not retry it; the operation's owner may, once, under a new
+   * operation. Never set on a success, a retry, a reused reference or when any guard refused.
+   */
+  replayable?: true;
 }
 /**
  * The upstream controller's token, honoured ONLY when the child otherwise exited cleanly non-zero.

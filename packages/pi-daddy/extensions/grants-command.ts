@@ -16,7 +16,7 @@ import type { childExecutionLimits } from "./dashboard-settings.ts";
 import { renderExecutionControls } from "./execution-controls.ts";
 import { shouldSeekApproval } from "../src/kernel/approval.ts";
 import { ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
-import { replayRetrySwitch, replaySafe } from "../src/kernel/replay-safe.ts";
+import { replayRetryNotice, replayRetrySwitch, replaySafe } from "../src/kernel/replay-safe.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import type { ExecutorChoice } from "../src/executors/executor.ts";
 import type { Catalog } from "../src/kernel/catalog.ts";
@@ -531,7 +531,7 @@ export const grantsCommand = {
       `  grant source ${ctx.grants.grantSource ?? "unobserved"}; store directory ${ctx.grants.storeCwd ?? cwd}`,
     );
     const shown = [...definitions].slice(0, PREVIEW_LIMIT);
-    const retry = replayRetrySwitch(process.env[ENV_REPLAY_RETRY]).enabled;
+    let replayShown = false;
     for (const [name] of shown) {
       const { plan, approval } = await previewDelegation(name);
       const runtime = runtimeFor(name);
@@ -555,9 +555,9 @@ export const grantsCommand = {
       const reason = awaitingAuto
         ? `${plan.result!.gatedBlocked.join(", ")}: Auto supplies approval at dispatch; live state is rechecked`
         : plan.reason;
-      // 2026-11-17: the planned tools only read, so one transient failure is retried automatically.
-      const replay =
-        plan.ok && replaySafe(plan.effective) ? `  replay-safe${retry ? "" : ` (retry off: ${ENV_REPLAY_RETRY})`}` : "";
+      // 2026-11-17: the planned tools only read; the line after the list says when this session does not retry.
+      const replay = plan.ok && replaySafe(plan.effective) ? "  replay-safe" : "";
+      replayShown ||= replay !== "";
       lines.push(
         `    ${plan.ok ? "allow" : awaitingAuto ? "AUTO" : "BLOCK"}  ${name}  [${runtimeText}]` +
           (plan.ok ? `  ${plan.effective.join(", ")}${because}${replay}` : ` — ${reason}`),
@@ -571,6 +571,11 @@ export const grantsCommand = {
     if (definitions.size > shown.length) {
       lines.push(`    … and ${definitions.size - shown.length} more not shown (first ${PREVIEW_LIMIT} only)`);
     }
+    // The same notice as the startup summary, from the same facts the retry decision reads.
+    if (replayShown)
+      lines.push(
+        `  replay-safe: ${replayRetryNotice(replayRetrySwitch(process.env[ENV_REPLAY_RETRY]).enabled, executor.kind)}`,
+      );
     ctx.ui.notify(lines.join("\n"), "info");
   },
 };

@@ -614,8 +614,9 @@ export async function runOneDelegation(
     };
     let result = await runOneDelegationImplementation(...args);
     // 2026-11-17: one automatic retry of a replay-safe child, never under a stable operation (its admission names
-    // exactly one execution). The retry is a new occurrence planned through this same path, with nobody asked,
-    // the first attempt's runtime and deadline, and none of the approvals the first attempt spent.
+    // exactly one execution; an eligible failure there is marked `replayable` for the operation's owner instead).
+    // The retry is a new occurrence planned through this same path, with nobody asked, the first attempt's
+    // runtime and deadline, and none of the approvals the first attempt spent.
     const operation = Boolean(claim);
     result = await replayIfSafe(
       result,
@@ -647,6 +648,8 @@ export async function runOneDelegation(
         result.control = "failed";
         result.reason = [result.reason, `operation status update failed: ${String(error)}`].filter(Boolean).join("; ");
         result.operation = { ...claim.operation, state: "uncertain", reused: false };
+        // A failed control step refuses a retry, so it refuses the mark a retry would be taken on too.
+        delete result.replayable;
       }
     }
     return bindOutcome(result);

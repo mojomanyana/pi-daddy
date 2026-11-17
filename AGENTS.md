@@ -208,35 +208,58 @@ mode; a shell, write or edit tool, `parallel`, `delegate`, any extension tool (t
 included), `agent:`, `skill:`, `workspace:` or a wildcard makes it unsafe, and an undeclared or pattern ceiling is
 never safe. `delegate_describe` (`replaySafe`), the `/grants` allow lines and the startup summary show the mark.
 `runOneDelegation` runs a failed replay-safe child once more, in the same tool call, only when
-`replayRetryDecision` finds every guard true: the switch is on; the first attempt exited without a final (non-zero
-or by signal), failed to launch for want of resources (EAGAIN, EMFILE, ENFILE or ENOMEM), timed out, or ended
-in a failed model request (Pi's JSON mode then exits 0, so the captured final carries `providerError`); the parent's
-signal did not stop it, it was launched and not cancelled, and no critical-assurance veto came back; its cleanup settled
-or no worker started, no control step failed and its observation is complete; no gate answered for it (prompt,
-store, Auto or a chain's upfront dialog); it ran on the process executor; no stable operation was claimed; and at
-least one idle bound remains before its wall-clock deadline. The retry is a new occurrence (execution id, process,
+`replayRetryDecision` finds every guard true: the switch is on; the first attempt failed without answering: it
+exited without a final (non-zero or by signal; a process killed from outside the tool call, by a person's `kill` or
+the OOM killer, looks exactly like a crash and is retried), failed to launch for want of resources (EAGAIN, EMFILE,
+ENFILE or ENOMEM), timed out, or ended in a failed model request (Pi's JSON mode then exits 0, so the captured final
+carries `providerError`; any `stopReason: "error"` counts, including authentication and context-length errors, so
+"transient" is not claimed); the parent's signal did not stop it (checked again after the retry's capacity is
+reserved, immediately before it starts), it was launched and not cancelled, and no critical-assurance veto came
+back; its cleanup settled or no worker started, no control step failed and its observation is complete; no gate
+answered for it (prompt, store, Auto or a chain's upfront dialog); it ran on the process executor; at least one idle
+bound remains before its wall-clock deadline; and no stable operation was claimed (checked last; see below). The retry is a new occurrence (execution id, process,
 session and capacity reservation; same logical position, request and model/thinking pair), planned through the
 same path with nobody asked and bounded by the first attempt's deadline; its capability decision carries the new
 optional ledger field `retryOf`. Its outcome is returned as is and never judged again, so there is no third
 attempt; `retry` keeps the first attempt complete, and the model summary gets `retry: {attempts, firstFailure}`
 with a fixed phrase. `delegate_all` applies this per child and `delegate_chain` per step before it decides to
-continue; the next step's `taskFromExecutionId` names the retry. `PI_DADDY_REPLAY_RETRY=0` turns the retry off, any
-value other than `1` or `0` also does and is reported at startup, and the mark stays.
+continue; the next step's `taskFromExecutionId` names the retry, and a retried later step keeps that provenance.
+`PI_DADDY_REPLAY_RETRY=0` turns the retry (and the `replayable` mark below) off, any value other than `1` or `0`
+also does and is reported at startup, and the replay-safe mark stays. The startup summary and `/grants` say when
+this session does not retry: under the Herdr executor, with the switch off, and for an operation-bound delegation,
+which is marked for its coordinator instead.
+
+Operation-bound delegations (owner's decision, same day: "Principal retries once. Daddy marks the failure as
+replayable; Principal's workflow then calls its existing retry action once, which records a new attempt and keeps
+the failed one."). Daddy still never retries under a stable operation. When every other guard holds for an attempt
+that carries `operation_id`, `replayRetryDecision` refuses with `stable-operation` and the cause, and the outcome is
+returned unchanged except for `replayable: true`: in the result details, in the complete (version 1) evidence and in
+the model's version 2 summary, at the same path. It is never set when any other guard refuses (including the
+deadline guard, so a wall-clock timeout is not marked), when recording the operation's status failed (a failed
+control step), on a success, a retry or a reused reference. The operation settles exactly as before (settled, or
+not-started when nothing launched), which is what Principal's `retry` accepts; its coordinator rule retries such a
+phase once under a new operation ID, through the ordinary delegation path, and stops and asks after that. The Herdr
+executor stays excluded: no retry and no mark.
 
 Beyond the owner's list, and why. A stable operation is not retried: its admission record is immutable and names one
 execution, and Principal's `complete` requires the settled cleanup to name that execution, so a retry under the
 claim would attribute another execution's final to it, and re-claiming returns the failed operation as a reused
-reference that `delegate` does not report as an error. A delegation with `operation_id` therefore behaves exactly
-as before, and Principal workflow phases, which always pass one, get no automatic retry; extending it needs attempt
-linkage in the operation artifact contract and in Principal first. A Herdr pane is excluded because a person can
-stop the child there and Daddy cannot tell that from a crash. A spent approval is not re-spent: a `once` answer
+reference that `delegate` does not report as an error. A delegation with `operation_id` therefore runs and settles
+exactly as before; its owner retries it (above). A Herdr pane is excluded because a person can stop the child there
+and Daddy cannot tell that from a crash; a process child has no per-child stop control, so the only person's stop
+it can see is Esc on the parent tool call. Not only definitions: an ad hoc `delegate({tools: [...]})` whose effective
+tools only read is replay-safe too, a deliberate widening of the owner's "definitions" (the plan, not its source,
+decides what the child can change). A spent approval is not re-spent: a `once` answer
 covers one spawn (R-29) and a retry asks nobody. The only deadline Daddy holds for a delegation is the child's
 wall-clock deadline, so a wall-clock timeout leaves practically no time and is not retried; no episode cost ceiling
 is consulted because none is live (retired 2026-10-07), and fan-out room is checked by reserving capacity like any
 child. Principal's "stops dependent work" stays true: a retried success is a success and a second failure is
-returned as a failure. Rejected: reusing the first execution id (the runtime journal, capacity and receipts are per
-occurrence), retrying under the operation, more than one retry, backoff or a configurable count. Tests use inert
-`pi` scripts; no model was run, so how a coordinating model reads a retried result is not established.
+returned as a failure. Known gap: inside `delegate_all`, a retry whose executor throws after its child started is
+reported like any child that threw, without either attempt's receipt in that outcome; the error names the first
+failure, and both capability decisions stay in the ledger.
+Rejected: reusing the first execution id (the runtime journal, capacity and receipts are per occurrence), retrying
+under the operation, more than one retry, backoff or a configurable count. Tests use inert `pi` scripts; no model
+was run, so how a coordinating model reads a retried or replayable result is not established.
 
 ### 2026-11-17 — Child model usage is included in the delegating Pi session's totals
 

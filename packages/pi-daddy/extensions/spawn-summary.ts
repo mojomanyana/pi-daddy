@@ -25,8 +25,7 @@
  */
 
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
-import { ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
-import { replaySafe } from "../src/kernel/replay-safe.ts";
+import { replayRetryNotice, replaySafe } from "../src/kernel/replay-safe.ts";
 import type { GatedPlan } from "./run-delegation.ts";
 
 /** Why a definition is not spawnable right now; display never changes the planner's refusal. */
@@ -56,8 +55,8 @@ export interface SpawnableSummary {
   awaitingTools?: string[];
   /** Spawnable definitions whose allowlisted tools this session runs for the child (2026-11-17). */
   parentRun?: { name: string; tools: string[] }[];
-  /** Spawnable definitions whose planned tools only read; `retry` is false when the operator switched it off. */
-  replaySafe?: { names: string[]; retry: boolean };
+  /** Spawnable definitions whose planned tools only read, and when this session does not retry them. */
+  replaySafe?: { names: string[]; notice: string };
   /**
    * Set when NOTHING can be spawned for a reason about the SESSION rather than about any definition — no
    * `tool:delegate`, or a depth bound that forbids spawning. Per-definition work is skipped entirely.
@@ -92,6 +91,8 @@ export interface SessionFacts {
   toolsObserved?: boolean;
   /** The automatic retry of replay-safe children is on (`PI_DADDY_REPLAY_RETRY`); omitted means on. */
   replayRetry?: boolean;
+  /** Where children run: Herdr panes are never retried (2026-11-17). Omitted means the process executor. */
+  executor?: "process" | "herdr";
 }
 
 /**
@@ -195,7 +196,14 @@ export async function summariseSpawnable(
     withheld,
     ...(awaitingTools.length ? { awaitingTools } : {}),
     ...(parentRun.length ? { parentRun } : {}),
-    ...(replay.length ? { replaySafe: { names: replay, retry: session.replayRetry !== false } } : {}),
+    ...(replay.length
+      ? {
+          replaySafe: {
+            names: replay,
+            notice: replayRetryNotice(session.replayRetry !== false, session.executor ?? "process"),
+          },
+        }
+      : {}),
     notChecked: Math.max(0, names.length - PREVIEW_LIMIT),
   };
 }
@@ -260,12 +268,9 @@ export function renderSpawnableSummary(summary: SpawnableSummary, total: number)
     const runs = summary.parentRun.map((run) => `${safeName(run.name)} (${list(run.tools.map(safeName))})`);
     lines.push(`  run by this session for the child: ${list(runs)}`);
   }
-  // 2026-11-17: whose transient failures are retried once without asking, or that would be if the switch were on.
+  // 2026-11-17: whose failures without an answer are retried once without asking, and when this session does not.
   if (summary.replaySafe) {
-    const how = summary.replaySafe.retry
-      ? "retried once automatically after a transient failure"
-      : `automatic retry off by ${ENV_REPLAY_RETRY}`;
-    lines.push(`  replay-safe (${how}): ${list(summary.replaySafe.names.map(safeName))}`);
+    lines.push(`  replay-safe (${summary.replaySafe.notice}): ${list(summary.replaySafe.names.map(safeName))}`);
   }
   if (summary.awaitingTools?.length) {
     lines.push(`  checking available tools: ${list(summary.awaitingTools.map(safeName))} — updates when work starts`);

@@ -5,7 +5,9 @@
  * Production changes that break this file: widening `REPLAY_SAFE_TOOLS` or the context exception, treating an
  * undeclared or pattern ceiling as safe, dropping or reordering any guard in `replayRetryDecision`, classifying a
  * cancellation, an answered child or a non-transient spawn fault as retryable, retrying without a fresh execution
- * identity or capacity reservation, or losing the first attempt when the retry cannot start.
+ * identity or capacity reservation, or losing the first attempt when the retry cannot start; marking a stable
+ * operation's failure replayable when any other guard refuses, or not marking it when none does; starting a retry
+ * after the parent was cancelled during capacity reconciliation.
  */
 import assert from "node:assert/strict";
 import { after, afterEach, test } from "node:test";
@@ -186,7 +188,6 @@ test("every guard holds: retry once, naming the first failure", () => {
 const guards: Array<[string, string, Partial<ReplayRetryFacts>]> = [
   ["disabled", "the kill switch is off", { enabled: false }],
   ["not-replay-safe", "the plan holds a shell", { capabilities: ["tool:read", "tool:bash"] }],
-  ["stable-operation", "a stable operation was claimed", { operation: true }],
   ["executor", "the child ran in a Herdr pane", { executor: "herdr" }],
   ["cancelled", "the parent tool call was aborted", { parentAborted: true }],
   ["cancelled", "the child was cancelled", { attempt: { ...crashed, aborted: true } }],
@@ -205,6 +206,24 @@ const guards: Array<[string, string, Partial<ReplayRetryFacts>]> = [
 for (const [because, label, flip] of guards)
   test(`no retry (${because}) when ${label}`, () => {
     assert.deepEqual(replayRetryDecision({ ...eligible, ...flip }), { retry: false, because });
+  });
+
+// 2026-11-17, "Principal retries once": under a stable operation Daddy never retries; an attempt every other guard
+// accepts is marked replayable for the operation's owner, and one any other guard refuses is not marked.
+test("under a stable operation an otherwise eligible failure is marked replayable and not retried", () => {
+  assert.deepEqual(replayRetryDecision({ ...eligible, operation: true }), {
+    retry: false,
+    because: "stable-operation",
+    replayable: "process exited without a final",
+  });
+  assert.deepEqual(
+    replayRetryDecision({ ...eligible, operation: true, attempt: { ...crashed, exitCode: null, timedOut: true } }),
+    { retry: false, because: "stable-operation", replayable: "timed out" },
+  );
+});
+for (const [because, label, flip] of guards)
+  test(`no replayable mark under a stable operation (${because}) when ${label}`, () => {
+    assert.deepEqual(replayRetryDecision({ ...eligible, operation: true, ...flip }), { retry: false, because });
   });
 
 // --- composition: `replayIfSafe` with a fake owner and a fake rerun --------------------------------------------
@@ -405,16 +424,128 @@ test("composition refusals: switch, operation, Herdr, cancellation, cleanup, app
     const first = await run();
     assert.equal(first.retry, undefined, name);
     assert.doesNotMatch(first.reason ?? "", /automatic retry/, name);
+    assert.equal(first.replayable, name === "operation" ? true : undefined, name);
   }
   setEnv(ENV_REPLAY_RETRY, "0");
   assert.equal((await attempt(failedFirst())).retry, undefined, "switched off");
+  assert.equal((await attempt(failedFirst(), { operation: true })).replayable, undefined, "switched off");
   setEnv(ENV_REPLAY_RETRY, "yes");
   assert.equal((await attempt(failedFirst())).retry, undefined, "malformed is off");
+  assert.equal((await attempt(failedFirst(), { operation: true })).replayable, undefined, "malformed is off");
+});
+
+test("under a stable operation an eligible failure is returned marked replayable, nothing reserved or run", async () => {
+  setEnv(ENV_REPLAY_RETRY, undefined);
+  setEnv(ENV_CHILD_IDLE_TIMEOUT, "1");
+  const session = owner(1);
+  const first = failedFirst();
+  let ran = false;
+  const result = await replayIfSafe(
+    first,
+    { session, ids, budget: undefined, signal: undefined, operation: true, attempt: observed() },
+    async () => ((ran = true), second()),
+  );
+  assert.equal(ran, false);
+  assert.deepEqual(result, { ...first, replayable: true });
+  assert.equal(first.replayable, undefined, "the first attempt's own record is not rewritten");
+  assert.equal(session.capacity.available, 1, "no capacity was taken");
+  // Every other guard still refuses the mark: one per guard the composition supplies.
+  const aborted = new AbortController();
+  aborted.abort();
+  const unmarked: Array<[string, Promise<DelegationOutcome>]> = [
+    [
+      "herdr",
+      replayIfSafe(
+        first,
+        { session: owner(1, "herdr"), ids, budget: undefined, signal: undefined, operation: true, attempt: observed() },
+        async () => second(),
+      ),
+    ],
+    [
+      "parent abort",
+      replayIfSafe(
+        first,
+        { session, ids, budget: undefined, signal: aborted.signal, operation: true, attempt: observed() },
+        async () => second(),
+      ),
+    ],
+    [
+      "approval spent",
+      replayIfSafe(
+        first,
+        {
+          session,
+          ids,
+          budget: undefined,
+          signal: undefined,
+          operation: true,
+          attempt: { approvalSpent: true, deadlineAt: Date.now() + 60_000 },
+        },
+        async () => second(),
+      ),
+    ],
+    [
+      "deadline",
+      replayIfSafe(
+        first,
+        { session, ids, budget: undefined, signal: undefined, operation: true, attempt: observed(500) },
+        async () => second(),
+      ),
+    ],
+    [
+      "unsettled cleanup",
+      replayIfSafe(
+        failedFirst({ cleanup: { state: "unknown", reason: "lost" } }),
+        { session, ids, budget: undefined, signal: undefined, operation: true, attempt: observed() },
+        async () => second(),
+      ),
+    ],
+    [
+      "not replay-safe",
+      replayIfSafe(
+        failedFirst({ granted: ["tool:read", "tool:bash"] }),
+        { session, ids, budget: undefined, signal: undefined, operation: true, attempt: observed() },
+        async () => second(),
+      ),
+    ],
+    [
+      "answered",
+      replayIfSafe(
+        second(),
+        { session, ids, budget: undefined, signal: undefined, operation: true, attempt: observed() },
+        async () => second(),
+      ),
+    ],
+  ];
+  for (const [name, pending] of unmarked) assert.equal((await pending).replayable, undefined, name);
+});
+
+test("a parent cancelled while capacity is reconciled starts no retry and frees the reservation", async () => {
+  setEnv(ENV_REPLAY_RETRY, undefined);
+  setEnv(ENV_CHILD_IDLE_TIMEOUT, "1");
+  const session = owner(1);
+  const controller = new AbortController();
+  let ran = false;
+  const pending = replayIfSafe(
+    failedFirst(),
+    { session, ids, budget: undefined, signal: controller.signal, operation: false, attempt: observed() },
+    async () => ((ran = true), second()),
+  );
+  // The decision has been taken (it is synchronous); the cancellation lands at the first await after it.
+  controller.abort();
+  const result = await pending;
+  assert.equal(ran, false);
+  assert.equal(result.retry, undefined);
+  assert.equal(
+    result.reason,
+    "the sub-agent exited with code 1; automatic retry not started: the parent tool call was cancelled",
+  );
+  assert.equal(session.capacity.available, 1, "the retry's reservation was released");
 });
 
 // --- `/grants`: the planner preview names each allowed definition whose planned tools only read ----------------
 
-test("/grants marks an allowed definition replay-safe from its planned tools, and says when retry is off", async () => {
+test("/grants marks an allowed definition replay-safe and says when this session does not retry it", async () => {
   const session = createGrantsSession(undefined);
   session.cwd = await tempDir("replay-safe-grants-");
   session.ownGrant = ["agent:look", "agent:fix", "tool:read", "tool:grep", "tool:bash"];
@@ -431,7 +562,7 @@ test("/grants marks an allowed definition replay-safe from its planned tools, an
     { capability: "agent:fix", kind: "agentType" },
   ]);
   session.catalogReady = Promise.resolve(session.catalog);
-  const render = async () => {
+  const render = async (executor: { kind: "process" | "herdr" } = session.executor) => {
     let output = "";
     await grantsCommand.handler("", {
       ui: { notify: (text: string) => void (output = text) },
@@ -439,7 +570,7 @@ test("/grants marks an allowed definition replay-safe from its planned tools, an
         cwd: session.cwd,
         governed: true,
         ownGrant: session.ownGrant,
-        executor: session.executor,
+        executor,
         observed: true,
         depth: session.depth,
         maxDepth: session.maxDepth,
@@ -452,16 +583,28 @@ test("/grants marks an allowed definition replay-safe from its planned tools, an
         runtimeFor: () => ({ modelSource: "default", thinkingSource: "default" }),
       },
     } as never);
-    const row = (name: string) => output.split("\n").find((line) => line.startsWith(`    allow  ${name}  `));
-    return { look: row("look"), fix: row("fix") };
+    const lines = output.split("\n");
+    const row = (name: string) => lines.find((line) => line.startsWith(`    allow  ${name}  `));
+    return { look: row("look"), fix: row("fix"), notice: lines.filter((line) => line.startsWith("  replay-safe: ")) };
   };
   setEnv(ENV_REPLAY_RETRY, undefined);
   let rows = await render();
   assert.match(rows.look ?? "", /\]  tool:grep, tool:read  replay-safe$/);
   assert.match(rows.fix ?? "", /\]  tool:bash, tool:read$/);
+  assert.deepEqual(rows.notice, [
+    "  replay-safe: retried once automatically if it fails without answering; with operation_id, marked replayable " +
+      "for the coordinator to retry instead",
+  ]);
+  // R-28's shape, from review: the enforcer never retries under Herdr, so the screen must not say it does.
+  rows = await render({ kind: "herdr" });
+  assert.match(rows.look ?? "", /\]  tool:grep, tool:read  replay-safe$/);
+  assert.deepEqual(rows.notice, ["  replay-safe: not retried or marked replayable under the Herdr executor"]);
   setEnv(ENV_REPLAY_RETRY, "0");
   rows = await render();
-  assert.match(rows.look ?? "", /  replay-safe \(retry off: PI_DADDY_REPLAY_RETRY\)$/);
+  assert.match(rows.look ?? "", /\]  tool:grep, tool:read  replay-safe$/);
+  assert.deepEqual(rows.notice, [
+    "  replay-safe: not retried or marked replayable: switched off by PI_DADDY_REPLAY_RETRY",
+  ]);
 });
 
 // --- evidence: complete (version 1) keeps both attempts; the model's summary (version 2) says only that it happened --
@@ -492,6 +635,23 @@ test("the model summary says a retry happened in one fixed phrase, at its comple
     assert.equal(value, source, path);
   };
   walk(summary.outcomes[0].retry, complete.outcomes[0].retry, "retry");
+});
+
+test("a replayable failure carries one stable field at the same path in details, complete evidence and summary", () => {
+  const marked: DelegationOutcome = { ...failedFirst(), replayable: true };
+  const complete = executionEvidence("delegate_all", [marked, failedFirst(), second()], 3);
+  assert.deepEqual(
+    complete.outcomes.map((outcome) => ("replayable" in outcome ? outcome.replayable : "absent")),
+    [true, "absent", "absent"],
+  );
+  const summary = executionEvidenceSummary(complete);
+  assert.deepEqual(
+    summary.outcomes.map((outcome) => ("replayable" in outcome ? outcome.replayable : "absent")),
+    [true, "absent", "absent"],
+  );
+  // The mark adds exactly `"replayable":true` to the compact summary of an otherwise identical failure.
+  const plain = JSON.stringify(summary.outcomes[1]);
+  assert.equal(JSON.stringify(summary.outcomes[0]).length - plain.length, ',"replayable":true'.length);
 });
 
 // --- ledger: `retryOf` names another execution, by the builder and by the closed reader ---------------------------

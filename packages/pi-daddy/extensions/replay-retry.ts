@@ -40,7 +40,9 @@ function noted(outcome: DelegationOutcome, note: string): DelegationOutcome {
 /**
  * Return `first` unchanged unless every guard holds; otherwise the retry's outcome carrying `first`. A retry that
  * could not start leaves `first` standing with a note. One whose child started and then threw rejects with the
- * first attempt named, as an ordinary delegation's executor failure rejects.
+ * first attempt named, as an ordinary delegation's executor failure rejects. Under a stable operation an attempt
+ * that passes every other guard is not retried but returned marked `replayable` (owner decision of 2026-11-17,
+ * "Principal retries once"): the operation's owner retries it under a new operation.
  */
 export async function replayIfSafe(
   first: DelegationOutcome,
@@ -67,7 +69,7 @@ export async function replayIfSafe(
     remainingMs: attempt.deadlineAt === undefined ? Number.NaN : attempt.deadlineAt - Date.now(),
     idleMs: childExecutionLimits(session).idleMs,
   });
-  if (!decision.retry) return first;
+  if (!decision.retry) return "replayable" in decision ? { ...first, replayable: true } : first;
 
   const ids = { ...input.ids, executionId: newExecutionId() };
   let reservation: CapacityReservation;
@@ -77,6 +79,11 @@ export async function replayIfSafe(
   } catch (error) {
     // No room in the fan-out bound, or capacity could not be read: nothing started, so the first attempt stands.
     return noted(first, String(error instanceof Error ? error.message : error));
+  }
+  // The parent may have been cancelled while capacity was reconciled: start nothing, and free what was reserved.
+  if (input.signal?.aborted) {
+    reservation.finalize({ state: "not-started", reason: "parent tool call cancelled before the automatic retry" });
+    return noted(first, "the parent tool call was cancelled");
   }
   let entered = false;
   let second: DelegationOutcome;

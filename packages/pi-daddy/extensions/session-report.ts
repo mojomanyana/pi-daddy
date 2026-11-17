@@ -344,6 +344,7 @@ function selectedDefinitionsSummary(session: GrantsSession): Promise<string | nu
       maxDepth: session.maxDepth,
       toolsObserved: session.observed,
       replayRetry: replayRetrySwitch(process.env[ENV_REPLAY_RETRY]).enabled,
+      executor: session.executor.kind,
     },
   ).then((summary) => renderSpawnableSummary(summary, session.definitions.size));
 }
