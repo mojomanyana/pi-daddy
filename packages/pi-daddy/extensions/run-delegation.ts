@@ -38,6 +38,7 @@ import type { CorrelationMetadata } from "../src/kernel/correlation.ts";
 import { preflightModel, runtimePairUnavailable, type ModelCatalogue } from "../src/kernel/model-preflight.ts";
 import { GovernanceRefusal, refusal as structuredRefusal } from "../src/kernel/refusals.ts";
 import { executePlannedChild, type DelegationOutcome } from "./execute-child.ts";
+import type { ParentToolHost } from "./parent-tool-host.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
@@ -73,7 +74,7 @@ export interface ChildSpec {
  * bridged the gap, which is the same "a value that was whatever happened to be in scope" shape the module
  * header lists four defects for.
  */
-export interface DelegationToolContext extends ApprovalUIContext {
+export interface DelegationToolContext extends ApprovalUIContext, ParentToolHost {
   cwd: string;
   model?: { provider: string; id: string };
   modelRegistry: ModelCatalogue;
@@ -407,7 +408,8 @@ async function runOneDelegationImplementation(
     );
     executorRefusal ||= nativeRefusal;
 
-    const planContext = extra;
+    // Parent-run tools are decided by THIS delegation's live tool context: it is what will run them.
+    const planContext = { ...extra, ...session.parentToolContext?.(ctx) };
     let preparedWorkspace: PreparedWorkspace | undefined;
     let approvalOutcome: ApprovalOutcome | undefined;
     let plan: ReturnType<typeof planDelegation>;
@@ -536,6 +538,7 @@ async function runOneDelegationImplementation(
       parentExecutionId: ids.parentExecutionId,
       toolCallId: options.toolCallId,
       cwd: ctx.cwd,
+      parentToolHost: ctx,
       preparedWorkspace,
       resolvedRuntime,
       signal,

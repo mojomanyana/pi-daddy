@@ -247,6 +247,13 @@ export interface GrantsSession extends NativeSessionHost {
   observedTools: string[] | null;
   /** Re-read public origins at admission; a parent's callable name does not prove child delivery. */
   childToolSources?: () => readonly import("../src/kernel/child-tools.ts").ChildToolSource[];
+  /**
+   * Parent-run tools this session can offer a child (2026-11-17). Without a host it previews Pi's inventory;
+   * dispatch passes the live tool context of the delegation that waits on the child. Bound by `grants.ts`.
+   */
+  parentToolContext?: (
+    host?: import("./parent-tool-host.ts").ParentToolHost,
+  ) => import("./parent-tool-host.ts").ParentToolContext;
   /** ADR-0016: `SKILL.md` definitions, keyed by name. The format this package spawns from now. */
   ensureDefinitions?: () => Promise<void>;
   definitions: Map<string, SkillDefinition>;
@@ -691,6 +698,8 @@ export function createGrantsSession(
         extensionPath: session.extensionPath,
         observerExtensionPath: session.observerExtensionPath,
         childToolSources: session.childToolSources?.(),
+        // A preview from the inventory; a dispatch overrides it with the live tool context's answer.
+        ...session.parentToolContext?.(),
         childEnv: activityChildEnv(session.activity),
         // ADR-0042: the pin this session holds, handed to the kernel so a delegated child inherits a narrowed
         // one through the same builder `publishChildEnv` uses. Read here rather than in the kernel so there is

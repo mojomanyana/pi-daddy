@@ -139,7 +139,7 @@ export async function claimDelegationOperation(
   if (signal?.aborted) throw Error("Operation request aborted");
   await session.ensureDefinitions?.();
   assertDefinitionIdentity(session, spec);
-  const context = await session.delegationContext();
+  const context = { ...(await session.delegationContext()), ...session.parentToolContext?.(ctx) };
   const model = spec.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
   const preview = planDelegation(
     { ...spec, model, boundWorkspaceId: spec.workspace?.workspace_id },

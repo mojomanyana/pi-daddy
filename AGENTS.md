@@ -226,6 +226,30 @@ details"). Failure and uncertainty states stay distinguishable without prose, te
 produce. Ledger, details, capture manifest and cleanup behaviour are unchanged; no model was run, so model behaviour
 is not established.
 
+### 2026-11-17 — Allowlisted parent-run tools for governed children
+
+Owner's decision: a read-only allowlist, starting with `scout_research`; the child needs the capability in its
+grant, the parent runs the call under its existing permission prompts, and the result returns as untrusted
+evidence. **This is a new path for authority:** a child can cause a parent-only tool to run in the root session.
+Its bounds, each forced by a test: the allowlist is the constant `PARENT_PROXIED_TOOLS` in
+`src/kernel/parent-tools.ts` (today `scout_research` only), widened by a dated decision here and never by
+configuration, pattern, grant or observation. The planner admits a tool only for a root session whose definition
+ceiling and grant name `tool:<name>` exactly, which holds the tool, sees it callable from another tool, and whose
+delegation tool context offers `executeTool`; otherwise the 2026-11-13 refusal stands unchanged in code and words.
+The existing gate applies at delegation. The transport is the existing owner socket (`auto-mode-policy.ts`); a
+request must present the execution id and per-execution key of a running child granted that tool, and the root
+re-applies the same predicate and its own grant before calling `ctx.executeTool`, so its hooks and permission
+prompts decide and a block reaches the child as an error. Arguments are bounded at 64 KiB, results at 64 KiB of
+text; `details` and non-text parts never cross; the text is fenced as untrusted evidence. One call per child at a
+time; settlement, exit or disconnection cancels it; a child cannot pass the tool to its own child.
+`PI_DADDY_PARENT_TOOLS=0` restores the refusal, and any value other than `1` or `0` is also off and reported.
+The tool runs with the root's model, credentials and settings, not the child's. Bookie recall stays off the
+list: Bookie authorizes disclosure for `ctx.model` of the session running its tool, which here is the root's,
+while the text would reach the child's model, chosen per delegation and resolved in the child process (possibly
+in another cwd with other provider settings). Nothing in Daddy can prove at call time that the two are the same
+human-approved destination. Adding Bookie needs Bookie to accept and verify the consuming destination itself, and
+Daddy to pin and attest the child's resolved destination for that check; until both exist, do not add it.
+
 ### 2026-11-16 — Tool inventory observations precede settled availability claims
 
 Before the first native callable-tool observation, an unknown extension capability in the startup summary
@@ -234,6 +258,8 @@ settled summary; `/new` must observe again. This is presentation only: the real 
 unknown, hidden, denied or gated capabilities. Parent availability does not qualify a child provider.
 Name unsupported child delivery explicitly and keep such work in the parent session. Synthetic terminal
 fixtures use the shipped renderer but do not establish human usability or live producer health.
+2026-11-17: an allowlisted parent-run tool is reported as run by the parent for the child, not as unsupported
+(decision above); every other unsupported tool keeps this wording.
 
 ### 2026-11-16 — Correctable delegation inputs and honest turn completion
 
@@ -270,6 +296,8 @@ authorized request can ask for approval. External extension, MCP and SDK-only to
 being silently dropped by the child. Do not load all parent extensions, infer a working remote provider,
 or weaken the tool allowlist to repair this refusal. Independent fan-out siblings remain independent;
 the chain's existing upfront planning stops all steps when one cannot receive its tools.
+2026-11-17: narrowed by the parent-run tools decision — a tool on that fixed allowlist is delivered by the root
+running it, not by loading a provider in the child; everything else here is unchanged.
 
 Selected definitions expose frozen source locations in `selectedResources`, including only the validated
 Principal package root where applicable. The locator is bound into the definition identity and appended

@@ -82,6 +82,14 @@ export interface DelegationContext {
   observerExtensionPath?: string;
   /** Public tool origins observed in the current host; names alone do not establish child delivery. */
   childToolSources?: readonly import("./child-tools.ts").ChildToolSource[];
+  /** Daddy's child-side entrypoint for parent-run tools; loaded only by a plan that delivers one. */
+  parentToolExtensionPath?: string;
+  /**
+   * Allowlisted parent-only tools this session can run for a child right now, as the composition layer observed
+   * them. Absent on a host that cannot run one tool from another, below the root, and when the operator switched
+   * the path off; `parentProxiedTools` then admits nothing and the existing child-delivery refusal stands.
+   */
+  parentTools?: readonly import("./parent-tools.ts").ParentToolDescriptor[];
   /**
    * Extra per-child environment supplied by the composition layer (today: the activity timeline's local
    * observation identity). Evaluated once the child's execution id is known. The kernel refuses any key in
@@ -212,6 +220,13 @@ export interface Delegation {
     droppedTurns?: number;
     rule?: string;
   };
+  /**
+   * Parent-only tools this child reaches through the root session (decision of 2026-11-17), by name.
+   *
+   * Carried on the plan so the executor registers exactly these for the execution and nothing else can be asked
+   * for. Absent means the child has no parent-run tool and its arguments and environment are what they always were.
+   */
+  parentTools?: string[];
   /** Ledger id for this child's readable logical position, if the caller assigned one (F8). */
   childId?: string;
   /** Unique identity for this occurrence, if the caller assigned one. */

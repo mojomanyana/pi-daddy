@@ -43,6 +43,7 @@ import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
 import { openPaneCount, reapOpenPanesAsync } from "../src/executors/pane-reaper.ts";
 import { ENV_GRANT, deriveOwnGrant, observeToolNames } from "../src/kernel/propagation.ts";
 import { snapshotChildTools } from "../src/kernel/child-tools.ts";
+import { bindParentTools } from "./parent-tool-host.ts";
 import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
 import { grantsCommand } from "./grants-command.ts";
@@ -91,6 +92,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   const observerExtensionPath = fileURLToPath(new URL("./activity-timeline.ts", import.meta.url));
   const session = trustedSession ?? createGrantsSession(extensionPath, undefined, observerExtensionPath);
   session.childToolSources = () => snapshotChildTools(pi.getAllTools());
+  bindParentTools(pi, session);
   bindEcosystemVersions(pi, session, fileURLToPath(new URL("../", import.meta.url)));
   session.currentThinking = typeof pi.getThinkingLevel === "function" ? () => pi.getThinkingLevel() : undefined;
   registerActivityTimeline(pi, session);

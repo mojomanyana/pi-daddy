@@ -476,12 +476,12 @@ replace a pin, then deliberately reload. There are no background registry checks
 Every variable is `PI_DADDY_*`. Operator-facing controls are grouped below; the environment overrides stored
 configuration where both exist.
 
-| Area                     | Variables                                                                                                                                                                |
-| :----------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Governance               | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
-| Child execution          | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`    |
-| Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT`           |
-| Activity                 | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT`                                                                                                                |
+| Area                     | Variables                                                                                                                                                                                      |
+| :----------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance               | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE`                       |
+| Child execution          | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS` |
+| Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT`                                 |
+| Activity                 | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT`                                                                                                                                      |
 
 `PI_DADDY_FANOUT` bounds active cooperating descendant sessions. Its default remains 8; literal 0 means exhausted,
 and malformed values refuse. A reservation includes the child and its disjoint descendant allowance, so concurrent
@@ -721,6 +721,27 @@ entrypoint. External extension, MCP and SDK-only tools currently refuse with `ch
 Keep that work in the parent or select a definition using supported child tools; permission alone cannot
 install a child provider. Ambient extensions stay disabled and `--tools` remains exact. A refused fan-out
 child does not prevent an independent valid sibling from running; a chain refuses before any step starts.
+
+One exception is a new path for authority, so its bounds are listed here. A tool on Daddy's fixed allowlist,
+currently only `scout_research`, can be run **by the root session for its direct child**. The child loads Daddy's
+`extensions/parent-tool-proxy.ts`, which registers a tool of the same name, description and argument schema;
+calling it asks the root, over the owner socket descendants already use, to run the real tool through Pi's
+`ctx.executeTool` inside the waiting `delegate`, `delegate_all` or `delegate_chain` call. The root's own hooks
+and permission prompts therefore decide each call, and Pi records it as a nested call of that delegation.
+Admission requires all of: a root session; a definition ceiling and grant naming `tool:scout_research` exactly
+(an `ext:` alias does not count); the root holding the tool and Pi reporting it callable from another tool; and
+the delegation's tool context offering `executeTool`. A gated capability is asked about at delegation, like any
+other. Each call is checked again in the root against the same conditions and against the execution id and a
+per-execution key of the running child it was granted to; an unknown, finished or different child is refused.
+Arguments are limited to 64 KiB of JSON and results to 64 KiB of text. Only text crosses, fenced as untrusted
+evidence; `details`, images and other parts do not. One call per child runs at a time, and a call is cancelled
+when its child settles, exits or disconnects; waiting on it counts as child activity, so the child's wall-clock
+limit is what bounds it. A child cannot pass such a tool to its own child. The tool runs with the root's model,
+credentials and settings, not the child's. `delegate_describe` lists such tools as `parentRunTools`, and the
+startup summary names the definitions that use them. `PI_DADDY_PARENT_TOOLS=0` turns the path off and restores
+the refusal above; any value other than `1` or `0` also turns it off and is reported at startup. Bookie recall
+tools are deliberately not on the allowlist: Bookie authorizes disclosure for the model of the session that runs
+its tool, which here would be the root's while the text reaches the child's model.
 
 ### Optional retained-result consumers
 
