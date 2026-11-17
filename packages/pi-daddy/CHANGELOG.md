@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Delegation no longer offers the model a definition whose `allowed-tools` include a tool without a supported child provider. Since 0.57.0 every delegation to such a definition was refused before any prompt, yet its name still appeared among the available agents. Refusals, permissions and `/grants` are unchanged; `/grants` continues to show the definition as blocked with the reason. Keep that work in the parent, or give the definition supported child tools to make it available again; a definition that declares `delegate_all`, `delegate_chain` or `delegate_describe` also needs `delegate`.
+- `delegate`, `delegate_all` and `delegate_chain` now give the model a short runtime evidence summary (`"version":2`) instead of each child's complete process receipt. A settled child costs about 170 bytes, or about 225 with a Principal operation ID, instead of about 1.9 KB (3.3 KB with an operation). The summary keeps ok, work, control, final, cleanup and incomplete observation state, any timeout, cancellation, spawn-failure or truncation flag, a bounded reason and the operation ID (or execution ID). Complete receipts are unchanged in the tool result details, the runtime settlement journal and stable-operation records, and public capture still records them as `runtimeEvidence`. If you parse the model-visible block, accept version 2 and its new introduction, and read receipts from those records instead.
 
 ## 0.59.1 — 2026-11-17
 

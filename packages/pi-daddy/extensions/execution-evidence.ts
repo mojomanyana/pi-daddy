@@ -1,6 +1,12 @@
 /** Model-visible projection of runtime facts. UI-only details never reach provider tool output.
  * Keep authored final text and raw result objects unchanged. This is process settlement evidence,
  * not task acceptance or a claim that a disposable workspace was removed.
+ *
+ * Two forms of one allowlist (owner decision 2026-11-17). Version 1 (`executionEvidence`) is the complete
+ * projection: final identity, process receipt, paths. Opt-in public capture records it as `runtimeEvidence`.
+ * The model receives version 2, a summary computed from version 1 alone: it cannot carry a field version 1 did
+ * not allow, and every value keeps its version 1 path. The complete receipt stays outside model context in the
+ * tool result details, the runtime settlement journal and, for a stable operation, its retained record.
  */
 import type { DelegationOutcome } from "./execute-child.ts";
 import type { CapturedWorkerIdentity } from "../src/kernel/captured-worker-contract.ts";
@@ -80,23 +86,102 @@ function outcomeEvidence(outcome: DelegationOutcome, index: number) {
   };
 }
 
+type CompleteEvidence = ReturnType<typeof executionEvidence>;
+type CompleteOutcome = CompleteEvidence["outcomes"][number];
+
+/** Prose is bounded. A failed result states its complete reason in the authored text; details keep every value. */
+const REASON_CHARACTERS = 160;
+function brief(text: string) {
+  const characters = Array.from(text);
+  if (characters.length <= REASON_CHARACTERS) return text;
+  return characters.slice(0, REASON_CHARACTERS - 1).join("") + "…";
+}
+/** A duplicate dispatch returns a reference, not a result: keep how the original ended, without its paths. */
+function operationSummary(value: NonNullable<CompleteOutcome["operation"]>) {
+  const runtime = value.reused ? value.runtime : undefined;
+  return {
+    operationId: value.operationId,
+    state: value.state,
+    ...(value.reused ? { reused: true } : {}),
+    ...(runtime
+      ? {
+          runtime: {
+            ...(runtime.work ? { work: runtime.work } : {}),
+            ...(runtime.control ? { control: runtime.control } : {}),
+            ...(runtime.final ? { final: { state: runtime.final.state } } : {}),
+            ...(runtime.cleanup ? { cleanup: { state: runtime.cleanup.state } } : {}),
+          },
+        }
+      : {}),
+  };
+}
+/** One citable identity per outcome: the operation ID when there is one, else the execution its cleanup names. */
+function cleanupSummary(value: CompleteOutcome["cleanup"], cite: boolean) {
+  if (!value) return null;
+  return {
+    state: value.state,
+    ...(cite && value.identity ? { identity: { executionId: value.identity.executionId } } : {}),
+    ...(value.reason !== undefined ? { reason: brief(value.reason) } : {}),
+  };
+}
+/**
+ * `ok`, `work`, `final` and `cleanup` are always stated, null when the runtime reported none. Every other key is
+ * omitted only in its one unremarkable state: no control failure, no reason, exit code 0 or none, a stop flag that
+ * is not true, a complete observation, retention that is not lost.
+ */
+function outcomeSummary(complete: CompleteOutcome) {
+  const { operation, final, observation } = complete;
+  return {
+    ordinal: complete.ordinal,
+    ...(operation ? { operation: operationSummary(operation) } : {}),
+    ok: complete.ok,
+    work: complete.work,
+    ...(complete.control ? { control: complete.control } : {}),
+    ...(complete.reason ? { reason: brief(complete.reason) } : {}),
+    ...(complete.exitCode ? { exitCode: complete.exitCode } : {}),
+    ...(complete.timedOut ? { timedOut: true } : {}),
+    ...(complete.aborted ? { aborted: true } : {}),
+    ...(complete.truncated ? { truncated: true } : {}),
+    ...(complete.spawnFailed ? { spawnFailed: true } : {}),
+    final: !final
+      ? null
+      : final.reason !== undefined
+        ? { state: final.state, reason: brief(final.reason) }
+        : { state: final.state },
+    cleanup: cleanupSummary(complete.cleanup, !operation),
+    ...(observation?.state === "complete" ? {} : { observation: observation ? { state: observation.state } : null }),
+    ...(complete.retention?.status === "lost" ? { retention: { status: complete.retention.status } } : {}),
+  };
+}
+/** Version 2: a pure function of the complete version 1 projection, never of the raw outcome. */
+export function executionEvidenceSummary(complete: CompleteEvidence) {
+  return {
+    version: 2,
+    tool: complete.tool,
+    requested: complete.requested,
+    outcomes: complete.outcomes.map(outcomeSummary),
+  };
+}
+
 /** Absent dimensions remain null, never inferred as success. Only actual returned outcomes appear. */
 export function executionEvidenceContent(
   tool: "delegate" | "delegate_all" | "delegate_chain",
   outcomes: readonly DelegationOutcome[],
   requested: number,
 ) {
-  const evidence = executionEvidence(tool, outcomes, requested);
+  const evidence = executionEvidenceSummary(executionEvidence(tool, outcomes, requested));
   return {
     type: "text" as const,
     text:
-      "Runtime execution evidence (process settlement; not workspace cleanup or task acceptance):\n```json\n" +
+      "Runtime execution evidence summary (process settlement; not workspace cleanup or task acceptance; " +
+      "a settled cleanup has a verified identity-bound receipt; complete receipts stay in tool details, " +
+      "outside model context):\n```json\n" +
       JSON.stringify(evidence) +
       "\n```",
   };
 }
 
-/** Shared allowlisted projection for the model-visible text and exact local capture. */
+/** Complete allowlisted projection: exact local capture, and the source of the model-visible summary. */
 export function executionEvidence(
   tool: "delegate" | "delegate_all" | "delegate_chain",
   outcomes: readonly DelegationOutcome[],

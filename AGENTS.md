@@ -198,6 +198,20 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-17 — The model receives an execution evidence summary; complete receipts stay outside its context
+
+Owner decision: per child, `delegate`, `delegate_all` and `delegate_chain` return a version 2 summary to the
+model: ordinal, ok/work/control, final and cleanup state, observation state when not complete, timeout/cancel/
+spawn-failure/truncation flags that are true, a reason bounded to 160 characters, and one citable identity (the
+operation ID, else the execution ID its cleanup names). It is computed only from the unchanged version 1
+projection, keeps each value at its version 1 path, and carries no path, PID, nonce, boot ID, session/message ID
+or hash. Complete receipts stay in result details (persisted by Pi, withheld from providers), the runtime
+settlement journal, the native receipt file and a stable operation's retained record; public capture still
+records version 1 as `runtimeEvidence` beside the summary response. No Principal, Bookie, Scout or skill-harness
+consumer reads a complete receipt only from provider-visible text; skill-harness's capture reader is pinned to
+0.45.0 captures. Failure and uncertainty states stay distinguishable without prose. Ledger, details, capture
+manifest and cleanup behaviour are unchanged; no model was run, so model behaviour is not established.
+
 ### 2026-11-16 — Tool inventory observations precede settled availability claims
 
 Before the first native callable-tool observation, an unknown extension capability in the startup summary
@@ -388,6 +402,8 @@ Capture errors are loud observations that preserve original work results and exc
 are canonical, private and operator-selected; writes are bounded, exclusive and synchronized before publishing
 refs. Same-user hostile authenticity and a lifetime retention quota are not claimed. JEV/LoRA use remains
 optional downstream offline evaluation; no advisor, metered API or automatic policy is restored.
+**Amended 2026-11-17:** the captured `response` holds the version 2 summary the model received; the manifest's
+`runtimeEvidence` keeps the complete version 1 projection.
 
 **Model-visible execution evidence, 2026-10-07:** native delegation results append a versioned allowlisted
 projection of their actual final identity, process cleanup receipt and observation state to text content.
@@ -397,6 +413,8 @@ final text and structured details remain unchanged, and chain composition still 
 Private session contents, reasoning and raw diagnostics are excluded. Existing typed pre-launch refusals and
 critical-assurance exception semantics remain unchanged. Model-free wiring and real provider-conversion tests
 protect this boundary; they are not model-compliance qualification.
+**Superseded in part 2026-11-17:** the model receives the version 2 summary (decision above), not the complete
+final identity and process receipt; the complete projection stays in details and public capture.
 
 **Ledger contract correction, 2026-10-07:** derive the exported capability namespace pattern from the same
 CAPABILITY_NAMESPACE_PREFIXES source as runtime validation. Existing context grants were valid runtime data
