@@ -9,7 +9,7 @@
  * attempt's receipt; not telling the model that a retry happened; feeding a chain the first attempt's identity, or
  * dropping a later step's provenance on its retry; letting a retry on the workspace-routed path ask anyone; not
  * marking a stable operation's eligible failure `replayable`, or marking one any other guard refused; telling the
- * operator a Herdr session retries.
+ * operator a Herdr session retries; re-planning a retry without the call's bound definitionId, or without checking it.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -669,4 +669,64 @@ test("public capture names the retry as the execution that answered, and keeps t
   assert.equal(complete.cleanup.identity.executionId, retry);
   assert.equal(complete.retry.first.cleanup.identity.executionId, first);
   assert.equal(complete.retry.first.final.state, "unavailable");
+});
+
+test("a retry and a replayable mark keep the definition the call bound; one changed in between refuses the retry", async () => {
+  // Integration with the session's definition binding (2026-11-17). The retry re-plans the same spec, so it re-checks
+  // the bound definitionId like any call; the mark changes neither the binding, the describe memory nor the request
+  // an `operation_id` names.
+  const path = join(await tempDir("replay-retry-binding-"), "ledger.jsonl");
+  const { call, launches, session, release } = await harness(
+    { [ENV_GRANT]: `${GRANT},agent:look`, [ENV_LEDGER]: path },
+    { durable: true, definitions: { look: "read, grep" } },
+  );
+  const { definitionId } = JSON.parse((await call("delegate_describe", { agent: "look" })).content[0].text);
+  const remembered = { definitionId, source: "remembered" };
+  const memory = () => [...(session.reloadLifecycle.describedDefinitions ?? new Map())];
+
+  const retried = await call("delegate", { task: "fail-once bound", agent: "look" });
+  assert.equal(retried.details.retry.attempts, 2);
+  assert.deepEqual(retried.details.definitionBinding, remembered);
+  const decisions = (await ledger(path)).filter((event) => event.event === "capability_decision");
+  assert.equal(decisions.length, 2);
+  assert.equal(decisions[1].retryOf, decisions[0].executionId);
+  assert.deepEqual(
+    decisions[1].definitionDigest,
+    decisions[0].definitionDigest,
+    "the retry planned the same definition",
+  );
+  assert.deepEqual(memory(), [["look", definitionId]]);
+
+  const spec = { task: "fail-always marked", agent: "look", operation_id: "investigate:bound" };
+  const marked = await call("delegate", spec);
+  assert.equal(marked.details.replayable, true);
+  assert.deepEqual(marked.details.definitionBinding, remembered);
+  assert.deepEqual(memory(), [["look", definitionId]]);
+  // The same request again is the same operation, with the ID remembered or supplied: a reference, not a conflict.
+  for (const again of [spec, { ...spec, definitionId }]) {
+    const reused = await call("delegate", again);
+    assert.equal(reused.details.operation.reused, true);
+    assert.equal(reused.details.replayable, undefined);
+  }
+  // The coordinator's one retry under a new operation binds the same definition.
+  const coordinator = await call("delegate", { ...spec, operation_id: "investigate:bound-retry" });
+  assert.equal(coordinator.details.operation.reused, false);
+  assert.deepEqual(coordinator.details.definitionBinding, remembered);
+
+  // A definition that changes while the first attempt runs: the retry is refused by the identity check and the first
+  // attempt is the answer, still naming the definition it ran.
+  const before = (await launches()).length;
+  const pending = call("delegate", { task: "hold-once bound", agent: "look" });
+  for (let i = 0; i < 500 && (await launches()).length === before; i += 1) await new Promise((r) => setTimeout(r, 10));
+  session.definitions.set("look", { ...session.definitions.get("look")!, definitionId: "def:changed-meanwhile" });
+  await release();
+  const refused = await pending;
+  assert.equal((await launches()).length, before + 1, "no second launch");
+  assert.equal(refused.details.retry, undefined);
+  assert.deepEqual(refused.details.definitionBinding, remembered);
+  assert.match(
+    refused.details.reason,
+    /; automatic retry not started: Definition snapshot changed or is unavailable for agent "look": it changed since this session described it\. Describe it again with delegate_describe\./,
+  );
+  assert.deepEqual(memory(), [["look", definitionId]]);
 });
