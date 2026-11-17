@@ -233,6 +233,11 @@ to that same tool result, still once. Proven model-free with fixed numbers on a 
 real root whose three delegation calls throw after their children ran
 (`test-integration/pi-sdk/child-usage-total.it.ts`, 1.0.4 and 1.5.2); no model was run and hosts older than 0.81.0
 were not.
+2026-11-17, stacking with parent-run tools: that nested usage is the root's own, not child usage, yet the persisted
+result's `usage` holds it, so `childUsage` also records `cost` (the cost of the usage the call reported, its
+children's alone) and the dashboard line sums that, bounded by the kept usage; a record without it falls back to the
+kept usage. Shown on a real Pi root whose stand-in `scout_research` reports usage
+(`test-integration/pi-sdk/parent-run-tools.it.ts`).
 
 ### 2026-11-17 — `delegate_describe` binds the definitionId for the session
 

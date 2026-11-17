@@ -149,6 +149,7 @@ test("a three-level governed tree reaches the root Pi session's statistics once 
     assert.deepEqual({ input: delegated.result.usage.input, cost: delegated.result.usage.cost.total }, below);
     assert.deepEqual(delegated.result.details.childUsage, {
       reported: true,
+      cost: below.cost,
       measured: 2,
       unmeasured: 0,
       coverage: "complete",
@@ -201,7 +202,7 @@ test("delegation calls that throw after their children ran still reach the root 
       assert.match(ended.result.content[0].text, /^BLOCKED_CRITICAL_ASSURANCE\nfixture veto/, tool);
       assert.equal(ended.result.content.length, 1, tool);
       assert.deepEqual(ended.result.details, {
-        childUsage: { reported: true, measured, unmeasured: 0, coverage: "complete" },
+        childUsage: { reported: true, cost: below.cost, measured, unmeasured: 0, coverage: "complete" },
       });
       assert.deepEqual({ input: ended.result.usage.input, cost: ended.result.usage.cost.total }, below, tool);
       const persisted = run.events.find(

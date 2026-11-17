@@ -19,8 +19,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { CHILD_QUESTION, OTHER_MODEL, SCOUT_TEXT } from "./parent-run-extension.ts";
+import { CHILD_QUESTION, OTHER_MODEL, SCOUT_TEXT, SCOUT_USAGE } from "./parent-run-extension.ts";
 import { MODEL, PROVIDER } from "./scripted-provider.ts";
+import { childUsageInSession } from "../../src/executors/child-usage.ts";
 
 const SCOUT_PUBLIC =
   "---\nname: scout-public\ndescription: Delegate public web research to Scout's Docker worker for external " +
@@ -166,6 +167,39 @@ test("a real child delegated to scout-public calls scout_research through its ro
     assert.doesNotMatch(answer, /briefPath|never-forwarded/);
     const final = run.events.filter((e) => e.type === "message_end" && e.message.role === "assistant").at(-1);
     assert.ok(textOf(final.message).startsWith("PARENT DONE:\nCHILD RECEIVED:"));
+  } finally {
+    await rm(run.root, { recursive: true, force: true });
+  }
+});
+
+test("the root's own scout_research usage is in the delegation's result once, and is not child usage", async () => {
+  // Integration with child usage (2026-11-17). The child's scripted model reports zero usage, which Daddy reports.
+  const run = await runRoot({ DADDY_PARENT_RUN_USAGE: "1" });
+  try {
+    assert.equal(run.result.code, 0, run.result.stderr);
+    assert.equal(run.calls.length, 1);
+    const delegated = run.events.find((e) => e.type === "tool_execution_end" && e.toolName === "delegate");
+    assert.equal(delegated.isError, false, textOf(delegated.result));
+    assert.deepEqual(delegated.result.details.childUsage, {
+      reported: true,
+      cost: 0,
+      measured: 1,
+      unmeasured: 0,
+      coverage: "complete",
+    });
+    // Pi adds the nested call's usage to the persisted result of the delegation that made it, once. (Pi 1.5.2 also
+    // adds `cost.totalFromProvider`, so the comparison names the figures both versions keep.)
+    const recorded = run.events.find((e) => e.type === "message_end" && e.message.toolCallId === "delegate-call");
+    const kept = recorded.message.usage;
+    assert.deepEqual(
+      { input: kept.input, output: kept.output, totalTokens: kept.totalTokens, cost: kept.cost.total },
+      { input: SCOUT_USAGE.input, output: SCOUT_USAGE.output, totalTokens: SCOUT_USAGE.totalTokens, cost: 0.75 },
+    );
+    assert.deepEqual(childUsageInSession([{ type: "message", message: recorded.message }]), {
+      results: 1,
+      recorded: 1,
+      cost: 0,
+    });
   } finally {
     await rm(run.root, { recursive: true, force: true });
   }

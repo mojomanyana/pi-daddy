@@ -57,6 +57,14 @@ export interface ObservedChildUsage extends UsageCoverage {
 export interface ChildUsageRecord extends UsageCoverage {
   /** Whether the result set Pi's tool-result `usage`: exactly when some child's usage was observed. */
   reported: boolean;
+  /**
+   * With `reported`: the cost total of the usage it reported, which is the children's alone. Pi adds the usage of
+   * the tools a call ran nested to the same persisted result, and a parent-run tool (`scout_research`, run by this
+   * session for its child) runs nested in the waiting delegation, so the persisted usage can also hold this session's
+   * own calls. The owning session reads its children's share here (integration of 2026-11-17); a parent never reads
+   * it back from a child.
+   */
+  cost?: number;
   coverage: "complete" | "partial" | "unavailable";
 }
 
@@ -206,7 +214,13 @@ export function delegationUsage(
   const coverage = unmeasured === 0 ? "complete" : measured > 0 ? "partial" : "unavailable";
   return {
     ...(usage ? { usage } : {}),
-    childUsage: { reported: usage !== undefined, measured, unmeasured, coverage },
+    childUsage: {
+      reported: usage !== undefined,
+      ...(usage ? { cost: usage.cost.total } : {}),
+      measured,
+      unmeasured,
+      coverage,
+    },
   };
 }
 
@@ -229,7 +243,9 @@ export function observedUsageOf(error: unknown): ObservedChildUsage | undefined 
 
 /**
  * The host-side check, read from this Pi session's own record: how many of its delegation results reported child
- * usage, and how many of those the host kept on the persisted tool result, which is what its totals sum.
+ * usage, and how many of those the host kept on the persisted tool result, which is what its totals sum. The cost
+ * is the children's share of what was kept: the persisted usage also holds any tool the call ran nested, such as a
+ * parent-run `scout_research`, and that is this session's own usage, not child usage.
  */
 export function childUsageInSession(
   entries: readonly unknown[],
@@ -240,12 +256,15 @@ export function childUsageInSession(
   for (const entry of entries) {
     const message = object(object(entry)?.type === "message" ? object(entry)!.message : undefined);
     if (message?.role !== "toolResult" || !DELEGATION_RESULT_TOOLS.has(String(message.toolName))) continue;
-    if (!childUsageRecord(object(message.details)?.childUsage)?.reported) continue;
+    const record = object(object(message.details)?.childUsage);
+    if (!childUsageRecord(record)?.reported) continue;
     results += 1;
     const usage = usageTotals(message.usage);
     if (!usage) continue;
     recorded += 1;
-    cost += usage.cost.total;
+    // A record without its own cost (or one the kept usage cannot hold) leaves the kept usage as the bound.
+    const children = record?.cost;
+    cost += nonNegative(children) && children <= usage.cost.total ? children : usage.cost.total;
   }
   return results > 0 && Number.isFinite(cost) ? { results, recorded, cost } : undefined;
 }

@@ -170,7 +170,7 @@ test("two-level tree: every model call reaches the root session once and the led
   const childResult = delegationUsage([{ observedUsage: grandchild }]);
   assert.deepEqual(childResult, {
     usage: G,
-    childUsage: { reported: true, measured: 1, unmeasured: 0, coverage: "complete" },
+    childUsage: { reported: true, cost: G.cost.total, measured: 1, unmeasured: 0, coverage: "complete" },
   });
   // The child's session as Pi persists it: its own calls around that result.
   const child = SessionManager.inMemory();
@@ -183,7 +183,7 @@ test("two-level tree: every model call reaches the root session once and the led
   const rootResult = delegationUsage([{ observedUsage: observedChildUsage(observed) }]);
   assert.deepEqual(rootResult, {
     usage: plus(C1, C2, G),
-    childUsage: { reported: true, measured: 2, unmeasured: 0, coverage: "complete" },
+    childUsage: { reported: true, cost: 0.875, measured: 2, unmeasured: 0, coverage: "complete" },
   });
   // The root session as Pi persists it. Pi 1.0.4 and 1.5.2 `getSessionStats` and the footer sum assistant usage
   // and tool-result usage of every message entry; the real-Pi tier asks Pi itself (child-usage-total.it.ts).
@@ -259,7 +259,7 @@ test("a reused operation, an unexecuted refusal and an unmeasured child add no u
       {},
       { observedUsage: observedChildUsage({}) },
     ]),
-    { usage: C1, childUsage: { reported: true, measured: 1, unmeasured: 1, coverage: "partial" } },
+    { usage: C1, childUsage: { reported: true, cost: C1.cost.total, measured: 1, unmeasured: 1, coverage: "partial" } },
   );
   assert.deepEqual(delegationUsage([{ observedUsage: observedChildUsage({}) }]), {
     childUsage: { reported: false, measured: 0, unmeasured: 1, coverage: "unavailable" },
@@ -364,6 +364,42 @@ test("the dashboard says reported child usage is already in the Pi session, and 
   assert.equal(childUsageInSession(entries.slice(2)), undefined);
 });
 
+test("a parent-run tool's own usage, which Pi adds to the delegation that ran it, is not child usage", () => {
+  // Integration with parent-run tools (2026-11-17). The root runs `scout_research` for its child as a nested call of
+  // the waiting `delegate`, and Pi adds a nested call's usage to that call's persisted result (`_handleAgentEvent`,
+  // Pi 1.0.4 and 1.5.2; run in parent-run-tools.it.ts). The session's totals hold both once; the line names only
+  // the children's share.
+  const scout = u(1024, 2048, 4);
+  const reported = delegationUsage([{ observedUsage: observedChildUsage({ usage: C1 }) }]);
+  assert.deepEqual(reported, {
+    usage: C1,
+    childUsage: { reported: true, cost: C1.cost.total, measured: 1, unmeasured: 0, coverage: "complete" },
+  });
+  const persisted = (childUsage: unknown) => ({
+    type: "message",
+    message: {
+      ...(toolResult("delegate", "a", plus(C1, scout), { childUsage }) as object),
+      nestedCalls: { calls: [{ id: "a/1", name: "scout_research", status: "ok" }], complete: true },
+    },
+  });
+  assert.deepEqual(childUsageInSession([persisted(reported.childUsage)]), { results: 1, recorded: 1, cost: 0.5 });
+  assert.deepEqual(
+    renderDashboard({ nodes: [], workflows: [], corrupt: [] } as never, {
+      color: false,
+      width: 120,
+      modelRows: [],
+      childUsage: childUsageInSession([persisted(reported.childUsage)]),
+    })
+      .split("\n")
+      .filter((text) => text.startsWith("child usage")),
+    ["child usage already in this Pi session's totals: $0.5 from 1 delegation result"],
+  );
+  // A record without the children's own cost, or with one the kept usage cannot hold, is bounded by the kept usage.
+  const { cost: _cost, ...uncosted } = reported.childUsage;
+  for (const childUsage of [uncosted, { ...uncosted, cost: 5 }, { ...uncosted, cost: -1 }, { ...uncosted, cost: "0" }])
+    assert.deepEqual(childUsageInSession([persisted(childUsage)]), { results: 1, recorded: 1, cost: 4.5 });
+});
+
 test("the owning session's dashboard snapshot reads its own record; an unreadable record shows nothing", async () => {
   const record = { childUsage: { reported: true, measured: 1, unmeasured: 0, coverage: "complete" } };
   let entries: () => unknown[] = () => [
@@ -409,7 +445,7 @@ test("a delegation call with no result is one unmeasured child: the child stoppe
   assert.deepEqual(observed.delegated, { measured: 0, unmeasured: 1 });
   assert.deepEqual(delegationUsage([{ observedUsage: observedChildUsage(observed) }]), {
     usage: C1,
-    childUsage: { reported: true, measured: 1, unmeasured: 1, coverage: "partial" },
+    childUsage: { reported: true, cost: C1.cost.total, measured: 1, unmeasured: 1, coverage: "partial" },
   });
 });
 
@@ -440,7 +476,7 @@ test("children are added one at a time: only the child that passes a ceiling is 
   const huge = { observedUsage: { usage: u(1e308, 0, 1.7e308), measured: 1, unmeasured: 0 } };
   const legitOnly = {
     usage: u(100, 0, 5),
-    childUsage: { reported: true, measured: 1, unmeasured: 1, coverage: "partial" },
+    childUsage: { reported: true, cost: 5, measured: 1, unmeasured: 1, coverage: "partial" },
   };
   assert.deepEqual(delegationUsage([legit, huge]), legitOnly, "$5 is reported, not absorbed");
   assert.deepEqual(delegationUsage([huge, legit, huge]), {
@@ -452,7 +488,7 @@ test("children are added one at a time: only the child that passes a ceiling is 
   const one = { observedUsage: observedChildUsage({ usage: u(1, 0, 0) }) };
   assert.deepEqual(delegationUsage([below, legit, one]), {
     usage: plus(u(USAGE_CEILINGS.tokens - 100, 0, 1), u(100, 0, 5)),
-    childUsage: { reported: true, measured: 2, unmeasured: 1, coverage: "partial" },
+    childUsage: { reported: true, cost: 6, measured: 2, unmeasured: 1, coverage: "partial" },
   });
   // One settled child: its own calls and its delegations are added the same way.
   const delegated = { usage: G, measured: 2, unmeasured: 1 };
@@ -537,7 +573,10 @@ test("Pi's tool_result hook reports a thrown call's settled children once and le
   await assert.rejects(call.settle(Promise.reject(lost)), /executor lost/);
   assert.deepEqual(hook({ toolCallId: "x", details: { kept: true } }), {
     usage: plus(C1, C1, G),
-    details: { kept: true, childUsage: { reported: true, measured: 3, unmeasured: 1, coverage: "partial" } },
+    details: {
+      kept: true,
+      childUsage: { reported: true, cost: 1.125, measured: 3, unmeasured: 1, coverage: "partial" },
+    },
   });
   assert.equal(hook({ toolCallId: "x" }), undefined, "taken once");
 
@@ -685,7 +724,13 @@ test("delegate reports its child's usage to the session, and the ledger keeps th
   const result = await run("delegate", "one", { task: task(C1), tools: ["read"] });
   assert.equal(result.isError, false);
   assert.deepEqual(result.usage, C1);
-  assert.deepEqual(result.details.childUsage, { reported: true, measured: 1, unmeasured: 0, coverage: "complete" });
+  assert.deepEqual(result.details.childUsage, {
+    reported: true,
+    cost: C1.cost.total,
+    measured: 1,
+    unmeasured: 0,
+    coverage: "complete",
+  });
   assert.deepEqual(result.details.observedUsage, { usage: C1, measured: 1, unmeasured: 0 });
   assert.deepEqual(
     (await lifecycle()).map((event) => event.usage),
@@ -703,7 +748,13 @@ test("delegate_all reports measured children's usage and says how many were not 
     ],
   });
   assert.deepEqual(result.usage, plus(C1, G), "the unmeasured child's usage is not invented");
-  assert.deepEqual(result.details.childUsage, { reported: true, measured: 2, unmeasured: 1, coverage: "partial" });
+  assert.deepEqual(result.details.childUsage, {
+    reported: true,
+    cost: 0.625,
+    measured: 2,
+    unmeasured: 1,
+    coverage: "partial",
+  });
   assert.deepEqual(
     result.details.outcomes.map((outcome: any) => outcome.observedUsage),
     [
@@ -724,7 +775,13 @@ test("delegate_chain reports every step that ran", async () => {
   });
   assert.equal(result.details.completed, 2);
   assert.deepEqual(result.usage, plus(C1, C2));
-  assert.deepEqual(result.details.childUsage, { reported: true, measured: 2, unmeasured: 0, coverage: "complete" });
+  assert.deepEqual(result.details.childUsage, {
+    reported: true,
+    cost: 0.75,
+    measured: 2,
+    unmeasured: 0,
+    coverage: "complete",
+  });
 });
 
 test("a child that delegated reports its own calls plus its delegation's once; the ledger keeps its own only", async () => {
@@ -743,7 +800,13 @@ console.log("child done");
 `);
   const result = await run("delegate", "tree", { task: "delegate further", tools: ["read"] });
   assert.deepEqual(result.usage, plus(C1, C2, G));
-  assert.deepEqual(result.details.childUsage, { reported: true, measured: 2, unmeasured: 0, coverage: "complete" });
+  assert.deepEqual(result.details.childUsage, {
+    reported: true,
+    cost: 0.875,
+    measured: 2,
+    unmeasured: 0,
+    coverage: "complete",
+  });
   assert.deepEqual(
     (await lifecycle()).map((event) => event.usage),
     [plus(C1, C2)],
@@ -779,7 +842,13 @@ test("a failed child and a timed-out child report what was observed before they 
   assert.equal(timedOut.isError, true);
   assert.equal(timedOut.details.timedOut, true);
   assert.deepEqual(timedOut.usage, C2);
-  assert.deepEqual(timedOut.details.childUsage, { reported: true, measured: 1, unmeasured: 0, coverage: "complete" });
+  assert.deepEqual(timedOut.details.childUsage, {
+    reported: true,
+    cost: C2.cost.total,
+    measured: 1,
+    unmeasured: 0,
+    coverage: "complete",
+  });
 });
 
 test("a fan-out with a vetoed child reports every child's usage through Pi's hook; the veto passes unchanged", async () => {
@@ -794,21 +863,21 @@ test("a fan-out with a vetoed child reports every child's usage through Pi's hoo
   assert.deepEqual(result.content, [{ type: "text", text: "BLOCKED_CRITICAL_ASSURANCE\nvetoed" }]);
   assert.deepEqual(result.usage, plus(C1, C2), "the vetoed child and its measured sibling");
   assert.deepEqual(result.details, {
-    childUsage: { reported: true, measured: 2, unmeasured: 0, coverage: "complete" },
+    childUsage: { reported: true, cost: 0.75, measured: 2, unmeasured: 0, coverage: "complete" },
   });
   assert.deepEqual((await lifecycle()).map((event) => event.usage.input).sort(), [C1.input, C2.input]);
 });
 
 test("a vetoed delegate and a chain stopped by a vetoed step report the children that ran; a refusal is unchanged", async () => {
   const { asPi } = await harness(BY_TASK);
-  const record = (measured: number) => ({
-    childUsage: { reported: true, measured, unmeasured: 0, coverage: "complete" },
+  const record = (measured: number, cost: number) => ({
+    childUsage: { reported: true, cost, measured, unmeasured: 0, coverage: "complete" },
   });
   const vetoed = await asPi("delegate", "veto-one", { task: task(C2, "veto"), tools: ["read"] });
   assert.equal(vetoed.isError, true);
   assert.deepEqual(vetoed.content, [{ type: "text", text: "BLOCKED_CRITICAL_ASSURANCE\nvetoed" }]);
   assert.deepEqual(vetoed.usage, C2);
-  assert.deepEqual(vetoed.details, record(1));
+  assert.deepEqual(vetoed.details, record(1, C2.cost.total));
   const chain = await asPi("delegate_chain", "veto-chain", {
     steps: [
       { task: task(C1), tools: ["read"] },
@@ -818,7 +887,7 @@ test("a vetoed delegate and a chain stopped by a vetoed step report the children
   assert.equal(chain.isError, true);
   assert.deepEqual(chain.content, [{ type: "text", text: "BLOCKED_CRITICAL_ASSURANCE\nvetoed" }]);
   assert.deepEqual(chain.usage, plus(C1, G), "the step before the veto, and the vetoed step");
-  assert.deepEqual(chain.details, record(2));
+  assert.deepEqual(chain.details, record(2, 0.625));
   const refused = await asPi("delegate", "refused", { task: task(C1), tools: ["bash"] });
   assert.equal(refused.isError, true);
   assert.match(refused.content[0].text, /^delegation refused: cannot grant tool:bash/);
@@ -838,7 +907,13 @@ test("a returned result passes Pi's hook unchanged, so its usage is counted once
   assert.equal(result.isError, true, "a failed child is returned, not thrown");
   assert.equal(result.after, undefined);
   assert.deepEqual(result.usage, plus(C1, C2));
-  assert.deepEqual(result.details.childUsage, { reported: true, measured: 2, unmeasured: 0, coverage: "complete" });
+  assert.deepEqual(result.details.childUsage, {
+    reported: true,
+    cost: 0.75,
+    measured: 2,
+    unmeasured: 0,
+    coverage: "complete",
+  });
 });
 
 test("a child stopped while its own delegation waited reports partial coverage to its parent", async () => {
@@ -853,5 +928,11 @@ console.log("child done");
 `);
   const result = await run("delegate", "inflight", { task: "wait on a grandchild", tools: ["read"] });
   assert.deepEqual(result.usage, plus(C1, C2));
-  assert.deepEqual(result.details.childUsage, { reported: true, measured: 1, unmeasured: 1, coverage: "partial" });
+  assert.deepEqual(result.details.childUsage, {
+    reported: true,
+    cost: 0.75,
+    measured: 1,
+    unmeasured: 1,
+    coverage: "partial",
+  });
 });

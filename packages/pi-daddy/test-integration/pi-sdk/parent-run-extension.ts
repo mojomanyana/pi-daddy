@@ -12,6 +12,9 @@
  * makes the root delegate with that explicit `model`. `DADDY_PARENT_RUN_SWITCHED=<file>` makes the root switch to
  * `OTHER_MODEL` (as `/model` would) once its child is running, then create the file; the child makes its call only
  * after the file exists, so the root's call-time check is what meets the change.
+ *
+ * `DADDY_PARENT_RUN_USAGE=1` makes the stand-in report `SCOUT_USAGE` as its tool-result usage, as a Scout that
+ * accounted for its own model calls would; Pi then adds it to the waiting delegation's result (2026-11-17).
  */
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -26,6 +29,15 @@ export const CHILD_QUESTION = {
   scope: "Public changelog of the Pi coding agent only.",
 };
 export const SCOUT_TEXT = "SCOUT FIXTURE ANSWER: nested tool calls are documented in the public changelog.";
+/** Fixed, binary-exact usage the stand-in reports when `DADDY_PARENT_RUN_USAGE=1`. */
+export const SCOUT_USAGE = {
+  input: 64,
+  output: 32,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 96,
+  cost: { input: 0.5, output: 0.25, cacheRead: 0, cacheWrite: 0, total: 0.75 },
+};
 
 /** The text of the most recent tool result the model was shown. */
 function lastToolResult(request: Request): string {
@@ -121,6 +133,7 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: SCOUT_TEXT }],
         details: { briefPath: "/private/operator/briefs/never-forwarded.json" },
+        ...(process.env.DADDY_PARENT_RUN_USAGE === "1" ? { usage: SCOUT_USAGE } : {}),
       };
     },
   });

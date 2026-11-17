@@ -284,15 +284,16 @@ Child usage reaches the Pi session that delegated it. `delegate`, `delegate_all`
 children's observed model usage in Pi's tool-result usage field, which Pi adds to that session's usage totals,
 footer and cost (Pi 1.0.4 and 1.5.2 record it). Each call is counted once, also when a child delegates further: a
 child's lifecycle record and `pi-daddy report` keep its own calls, and its report to its parent adds what its own
-delegations reported. `details.childUsage` gives measured and unmeasured children; unmeasured usage is never
-estimated. A failed or timed-out child reports what it used, and so does a delegation that stops with an error after
+delegations reported. `details.childUsage` gives measured and unmeasured children and the cost of the usage
+reported; unmeasured usage is never estimated. A failed or timed-out child reports what it used, and so does a delegation that stops with an error after
 its children ran, such as a critical-assurance veto: Daddy adds their usage to Pi's error result, whose text stays
 unchanged. A reused operation reports nothing again. A child stopped while its own delegation was still waiting counts
 that delegation as unmeasured, and a figure no delegation could plausibly reach (over 1e13 tokens, $1e8 or 1e7
 executions in one value) is counted as unmeasured rather than added. The dashboard's ledger frame, with the owning Pi
 session connected, and `pi-daddy report` say this usage is already in the delegating session's totals: compare, do
 not add. The dashboard line counts the session's own delegation results only; a `delegate` run from a Codemode
-script is in the session's totals through the `codemode` result, but not in that line.
+script is in the session's totals through the `codemode` result, but not in that line. A `scout_research` call the
+session ran for a child is in its totals on the same delegation result, as the session's own usage, not in that line.
 
 ## The ledger
 
