@@ -10,6 +10,7 @@ export interface DashboardRenderOptions {
   completedChildren?: number;
   modelRows?: Array<{ definition: string; model: string; thinking: string; source: string }>;
   episodeCost?: { cost: number | null };
+  childUsage?: { results: number; recorded: number; cost: number };
 }
 
 const ACTIVE = new Set<DashboardState>(["authorised", "starting", "running"]);
@@ -201,6 +202,28 @@ function renderTree(
   return lines;
 }
 
+/**
+ * Child usage the owning Pi session already counts (2026-11-17): a label, never added to any figure here. The
+ * numbers come from that session's own record of its delegation results, so a host that did not keep the reported
+ * usage is named instead of being claimed as included.
+ */
+function childUsageLine(value: DashboardRenderOptions["childUsage"]): string | undefined {
+  if (!value) return undefined;
+  const { results, recorded, cost } = value;
+  const whole = (n: unknown) => Number.isSafeInteger(n) && (n as number) >= 0;
+  if (!whole(results) || !whole(recorded) || recorded > results || results === 0) return undefined;
+  if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) return undefined;
+  const from = (n: number) => `${n} delegation result${n === 1 ? "" : "s"}`;
+  if (recorded === 0)
+    return `child usage not in this Pi session's totals: this Pi did not record it (${from(results)})`;
+  const dollars = cost.toFixed(6).replace(/\.?0+$/, "") || "0";
+  const rest = results - recorded;
+  return (
+    `child usage already in this Pi session's totals: $${dollars} from ` +
+    (rest ? `${recorded} of ${from(results)}; ${rest} not recorded by this Pi` : from(results))
+  );
+}
+
 export function renderDashboard(projection: DashboardProjection, options: DashboardRenderOptions = {}): string {
   const resolved = {
     width: Math.max(10, options.width ?? 80),
@@ -222,6 +245,8 @@ export function renderDashboard(projection: DashboardProjection, options: Dashbo
           ? "episode cost unavailable (usage coverage partial)"
           : `reported episode cost $${options.episodeCost.cost} (coverage partial)`,
       );
+    const childUsage = childUsageLine(options.childUsage);
+    if (childUsage) lines.push(childUsage);
     lines.push("");
   }
 

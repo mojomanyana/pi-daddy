@@ -12,6 +12,8 @@ import { createConnection } from "node:net";
 export interface DashboardSessionSnapshot {
   rows: Array<{ definition: string; model: string; thinking: string; source: string }>;
   cost: number | null;
+  /** Delegation results in the owning Pi session that reported child usage, and those its host recorded. */
+  childUsage?: { results: number; recorded: number; cost: number };
   choiceControls?: { sourceGeneration: string };
   observation?: DashboardOwnerObservation;
   activity?: { rootId: string; path: string; taskId: string };

@@ -224,6 +224,15 @@ Monetary usage is observational. It never pauses, stops or authorizes a child. A
 lifecycle records and episode reports; missing or partial coverage is not a zero-cost claim. Permission approvals,
 depth, fan-out limits and execution timeouts are separate controls.
 
+Child usage reaches the Pi session that delegated it. `delegate`, `delegate_all` and `delegate_chain` report their
+children's observed model usage in Pi's tool-result usage field, which Pi adds to that session's usage totals,
+footer and cost (Pi 1.0.4 and 1.5.2 record it). Each call is counted once, also when a child delegates further: a
+child's lifecycle record and `pi-daddy report` keep its own calls, and its report to its parent adds what its own
+delegations reported. `details.childUsage` gives measured and unmeasured children; unmeasured usage is never
+estimated. A failed or timed-out child reports what it used; a reused operation reports nothing again, and so does a
+delegation that stops with an error instead of a result (its children's usage stays in a configured ledger). The
+dashboard and `pi-daddy report` say this usage is already in the delegating session's totals: compare, do not add.
+
 ## The ledger
 
 When configured, `.pi/pi-daddy/grants.jsonl` holds capability decisions, child lifecycles, workspace leases, cost

@@ -2,6 +2,7 @@ import { dashboardSummaryDescription } from "../src/products/activity-summary.ts
 import { operationIdShape, claimDelegationOperation } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
+import { delegationUsage } from "../src/executors/child-usage.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import {
   assertDefinitionInputsBeforeAdmission,
@@ -363,8 +364,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }
       // Pi 1.0.4 preserves returned isError. Keep every outcome dimension and useful output together.
       const failed = !outcome.operation?.reused && (!outcome.ok || outcome.control === "failed");
+      // Pi adds `usage` to this session's totals; `details.childUsage` says what it covers (2026-11-17).
+      const { usage, childUsage } = delegationUsage([outcome]);
       return capture.finish(
         {
+          ...(usage ? { usage } : {}),
           isError: failed,
           content: [
             {
@@ -375,7 +379,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             },
             executionEvidenceContent("delegate", [outcome], 1),
           ],
-          details: outcome,
+          details: { ...outcome, childUsage },
         },
         [outcome],
       );
@@ -500,8 +504,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       if (failed.length === children.length && outcomes.every((o) => !o.work && !o.final && !o.cleanup))
         throw totalFanoutFailure(failed, `fan-out failed: every child was refused or failed.\n\n${report}`);
 
+      const { usage, childUsage } = delegationUsage(outcomes);
       return capture.finish(
         {
+          ...(usage ? { usage } : {}),
           isError: outcomes.some((o) => !o.operation?.reused && (!o.ok || o.control === "failed")),
           content: [
             { type: "text", text: report },
@@ -515,6 +521,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             granted: outcomes.map((o) => o.granted),
             refusals: outcomes.map((o) => o.refusal ?? null),
             retention: outcomes.map((o) => o.retention ?? null),
+            childUsage,
           },
         },
         outcomes,

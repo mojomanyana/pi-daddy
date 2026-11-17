@@ -2,6 +2,7 @@ import { dashboardSummaryDescription } from "../src/products/activity-summary.ts
 import { operationIdShape, claimDelegationOperation, existingOperationOutcome } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
+import { delegationUsage } from "../src/executors/child-usage.ts";
 import {
   assertDefinitionInputsBeforeAdmission,
   bindDescribedDefinitions,
@@ -190,7 +191,13 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               { type: "text", text: outcome.text },
               executionEvidenceContent("delegate_chain", [outcome], steps.length),
             ],
-            details: { outcomes: [outcome], steps: steps.length, completed: 0, aborted: true },
+            details: {
+              outcomes: [outcome],
+              steps: steps.length,
+              completed: 0,
+              aborted: true,
+              childUsage: delegationUsage([outcome]).childUsage,
+            },
           },
           [outcome],
         );
@@ -480,8 +487,11 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           if (outcomes[0].refusal) throw new GovernanceRefusal({ ...outcomes[0].refusal, message });
           throw new Error(message);
         }
+        // Every step that ran, including the one that stopped the chain (2026-11-17).
+        const { usage, childUsage } = delegationUsage(outcomes);
         return capture.finish(
           {
+            ...(usage ? { usage } : {}),
             isError: (aborted && !outcomes.at(-1)?.operation?.reused) || outcomes.some((o) => o.control === "failed"),
             content: [
               { type: "text", text: `${report}${tail}` },
@@ -495,6 +505,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               budgetPerStep: firstReservation.childAllowance,
               ...(blockedReason ? { blockedReason } : {}),
               refusals: outcomes.map((outcome) => outcome.refusal ?? null),
+              childUsage,
             },
           },
           outcomes,

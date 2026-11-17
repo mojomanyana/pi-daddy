@@ -29,6 +29,7 @@ import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 import { resolvedModelOf, type ResolvedDefinitionRuntime } from "./definition-runtime.ts";
 import { openParentTools, type ParentToolHost, type ParentToolSession } from "./parent-tool-host.ts";
+import { observedChildUsage, withObservedUsage, type ObservedChildUsage } from "../src/executors/child-usage.ts";
 export interface DelegationOutcome {
   operation?: import("../src/kernel/dispatch-operation.ts").OperationReference & { reused: boolean };
   cwd?: string;
@@ -56,6 +57,8 @@ export interface DelegationOutcome {
   diagnosticsTruncated?: boolean;
   /** The definitionId the identity check used and whether the call supplied it or Daddy remembered it. */
   definitionBinding?: import("./definition-describe.ts").DefinitionBinding;
+  /** This child's model usage and its delegations', as observed at settlement; reported to the parent session. */
+  observedUsage?: ObservedChildUsage;
 }
 /**
  * The upstream controller's token, honoured ONLY when the child otherwise exited cleanly non-zero.
@@ -622,6 +625,7 @@ async function executePreparedChild(
                   : "CHILD_EXIT_NONZERO";
         const failed: DelegationOutcome = {
           ok: false,
+          observedUsage: observedChildUsage(usageObservation),
           work: workFailed ? "failed" : final?.state === "complete" ? "succeeded" : "unknown",
           ...(final ? { final } : {}),
           ...(cleanup ? { cleanup } : {}),
@@ -645,6 +649,7 @@ async function executePreparedChild(
 
       const succeeded: DelegationOutcome = {
         ok: true,
+        observedUsage: observedChildUsage(usageObservation),
         work: "succeeded",
         ...(final ? { final } : {}),
         ...(cleanup ? { cleanup } : {}),
@@ -733,7 +738,10 @@ async function executePreparedChild(
       // Attached, not dropped. `withTeardownNotes` was applied on both return paths and neither throw path,
       // so a failed lease-release record — the thing that makes the NEXT owner report a phantom crash — was
       // collected into an array nothing read.
-      throw errorWithTeardownNotes(error, [...controlFailures, ...teardownFailures]);
+      throw withObservedUsage(
+        errorWithTeardownNotes(error, [...controlFailures, ...teardownFailures]),
+        observedChildUsage(usageObservation),
+      );
     }
     /**
      * Surfaces a teardown failure WITHOUT discarding the result. The child already ran; telling the
