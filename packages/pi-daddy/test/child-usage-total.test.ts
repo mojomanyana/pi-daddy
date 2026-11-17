@@ -42,6 +42,7 @@ import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-chi
 import { ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH } from "../src/kernel/propagation.ts";
 import { renderDashboard } from "../src/products/dashboard-render.ts";
 import { renderEpisodeReport, reportEpisodes } from "../src/products/episode-report.ts";
+import { evidenceFromProvider, providerToolOutput } from "./execution-evidence-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { toolSources } from "./tool-sources-fixture.ts";
@@ -782,6 +783,30 @@ test("delegate_chain reports every step that ran", async () => {
     unmeasured: 0,
     coverage: "complete",
   });
+});
+
+test("the model is shown none of the child usage: not in the text, not in the evidence summary", async () => {
+  // Integration with the compact evidence summary (2026-11-17). `usage`, `details.childUsage` and each outcome's
+  // `observedUsage` are for Pi's totals and the operator; the provider receives the content only, and the summary
+  // is computed from the complete projection, which names none of them.
+  const { run } = await harness(BY_TASK.replace('console.log("done " + task.trim());', 'console.log("done");'));
+  const results = [
+    await run("delegate", "one", { task: task(C1), tools: ["read"] }),
+    await run("delegate_all", "all", {
+      children: [
+        { task: task(C1), tools: ["read"] },
+        { task: task(G), tools: ["read"] },
+      ],
+    }),
+    await run("delegate_chain", "chain", { steps: [{ task: task(C2), tools: ["read"] }] }),
+  ];
+  for (const result of results) {
+    assert.equal(result.usage.input > 0, true, "usage was reported to Pi");
+    const output = providerToolOutput(result);
+    assert.doesNotMatch(output, /usage|measured|coverage|totalTokens|cacheRead|"cost"/i);
+    for (const outcome of evidenceFromProvider(result).outcomes)
+      assert.deepEqual(Object.keys(outcome).sort(), ["cleanup", "final", "ok", "ordinal", "work"]);
+  }
 });
 
 test("a child that delegated reports its own calls plus its delegation's once; the ledger keeps its own only", async () => {
