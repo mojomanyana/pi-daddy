@@ -2,6 +2,8 @@ import { dashboardSummaryDescription } from "../src/products/activity-summary.ts
 import { operationIdShape, claimDelegationOperation } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
+import { delegationUsage } from "../src/executors/child-usage.ts";
+import { childUsageReport } from "./child-usage-report.ts";
 import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./session-capacity.ts";
 import {
   assertDefinitionInputsBeforeAdmission,
@@ -304,6 +306,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateParams,
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      // Reported through Pi's tool_result hook if this call throws after its child ran (2026-11-17).
+      const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       await session.ensureDefinitions?.();
       // The call's own definitionId, else this session's last describe of the agent; checked the same way.
@@ -324,7 +328,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         [params],
         [operationClaim?.operation.executionId ?? occurrence.executionId],
       );
-      const outcome = await runOneDelegation(
+      const running = runOneDelegation(
         session,
         {
           operation_id: params.operation_id,
@@ -352,6 +356,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           onDefinition: (definition) => capture.selected(0, definition),
         },
       );
+      const outcome = await usageReport.settle(running);
       progress.settle([outcome]);
 
       if (isCriticalAssuranceBlock(outcome)) throw new Error(outcome.text);
@@ -363,8 +368,11 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       }
       // Pi 1.0.4 preserves returned isError. Keep every outcome dimension and useful output together.
       const failed = !outcome.operation?.reused && (!outcome.ok || outcome.control === "failed");
+      // Pi adds `usage` to this session's totals; `details.childUsage` says what it covers (2026-11-17).
+      const { usage, childUsage } = delegationUsage([outcome]);
       return capture.finish(
         {
+          ...(usage ? { usage } : {}),
           isError: failed,
           content: [
             {
@@ -375,7 +383,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             },
             executionEvidenceContent("delegate", [outcome], 1),
           ],
-          details: outcome,
+          details: { ...outcome, childUsage },
         },
         [outcome],
       );
@@ -410,6 +418,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateAllParams,
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       const children = params.children ?? [];
       // Correctable definition inputs must not consume earlier siblings' operation IDs.
@@ -485,6 +494,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         }
       });
       const outcomes = await Promise.all(pending);
+      // Both throws below follow children that ran: a vetoed child's siblings, or every child failed after running.
+      usageReport.add(...outcomes);
       progress.settle(outcomes);
       // The upstream controller's verdict outranks our own infrastructure noise — it is the answer the
       // caller is waiting for, and ADR-0034 requires it to pass through unchanged. But an infrastructure
@@ -500,8 +511,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       if (failed.length === children.length && outcomes.every((o) => !o.work && !o.final && !o.cleanup))
         throw totalFanoutFailure(failed, `fan-out failed: every child was refused or failed.\n\n${report}`);
 
+      const { usage, childUsage } = delegationUsage(outcomes);
       return capture.finish(
         {
+          ...(usage ? { usage } : {}),
           isError: outcomes.some((o) => !o.operation?.reused && (!o.ok || o.control === "failed")),
           content: [
             { type: "text", text: report },
@@ -515,6 +528,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             granted: outcomes.map((o) => o.granted),
             refusals: outcomes.map((o) => o.refusal ?? null),
             retention: outcomes.map((o) => o.retention ?? null),
+            childUsage,
           },
         },
         outcomes,

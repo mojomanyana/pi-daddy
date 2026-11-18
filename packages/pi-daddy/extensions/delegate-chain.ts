@@ -2,6 +2,8 @@ import { dashboardSummaryDescription } from "../src/products/activity-summary.ts
 import { operationIdShape, claimDelegationOperation, existingOperationOutcome } from "./delegation-operations.ts";
 import { publicEvidenceCall } from "./public-evidence.ts";
 import { executionEvidenceContent } from "./execution-evidence.ts";
+import { delegationUsage } from "../src/executors/child-usage.ts";
+import { childUsageReport } from "./child-usage-report.ts";
 import {
   assertDefinitionInputsBeforeAdmission,
   bindDescribedDefinitions,
@@ -137,6 +139,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     parameters: params,
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
+      // A step that throws stops the chain; the steps that ran are reported through Pi's tool_result hook.
+      const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       const requested = args.steps ?? [];
       await session.ensureDefinitions?.();
@@ -190,7 +194,13 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               { type: "text", text: outcome.text },
               executionEvidenceContent("delegate_chain", [outcome], steps.length),
             ],
-            details: { outcomes: [outcome], steps: steps.length, completed: 0, aborted: true },
+            details: {
+              outcomes: [outcome],
+              steps: steps.length,
+              completed: 0,
+              aborted: true,
+              childUsage: delegationUsage([outcome]).childUsage,
+            },
           },
           [outcome],
         );
@@ -381,7 +391,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               chainPlan.uses.get(index)?.has(key) && (approval.scope !== "once" || approvalStep.get(key) === index)
             );
           });
-          const outcome = await runOneDelegation(
+          const running = runOneDelegation(
             session,
             chainStepSpec(step, previous),
             {
@@ -418,6 +428,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               taskFromExecutionId: index === 0 ? undefined : executionIds[index - 1],
             },
           );
+          const outcome = await usageReport.settle(running);
 
           children[index].state = outcome.ok ? "completed" : "failed";
           children[index].settledAt = Date.now();
@@ -480,8 +491,11 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
           if (outcomes[0].refusal) throw new GovernanceRefusal({ ...outcomes[0].refusal, message });
           throw new Error(message);
         }
+        // Every step that ran, including the one that stopped the chain (2026-11-17).
+        const { usage, childUsage } = delegationUsage(outcomes);
         return capture.finish(
           {
+            ...(usage ? { usage } : {}),
             isError: (aborted && !outcomes.at(-1)?.operation?.reused) || outcomes.some((o) => o.control === "failed"),
             content: [
               { type: "text", text: `${report}${tail}` },
@@ -495,6 +509,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
               budgetPerStep: firstReservation.childAllowance,
               ...(blockedReason ? { blockedReason } : {}),
               refusals: outcomes.map((outcome) => outcome.refusal ?? null),
+              childUsage,
             },
           },
           outcomes,

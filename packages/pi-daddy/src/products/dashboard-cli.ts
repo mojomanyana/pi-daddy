@@ -318,6 +318,7 @@ export async function dashboardFrame(options: DashboardFrameOptions): Promise<st
         history: options.history,
         modelRows: options.session?.rows,
         episodeCost: options.session ? { cost: options.session.cost } : undefined,
+        childUsage: options.session?.childUsage,
       });
   return waiting ? `${rendered}\n\nwaiting for ledger ${ledgerPath}` : rendered;
 }

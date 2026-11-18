@@ -198,6 +198,47 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-17 — Child model usage is included in the delegating Pi session's totals
+
+Owner decision: include it in the parent's total, reported through Pi's tool-result `usage` field, so the session's
+cost reflects its sub-agents; Daddy labels child usage as already included, so nothing is counted twice. Pi has
+added tool-result usage to the persisted tool result message, session statistics, footer and cost since 0.81.0;
+1.0.4 and 1.5.2 were read and run. `delegate`, `delegate_all` and `delegate_chain` set `usage` to the sum of their
+children's observed usage when at least one was observed, and always put `childUsage` (`reported`, `measured`,
+`unmeasured`, `coverage`) in the result details. Unobserved usage is never estimated. Each model call is counted
+once at any depth: a child's session total includes what its own delegation results reported, so the reader in
+`src/executors/child-usage.ts` and `activity-session.ts` keeps a child's own calls (the lifecycle record's `usage`,
+whose meaning is unchanged) apart from those results, and its report to its parent is both. Summing the ledger over
+an episode therefore still counts each call once, as `pi-daddy report` does; the retired episode cost ceiling
+(`PI_DADDY_EPISODE_COST_CEILING`, 2026-10-07) is stripped from children and summed by nothing. In a child's session
+a delegation result without a record counts as one unmeasured child, so does a delegation call of the current turn
+with no result at all (the child stopped while it waited on its own child), and a record whose usage the host did
+not keep counts its children as unmeasured. A reused operation reports nothing. A delegation call that throws after
+its children ran (a critical-assurance block, an executor failure in `delegate` or a chain step, a fan-out whose
+every child failed) still reports them: each call keeps its settled children under its tool call id, and one
+`tool_result` handler (`extensions/child-usage-report.ts`) adds their `usage` and `childUsage` to the bare error
+result Pi made of the throw. Pi keeps a handler's `usage` and `details` while the error text and `isError` stay
+unchanged (1.0.4 and 1.5.2); a result that already carries `usage` or `childUsage` is left alone, and a refusal that
+started no child is unchanged. The capability check is the session's own record, not a version string: the
+dashboard's ledger frame (with the owning Pi session connected) says child usage is already in the session's totals
+only for delegation results whose persisted tool result kept the usage, and names the ones that did not; a
+`delegate` run from a Codemode script is in the totals through the `codemode` result but not in that line. Values
+from a child's session are untrusted numbers, validated and used only as usage; Pi's session cost controls nothing.
+A figure beyond the ceilings in `child-usage.ts` (1e13 tokens, $1e8 or 1e7 executions in one value, above what a
+delegation subtree could use within Daddy's default bounds even at an implausible rate) counts as unmeasured, and
+children are added one at a time, so only that child is unmeasured and its siblings keep their usage. Scout 0.3.1 does not set tool-result usage (it reports
+host-observed token counters as text and details, never cost); the coverage words follow its
+complete/partial/unavailable. Pi adds the usage of a parent-run tool, which runs nested in the waiting `delegate`,
+to that same tool result, still once. Proven model-free with fixed numbers on a real three-level Pi tree and on a
+real root whose three delegation calls throw after their children ran
+(`test-integration/pi-sdk/child-usage-total.it.ts`, 1.0.4 and 1.5.2); no model was run and hosts older than 0.81.0
+were not.
+2026-11-17, stacking with parent-run tools: that nested usage is the root's own, not child usage, yet the persisted
+result's `usage` holds it, so `childUsage` also records `cost` (the cost of the usage the call reported, its
+children's alone) and the dashboard line sums that, bounded by the kept usage; a record without it falls back to the
+kept usage. Shown on a real Pi root whose stand-in `scout_research` reports usage
+(`test-integration/pi-sdk/parent-run-tools.it.ts`).
+
 ### 2026-11-17 — `delegate_describe` binds the definitionId for the session
 
 Owner's decision: "The harness carries the IDs, and describe stays. Daddy remembers the ID from this session's

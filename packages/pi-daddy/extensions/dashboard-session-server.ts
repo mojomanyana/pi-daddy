@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { GrantsSession } from "./session.ts";
 import { getDashboardControlState, setAutoApproval } from "./session-auto-mode.ts";
 import { saveSessionModelEdits, sessionModelRows } from "./session-model-prompt.ts";
+import { childUsageInSession } from "../src/executors/child-usage.ts";
 
 export interface DashboardSessionEndpoint {
   socketPath: string;
@@ -226,7 +227,18 @@ async function respond(
     versions: versionSnapshot(session),
     settings,
     cost: null, // Live complete episode cost is unavailable; retained usage remains in the episode report.
+    ...childUsageSnapshot(session),
   };
+}
+
+/** Child usage this Pi session's own record shows its delegation results reported (2026-11-17). Display only. */
+function childUsageSnapshot(session: GrantsSession) {
+  try {
+    const childUsage = childUsageInSession(session.parentSession?.getEntries() ?? []);
+    return childUsage ? { childUsage } : {};
+  } catch {
+    return {};
+  }
 }
 
 function versionSnapshot(session: GrantsSession) {

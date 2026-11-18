@@ -12,11 +12,21 @@ import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { SessionManager, type FileEntry } from "@earendil-works/pi-coding-agent";
 import { BoundedReadCleanupError, readBoundedBytes } from "../kernel/bounded-read.ts";
 import type { ChildUsageTotals } from "../governance/ledger-events.ts";
+import {
+  addDelegationResult,
+  addUnansweredCalls,
+  DELEGATION_RESULT_TOOLS,
+  delegationCallIds,
+  type ObservedChildUsage,
+} from "./child-usage.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export interface ChildUsageObservation {
+  /** The child's own model calls: what the ledger records. Never what its delegation results reported. */
   usage?: ChildUsageTotals;
+  /** What the child's own delegation results reported: its descendants, already in its session total. */
+  delegated?: ObservedChildUsage;
   unavailable?: "session-missing" | "session-invalid" | "usage-missing";
   resolvedModel?: { provider: string; modelId: string };
   effectiveThinkingLevel?: string;
@@ -190,6 +200,9 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
   let resolvedModel: ChildUsageObservation["resolvedModel"];
   let effectiveThinkingLevel: string | undefined;
   let compactionCount = 0;
+  let delegated: ObservedChildUsage | undefined;
+  // This turn's delegation calls still without a result, by id: a child stopped while it waited on its own child.
+  const unanswered = new Map<string, number>();
   try {
     const read = await readBoundedBytes(resolved, { maxBytes: MAX_USAGE_SESSION_BYTES, timeoutMs: 3000 });
     if (!read.ok)
@@ -218,6 +231,16 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
         if (message.role !== "assistant" && message.role !== "toolResult") continue;
         if (message.role === "assistant" && typeof message.provider === "string" && typeof message.model === "string")
           resolvedModel = { provider: message.provider, modelId: message.model };
+        if (message.role === "assistant")
+          for (const id of delegationCallIds(message.content)) unanswered.set(id, (unanswered.get(id) ?? 0) + 1);
+        // Counted in this child's session total, but these are its descendants' calls, not its own (2026-11-17).
+        if (message.role === "toolResult" && DELEGATION_RESULT_TOOLS.has(String(message.toolName))) {
+          const waiting = unanswered.get(String(message.toolCallId)) ?? 0;
+          if (waiting > 0) unanswered.set(String(message.toolCallId), waiting - 1);
+          delegated = addDelegationResult(delegated, message);
+          if (!delegated) return { unavailable: "session-invalid" };
+          continue;
+        }
         usage = object(message.usage);
         if (message.role === "toolResult" && !usage) continue;
       } else if (["usage", "compaction", "branch_summary"].includes(entry.type)) {
@@ -250,10 +273,15 @@ async function readChildUsage(path: string | Promise<string | undefined>): Promi
         return { unavailable: "session-invalid" };
       found = true;
     }
+    delegated = addUnansweredCalls(
+      delegated,
+      [...unanswered.values()].reduce((sum, waiting) => sum + waiting, 0),
+    );
     const metadata = {
       ...(resolvedModel ? { resolvedModel } : {}),
       ...(effectiveThinkingLevel ? { effectiveThinkingLevel } : {}),
       compactionCount,
+      ...(delegated ? { delegated } : {}),
     };
     if (!found || incomplete) return { unavailable: "usage-missing", ...metadata };
     return {

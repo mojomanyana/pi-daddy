@@ -9,17 +9,20 @@
  */
 import { GovernanceRefusal, refusal } from "../src/kernel/refusals.ts";
 import { isCriticalAssuranceBlock, type DelegationOutcome } from "./execute-child.ts";
+import { observedUsageOf } from "../src/executors/child-usage.ts";
 
 /**
  * The outcome recorded for a child whose delegation threw rather than returning.
  *
  * Every swallowed child used to report the same contentless `"delegation infrastructure failed"` with no
  * code and no error identity, so a fan-out could report four indistinguishable failures with four different
- * causes (R-116).
+ * causes (R-116). A child that ran before the error keeps its observed usage, so the fan-out still reports it.
  */
 export function childFailureOutcome(error: unknown, depth: number): DelegationOutcome {
+  const observedUsage = observedUsageOf(error);
   return {
     ok: false,
+    ...(observedUsage ? { observedUsage } : {}),
     text: "",
     reason: `delegation infrastructure failed: ${String(error instanceof Error ? error.message : error)}`,
     ...(error instanceof GovernanceRefusal

@@ -49,6 +49,8 @@ export interface EpisodeReportGroup extends CostEvidence {
 }
 export interface EpisodeReport {
   costScope: "recorded-child-executions";
+  /** Child usage reported by a delegation result is already in the delegating Pi session's totals (2026-11-17). */
+  parentSessionTotals: "include-reported-child-usage";
   rows: EpisodeReportRow[];
   groups?: EpisodeReportGroup[];
   groupBy?: EpisodeGroupBy;
@@ -274,6 +276,7 @@ export function reportEpisodes(input: {
     }
     return {
       costScope: "recorded-child-executions",
+      parentSessionTotals: "include-reported-child-usage",
       rows: [],
       groups: [...groups.values()].sort((a, b) => a.value.localeCompare(b.value)),
       groupBy: input.options.groupBy,
@@ -283,6 +286,7 @@ export function reportEpisodes(input: {
   const costs = rows.flatMap((row) => (row.cost === null ? [] : [row.cost]));
   return {
     costScope: "recorded-child-executions",
+    parentSessionTotals: "include-reported-child-usage",
     rows,
     totals: {
       episodes: rows.length,
@@ -308,7 +312,10 @@ function summarizeCosts(values: readonly CostEvidence[]): CostEvidence {
         : "unavailable",
   };
 }
-const costScope = "Cost coverage refers only to recorded child executions; root and unrecorded work are not measured.";
+const costScope =
+  "Cost coverage refers only to recorded child executions; root and unrecorded work are not measured. " +
+  "Each child's usage is its own model calls. Where its delegation result reported that usage and the host " +
+  "recorded it, the delegating Pi session's usage and cost already include it: compare with them, do not add.";
 const escapeCell = (value: unknown): string => String(value).replaceAll("|", "\\|").replaceAll("\n", " ");
 const cost = (value: number | null): string =>
   value === null ? "unavailable" : value.toFixed(6).replace(/\.?0+$/, "") || "0";
