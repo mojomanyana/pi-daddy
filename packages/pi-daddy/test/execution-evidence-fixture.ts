@@ -40,12 +40,25 @@ export function providerToolOutput(result: {
   assert.ok("output" in message && typeof message.output === "string");
   return message.output as string;
 }
+/** The exact introductions by version, written out independently of the production strings. */
+export const EVIDENCE_INTRODUCTION = {
+  1: "Runtime execution evidence (process settlement; not workspace cleanup or task acceptance):\n```json\n",
+  2:
+    "Runtime execution evidence summary (process settlement; not workspace cleanup or task acceptance; " +
+    "a settled cleanup has a verified identity-bound receipt; complete receipts stay in tool details, " +
+    "outside model context):\n```json\n",
+} as const;
+/** The last evidence block of either version, so content recorded before version 2 still parses. */
 export function evidenceFromProvider(result: Parameters<typeof providerToolOutput>[0]) {
   const output = providerToolOutput(result);
-  const marker =
-    "Runtime execution evidence (process settlement; not workspace cleanup or task acceptance):\n```json\n";
-  const offset = output.lastIndexOf(marker);
-  assert.ok(offset >= 0, "provider-visible tool output must contain runtime evidence, not only UI details");
-  const end = output.indexOf("\n```", offset + marker.length);
-  return JSON.parse(output.slice(offset + marker.length, end));
+  const [found] = ([1, 2] as const)
+    .map((version) => ({ version, marker: EVIDENCE_INTRODUCTION[version] }))
+    .map((item) => ({ ...item, offset: output.lastIndexOf(item.marker) }))
+    .filter((item) => item.offset >= 0)
+    .sort((a, b) => b.offset - a.offset);
+  assert.ok(found, "provider-visible tool output must contain runtime evidence, not only UI details");
+  const start = found.offset + found.marker.length;
+  const evidence = JSON.parse(output.slice(start, output.indexOf("\n```", start)));
+  assert.equal(evidence.version, found.version, "the introduction and its JSON must name the same version");
+  return evidence;
 }

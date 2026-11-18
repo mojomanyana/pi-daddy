@@ -198,6 +198,34 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-17 — The model receives an execution evidence summary; complete receipts stay outside its context
+
+Owner decision: per child, `delegate`, `delegate_all` and `delegate_chain` return a version 2 summary to the
+model: ordinal, ok/work/control, final and cleanup state, observation state when not complete, timeout/cancel/
+spawn-failure/truncation flags that are true, a reason bounded to 160 characters, and one citable identity (the
+operation ID, else the execution ID its cleanup names). A settled worker that did not exit normally also keeps its
+receipt's cause when it is not `worker-exit` and a non-zero signal (`cleanup.receipt.reason`,
+`cleanup.receipt.workerSignal`; review of 2026-11-17): without them a helper interrupted by a signal read like an
+exit without a final, a SIGKILLed worker carried no sign of the kill, and a Herdr worker reaped on owner loss read
+like a launch that never started. It is computed only from the unchanged version 1 projection, keeps each value at
+its version 1 path, and carries no path, PID, nonce, boot ID, session/message ID or hash. Complete receipts stay in
+result details (kept in the Pi session file when the session is persisted, withheld from providers) and in opt-in
+public capture, which records version 1 as `runtimeEvidence` beside the summary response. The runtime settlement
+journal keeps a receipt's identity and SHA-256 only, a stable operation's retained record keeps its `receiptPath`
+and `executionId`, the receipt file itself is in the OS temporary directory, and the governance ledger records no
+receipt. No Principal, Bookie, Scout or skill-harness code parses a receipt from provider-visible text;
+skill-harness's capture reader is pinned to 0.45.0 captures. Principal's coordinator texts do ask the model to check
+the "identity-bound receipt", which a Principal phase (always with an `operation_id`) no longer sees: it sees
+`cleanup.state=settled` and the operation ID. Daddy reports settled only after matching the identity-bound receipt,
+and Principal's `complete` rechecks the cleanup's execution identity from Daddy's native record, so a literal
+coordinator blocks completion rather than passing it. Principal pins pi-daddy 0.59.0; its "identity-bound receipt"
+wording must change in the same Principal release that adopts this one (suggested: "check the full native result
+and the runtime evidence summary's `cleanup.state=settled` before dependent work; Daddy reports settled only with a
+matching identity-bound receipt, and `complete` rechecks it against the execution identity; receipts stay in tool
+details"). Failure and uncertainty states stay distinguishable without prose, tested with the shapes real runs
+produce. Ledger, details, capture manifest and cleanup behaviour are unchanged; no model was run, so model behaviour
+is not established.
+
 ### 2026-11-16 — Tool inventory observations precede settled availability claims
 
 Before the first native callable-tool observation, an unknown extension capability in the startup summary
@@ -388,6 +416,8 @@ Capture errors are loud observations that preserve original work results and exc
 are canonical, private and operator-selected; writes are bounded, exclusive and synchronized before publishing
 refs. Same-user hostile authenticity and a lifetime retention quota are not claimed. JEV/LoRA use remains
 optional downstream offline evaluation; no advisor, metered API or automatic policy is restored.
+**Amended 2026-11-17:** the captured `response` holds the version 2 summary the model received; the manifest's
+`runtimeEvidence` keeps the complete version 1 projection.
 
 **Model-visible execution evidence, 2026-10-07:** native delegation results append a versioned allowlisted
 projection of their actual final identity, process cleanup receipt and observation state to text content.
@@ -397,6 +427,8 @@ final text and structured details remain unchanged, and chain composition still 
 Private session contents, reasoning and raw diagnostics are excluded. Existing typed pre-launch refusals and
 critical-assurance exception semantics remain unchanged. Model-free wiring and real provider-conversion tests
 protect this boundary; they are not model-compliance qualification.
+**Superseded in part 2026-11-17:** the model receives the version 2 summary (decision above), not the complete
+final identity and process receipt; the complete projection stays in details and public capture.
 
 **Ledger contract correction, 2026-10-07:** derive the exported capability namespace pattern from the same
 CAPABILITY_NAMESPACE_PREFIXES source as runtime validation. Existing context grants were valid runtime data

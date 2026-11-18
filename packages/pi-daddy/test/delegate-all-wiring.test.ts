@@ -6,6 +6,7 @@ import {
 } from "../src/products/activity-timeline.ts";
 import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
+import { executionEvidenceSummary } from "../extensions/execution-evidence.ts";
 import { toolSources } from "./tool-sources-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 /**
@@ -22,7 +23,7 @@ import { piFixtureScript } from "./pi-fixture.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
@@ -352,9 +353,9 @@ test("a progress renderer failure cannot kill a process child", async () => {
       ctx,
     )) as any;
     assert.match(result.content[0]?.text ?? "", /child completed/);
-    const evidence = evidenceFromProvider(result);
+    // Owner decision 2026-11-17: complete receipts are read from the capture; the model saw their summary.
+    const evidence = (await assertPublicCapture(result, "delegate", 1)).runtimeEvidence;
     assert.equal(evidence.tool, "delegate");
-    await assertPublicCapture(result, "delegate", 1);
     assert.equal(evidence.outcomes[0].final.sha256, createHash("sha256").update(result.details.text).digest("hex"));
     assert.deepEqual(evidence.outcomes[0].cleanup, result.details.cleanup);
     assert.equal(evidence.outcomes[0].cleanup.receipt.reapedAll, true);
@@ -389,9 +390,9 @@ test("a chain progress renderer failure cannot kill its process step", async () 
       ctx,
     )) as any;
     assert.match(result.content[0]?.text ?? "", /chain child completed/);
-    const evidence = evidenceFromProvider(result);
+    // Owner decision 2026-11-17: complete receipts are read from the capture; the model saw their summary.
+    const evidence = (await assertPublicCapture(result, "delegate_chain", 1)).runtimeEvidence;
     assert.equal(evidence.tool, "delegate_chain");
-    await assertPublicCapture(result, "delegate_chain", 1);
     assert.deepEqual(evidence.outcomes[0].cleanup, result.details.outcomes[0].cleanup);
     assert.equal(evidence.outcomes[0].final.messageId, result.details.outcomes[0].final.messageId);
     assert.ok(updates >= 2, "the chain final frame should still be attempted");
@@ -430,9 +431,9 @@ test("mixed all-failed fan-out does not assign one child's refusal code to the a
     assert.ok(codes.includes("CHILD_EXIT_NONZERO"));
     assert.equal(result.details.outcomes[1].work, "failed");
     assert.equal(result.details.outcomes[1].cleanup.state, "settled");
-    const evidence = evidenceFromProvider(result);
+    // Owner decision 2026-11-17: complete receipts are read from the capture; the model saw their summary.
+    const evidence = (await assertPublicCapture(result, "delegate_all", 2)).runtimeEvidence;
     assert.equal(evidence.tool, "delegate_all");
-    await assertPublicCapture(result, "delegate_all", 2);
     assert.deepEqual(
       evidence.outcomes.map((outcome: any) => outcome.ordinal),
       [1, 2],
@@ -1368,8 +1369,8 @@ test("a complete final too large for required handoff blocks only the dependent 
     assert.equal(result.details.aborted, true);
     assert.equal(result.details.outcomes.length, 1);
     assert.equal(result.details.outcomes[0].text, final);
-    await assertPublicCapture(result, "delegate_chain", 2);
-    const evidence = evidenceFromProvider(result);
+    // Owner decision 2026-11-17: complete receipts are read from the capture; the model saw their summary.
+    const evidence = (await assertPublicCapture(result, "delegate_chain", 2)).runtimeEvidence;
     assert.equal(evidence.requested, 2);
     assert.equal(evidence.outcomes.length, 1, "the blocked dependent step must have no invented outcome");
     assert.equal(evidence.outcomes[0].final.sha256, createHash("sha256").update(final).digest("hex"));
@@ -1423,8 +1424,8 @@ test("chain composition passes exact authored text without coordinator evidence"
     assert.ok(handoff, "existing data-only handoff wrapper stays intact");
     assert.equal(handoff[2], final, "only exact authored bytes enter the next step");
     assert.doesNotMatch(tasks[1], /Runtime execution evidence|Public evidence capture/);
-    await assertPublicCapture(result, "delegate_chain", 2);
-    const evidence = evidenceFromProvider(result);
+    // Owner decision 2026-11-17: complete receipts are read from the capture; the model saw their summary.
+    const evidence = (await assertPublicCapture(result, "delegate_chain", 2)).runtimeEvidence;
     assert.equal(evidence.requested, 2);
     assert.equal(evidence.outcomes.length, 2);
     assert.notEqual(
@@ -1435,6 +1436,155 @@ test("chain composition passes exact authored text without coordinator evidence"
       assert.deepEqual(evidence.outcomes[index].cleanup, outcome.cleanup);
       assert.equal(evidence.outcomes[index].final.sha256, createHash("sha256").update(final).digest("hex"));
     }
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+/** The model-visible block alone: the authored text above it is the child's and the report's, not evidence. */
+function evidenceBlock(result: any): string {
+  const block = result.content.find((item: any) => item.text.startsWith("Runtime execution evidence"));
+  assert.ok(block, "every executed delegation returns its runtime evidence block");
+  return block.text;
+}
+/** A captured process child's complete receipt, as `details` must keep it once the model sees only a summary. */
+function assertCompleteReceipt(outcome: any) {
+  assert.equal(outcome.cleanup.state, "settled");
+  assert.deepEqual(outcome.cleanup.receipt.identity, outcome.cleanup.identity);
+  assert.equal(outcome.cleanup.receipt.reapedAll, true);
+  for (const key of ["nonce", "root", "bootId", "pidNamespace", "helperPid", "workerPid", "receiptPath"])
+    assert.ok(key in outcome.cleanup.identity, key);
+  assert.match(outcome.final.sessionId, /\S/);
+}
+/** Neither a receipt field name nor a path, session identity or digest reaches the model. */
+function assertNoHostFacts(block: string, outcomes: any[]) {
+  assert.doesNotMatch(block, /\/|"(nonce|bootId|pidNamespace|helperPid|workerPid|receipt|sessionId|reapedAll)"/);
+  for (const outcome of outcomes.filter((item) => item.final?.state === "complete"))
+    for (const value of [outcome.final.sessionId, outcome.final.messageId, outcome.final.sha256])
+      assert.ok(!block.includes(value), value);
+}
+const briefReason = (text: string) =>
+  Array.from(text).length <= 160 ? text : Array.from(text).slice(0, 159).join("") + "…";
+
+// Owner decision 2026-11-17. Breaks if a real delegation without capture shows the model the complete receipt,
+// drops a child's settled cleanup or execution identity from the summary, or stops returning the receipt in details.
+test("without capture, all three tools show the model a summary while details keep every complete receipt", async () => {
+  const bin = await tempDir("grants-evidence-summary-");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('summary final');"));
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_FANOUT]: "8" });
+    const read = (n: number) => ({ task: `inspect ${n}`, tools: ["read"] });
+    const single = (await tools.get("delegate")!.execute("one", read(1), undefined, undefined, ctx)) as any;
+    const all = (await tools
+      .get("delegate_all")!
+      .execute(
+        "all",
+        { children: [read(2), { task: "denied", tools: ["write"] }, read(3)] },
+        undefined,
+        undefined,
+        ctx,
+      )) as any;
+    const chain = (await tools
+      .get("delegate_chain")!
+      .execute(
+        "chain",
+        { steps: [read(4), { task: "use {previous}", tools: ["read"] }] },
+        undefined,
+        undefined,
+        ctx,
+      )) as any;
+    const settled = (outcome: any, ordinal: number) => ({
+      ordinal,
+      ok: true,
+      work: "succeeded",
+      final: { state: "complete" },
+      cleanup: { state: "settled", identity: { executionId: outcome.cleanup.identity.executionId } },
+    });
+    for (const [tool, result, natives] of [
+      ["delegate", single, [single.details]],
+      ["delegate_all", all, all.details.outcomes],
+      ["delegate_chain", chain, chain.details.outcomes],
+    ] as const) {
+      const evidence = evidenceFromProvider(result);
+      assert.deepEqual([evidence.version, evidence.tool, evidence.requested], [2, tool, natives.length]);
+      const expected = natives.map((outcome: any, index: number) =>
+        outcome.cleanup
+          ? settled(outcome, index + 1)
+          : {
+              ordinal: index + 1,
+              ok: false,
+              work: null,
+              reason: briefReason(outcome.reason),
+              final: null,
+              cleanup: null,
+              observation: null,
+            },
+      );
+      assert.deepEqual(evidence.outcomes, expected, tool);
+      assertNoHostFacts(evidenceBlock(result), natives);
+      for (const outcome of natives.filter((item: any) => item.cleanup)) assertCompleteReceipt(outcome);
+    }
+    assert.equal(all.details.outcomes[1].refusal.code, "CAPABILITY_ESCALATION");
+    assert.equal(evidenceFromProvider(all).outcomes.filter((outcome: any) => outcome.cleanup).length, 2);
+  } finally {
+    process.env.PATH = oldPath;
+  }
+});
+
+// Breaks if a stable operation's summary stops citing its operation ID, or if the complete receipt stops being
+// recoverable outside model context: from details, the native receipt file, the runtime settlement journal and the
+// retained operation record that `pi-daddy:operation-status:v1` and `operation-history:v1` serve.
+test("a stable operation shows its ID to the model while Daddy's records keep the complete receipt", async () => {
+  const bin = await tempDir("grants-evidence-operation-");
+  await writeFile(join(bin, "pi"), piFixtureScript("#!/usr/bin/env node\nprocess.stdout.write('operation final');"));
+  await chmod(join(bin, "pi"), 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${bin}:${oldPath}`;
+  try {
+    const { tools, ctx, dir } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }, undefined, true);
+    const spec = { operation_id: "build:compact-evidence", task: "inspect", tools: ["read"] };
+    const result = (await tools.get("delegate")!.execute("operation", spec, undefined, undefined, ctx)) as any;
+    const outcome = result.details;
+    assert.deepEqual(evidenceFromProvider(result).outcomes, [
+      {
+        ordinal: 1,
+        operation: { operationId: "build:compact-evidence", state: "settled" },
+        ok: true,
+        work: "succeeded",
+        final: { state: "complete" },
+        cleanup: { state: "settled" },
+      },
+    ]);
+    const block = evidenceBlock(result);
+    assertNoHostFacts(block, [outcome]);
+    assert.ok(!block.includes(outcome.operation.executionId), "one citable identity: the operation ID");
+    assertCompleteReceipt(outcome);
+    const { identity, receipt } = outcome.cleanup;
+    assert.equal(outcome.operation.executionId, identity.executionId);
+    assert.deepEqual(JSON.parse(await readFile(identity.receiptPath, "utf8")), receipt);
+    const journals = join(dir, "pi-daddy", "runtime-settlement");
+    const [journal] = (await readdir(journals)).filter((name) => name.endsWith(".json"));
+    const entry = JSON.parse(await readFile(join(journals, journal), "utf8")).executions.find(
+      (execution: any) => execution.id === identity.executionId,
+    );
+    assert.deepEqual(entry, {
+      id: identity.executionId,
+      state: "settled",
+      identity,
+      receiptSha256: createHash("sha256").update(JSON.stringify(receipt)).digest("hex"),
+    });
+    const record = JSON.parse(await readFile(outcome.operation.artifact.manifest.path, "utf8"));
+    assert.equal(record.operation.operationId, "build:compact-evidence");
+    assert.deepEqual(record.operation.runtime.cleanup, {
+      state: "settled",
+      receiptPath: identity.receiptPath,
+      executionId: identity.executionId,
+    });
+    const { text: _text, ...final } = outcome.final;
+    assert.deepEqual(record.operation.runtime.final, final);
   } finally {
     process.env.PATH = oldPath;
   }
@@ -1451,8 +1601,9 @@ async function assertPublicCapture(result: any, tool: string, requested: number)
   const response = JSON.parse(await readFile(manifest.response.path, "utf8"));
   assert.deepEqual(response, { isError: result.isError ?? false, content: result.content.slice(0, -1) });
   assert.equal("details" in response, false);
-  const evidence = evidenceFromProvider(result);
-  assert.deepEqual(manifest.runtimeEvidence, evidence);
+  const evidence = manifest.runtimeEvidence;
+  assert.equal(evidence.version, 1, "capture keeps the complete projection");
+  assert.deepEqual(evidenceFromProvider(result), executionEvidenceSummary(evidence), "the model saw its summary");
   const nativeOutcomes = result.details.outcomes ?? [result.details];
   assert.equal(manifest.finals.length, nativeOutcomes.length);
   for (const [index, outcome] of nativeOutcomes.entries()) {

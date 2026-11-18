@@ -137,10 +137,11 @@ runtime's existing decoded-text hash semantics. Changing a source path later doe
 Manifest `requestedDefinitionId` is the caller's claim; `definitionId` is the observed planner selection.
 Requested execution IDs are allocated occurrences, not proof that those children started. Runtime outcomes
 contain only the existing allowlisted final and process-receipt projection, in original child/step order;
-skipped steps have no invented outcome. `finals` also copies each complete attributed public final separately,
-with its ordinal, execution ID and native session/message/leaf identity. Its byte hash must match the native
-final hash; unavailable finals remain null. Consumers never need to reconstruct a final from report delimiters.
-Process settlement remains separate from workspace cleanup.
+skipped steps have no invented outcome. The captured `response` holds the version 2 summary the model received,
+computed from that complete version 1 projection alone. `finals` also copies each complete attributed public
+final separately, with its ordinal, execution ID and native session/message/leaf identity. Its byte hash must
+match the native final hash; unavailable finals remain null. Consumers never need to reconstruct a final from
+report delimiters. Process settlement remains separate from workspace cleanup.
 
 The configured root must already exist with owner-only permissions. Captures use exclusive ordinary files,
 held directory descriptors and fsync before publishing a reference; each capture is limited to 64 MiB and
@@ -351,7 +352,11 @@ A packaged native helper owns and reaps the cooperating child subtree. The final
 protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
 work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
 execution returns `isError` with its available evidence. Display, diagnostics and optional recording cannot replace
-the primary final. Unknown cleanup retains capacity and workspace exclusion.
+the primary final. Unknown cleanup retains capacity and workspace exclusion. The coordinating model receives a
+version 2 runtime evidence summary per child: those states, any timeout, cancellation, spawn-failure or truncation
+flag, a bounded reason, the operation ID (or execution ID), and for a worker that did not exit normally the
+receipt's cause and signal. Complete final identities and process receipts stay in the result details, which Pi
+persists but does not send to the provider, and in opt-in public capture.
 
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` with their returned `delegate_describe` `definitionId`; independent parallel work uses one `delegate_all` batch.
 
