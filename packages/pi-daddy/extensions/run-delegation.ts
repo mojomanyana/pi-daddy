@@ -328,8 +328,6 @@ async function runOneDelegationImplementation(
     approvalFacts?: ApprovalLedgerFacts;
     /** A replay-safe retry (2026-11-17): plan with nobody asked, so it runs only if an unprompted call would. */
     askNobody?: boolean;
-    /** The execution this one retries, recorded on its capability decision. */
-    retryOf?: string;
     /** Epoch ms the child's wall-clock deadline may not pass: the first attempt's, for a retry. */
     deadlineAt?: number;
     /** Composition-only observation of what this attempt spent and recorded; see `replay-retry.ts`. */
@@ -506,7 +504,6 @@ async function runOneDelegationImplementation(
         taskFromExecutionId,
         approval: approvalOutcome,
         approvalFacts,
-        retryOf: options.retryOf,
       });
     } catch (error) {
       plan = {
@@ -634,7 +631,6 @@ export async function runOneDelegation(
           capacityReservation: reservation,
           resolvedRuntime: attempt.runtime,
           askNobody: true,
-          retryOf: ids.executionId,
           deadlineAt: attempt.deadlineAt,
           onExecutorEntry: observe.onExecutorEntry,
         });
@@ -642,7 +638,7 @@ export async function runOneDelegation(
     );
     if (claim) {
       try {
-        await finishDelegationOperation(claim, result, session, finalScope);
+        await finishDelegationOperation(claim, result, session, finalScope, spec.definitionId);
       } catch (error) {
         // A post-execution observation failure must not erase the native final or settlement receipt.
         result.control = "failed";

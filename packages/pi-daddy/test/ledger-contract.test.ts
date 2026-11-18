@@ -96,7 +96,6 @@ const CAPABILITY_FIELDS = [
   "executor",
   "taskFrom",
   "taskFromExecutionId",
-  "retryOf",
   "taskDigest",
   "correlation",
   "refusal",

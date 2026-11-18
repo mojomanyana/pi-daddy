@@ -40,13 +40,11 @@ Earlier schema snapshots omitted `context:` even though the runtime emitted and 
 validation of existing records; it changes no grant or execution authority. Consumers pinned to older schemas
 must explicitly adopt the corrected contract. The closed field and identifier-tail rules remain unchanged.
 
-## Retry linkage (2026-11-17)
+## Retry linkage (2026-11-18)
 
-`capability_decision` gains one optional field, `retryOf`: the `executionId` of the failed first attempt that this
-execution automatically retries (a replay-safe child, retried at most once). It is absent on every first attempt and
-never equals the record's own `executionId`. Both attempts keep their own capability and lifecycle events. This is
-an added field in a closed schema: readers older than this schema report a record carrying it as invalid, while
-older writers still append after it. Consumers that must read such ledgers adopt this schema.
+Automatic retry does not change the shared record-v1 contract. Both executions emit ordinary capability and
+lifecycle records; their explicit retry relationship remains in the delegation's result details and retained
+session evidence. Released readers can continue to consume the ledger independently of Daddy updates.
 
 ## Execution identity
 

@@ -387,9 +387,10 @@ crash and is retried once. Daddy never retries a child its parent's tool call ca
 settled, one that spent an approval (on a gated tool, or a gated context handoff such as the default-gated
 `context:fork`), one in a Herdr pane, or one carrying an `operation_id`, and it never retries twice. The summary
 then carries `"retry":{"attempts":2,"firstFailure":"…"}`, the details keep the first attempt complete, the
-ledger links the two with `retryOf`, and the usage reported to the Pi session covers both attempts. A failure carrying an `operation_id` that would otherwise have been retried is
+result details link the two executions, and the usage reported to the Pi session covers both attempts. A failure carrying an `operation_id` that would otherwise have been retried is
 returned with `"replayable":true` instead, so its coordinator can retry it once as a new operation (Principal does).
-Under the Herdr executor nothing is retried or marked. `PI_DADDY_REPLAY_RETRY=0` turns off the retry and the
+A complete answer is never retried, including after a later idle timeout. Bound operation failures retain optional
+owner-verified retry eligibility; a coordinator without that evidence keeps its manual retry path. Under the Herdr executor nothing is retried or marked. `PI_DADDY_REPLAY_RETRY=0` turns off the retry and the
 `replayable` mark; the replay-safe mark stays.
 
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` after a `delegate_describe` of each, which binds its `definitionId`; independent parallel work uses one `delegate_all` batch.

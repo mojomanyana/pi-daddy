@@ -198,6 +198,29 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-18 — Independent upgrades preserve existing evidence and completed work
+
+The owner requires each package to work independently with released siblings. This reverses the 2026-11-17
+retry ledger expansion: both executions retain the existing record-v1 shape, and retry linkage stays in the
+delegation result details. A coordinated Harness upgrade is not required. A complete attributed final prevents
+automatic replay even when an idle timeout follows it; execution and cleanup trouble remain visible separately.
+
+Ordinary operations retained before the definition-binding change may be read through their exact legacy request
+digest when their same-owner, same-workspace result is complete and settled. The compatibility path never claims,
+starts or changes an operation. It labels the result historical and does not claim the old record captured full
+definition metadata. Changed recorded inputs, denied current access, active/uncertain records and foreign owners
+remain blocked. Exact authorized historical recovery after a new session retains its existing owner checks.
+
+For a bound failed operation, optional automatic-retry eligibility is retained privately only after owner
+settlement succeeds. It names the exact operation, execution and definition. Qualified status and historical
+recovery may expose it under runtime.automaticRetryEligibility; missing or invalid optional evidence permits no
+automatic retry. The shared ledger and original immutable result manifest remain unchanged. Principal owns its
+durable one-successor budget; a released Daddy without this optional evidence remains usable through manual retry.
+
+These behaviors have focused regression checks in the same change. Record actual run results separately; source
+and authored fixtures alone do not establish live model behavior.
+
+
 ### 2026-11-17 — Read-only work is retried once; everything else still stops and asks
 
 Owner's decision: "Read-only work, once. Definitions that hold no write, edit or shell tool (investigate today) are

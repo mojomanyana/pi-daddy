@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { readBoundedTextSync } from "../kernel/bounded-read-sync.ts";
 import { operationArtifactsDir } from "../kernel/project-paths.ts";
 import { validOperationId, type OperationRequest, type OperationReference } from "../kernel/dispatch-operation.ts";
+import type { AutomaticRetryEligibility } from "../kernel/dispatch-operation.ts";
+import { readAutomaticRetryEligibility, retainAutomaticRetryEligibility } from "./operation-replay.ts";
 import {
   MAX_OPERATION_ARTIFACT_BYTES,
   MAX_OPERATION_MANIFEST_BYTES,
@@ -259,8 +261,17 @@ export function readOperationHistory(
     bytes: Buffer.byteLength(text),
   });
   const content = includeFinal ? readOperationArtifact(artifact, { agentDirectory: directory }) : undefined;
+  const { automaticRetryEligibility: _unqualified, ...runtime } = manifest.operation.runtime ?? {};
+  const proof = readAutomaticRetryEligibility(path, owner, admission.request, manifest.operation);
+  const operation = {
+    ...manifest.operation,
+    ...(manifest.operation.runtime
+      ? { runtime: { ...runtime, ...(proof ? { automaticRetryEligibility: proof } : {}) } }
+      : {}),
+    artifact,
+  };
   return {
-    operation: { ...manifest.operation, artifact },
+    operation,
     artifact,
     requestDigest: admission.request.requestDigest,
     ...(content?.final ? { final: content.final } : {}),
@@ -276,6 +287,15 @@ export function openOperationArtifacts(agentDirectory: string, owner: OperationA
   return {
     owner: Object.freeze({ ...owner }),
     history,
+    retainAutomaticRetry(request: OperationRequest, proof: AutomaticRetryEligibility) {
+      requestCheck(request);
+      const path = location(directory, owner, request.operationId);
+      const admission = admissionAt(path, owner, request.operationId);
+      const retained = history(request.operationId, false);
+      if (!admission || !sameRequest(admission.request, request) || !retained?.artifact)
+        throw Error("automatic retry evidence requires its exact retained owner");
+      retainAutomaticRetryEligibility(path, owner, request, retained.operation, proof);
+    },
     admit(request: OperationRequest) {
       requestCheck(request);
       request = cleanRequest(request);

@@ -20,7 +20,7 @@ class DefinitionInputError extends Error {}
 export type DefinitionIdSource = "supplied" | "remembered";
 /**
  * The definitionId a delegation was checked against, and its source. Returned in tool result details only: the
- * ledger schema is closed and pinned by skill-harness, so recording it there needs a coordinated schema version.
+ * ledger schema stays compatible with independently released readers; richer evidence needs an optional contract.
  */
 export interface DefinitionBinding {
   definitionId: string;

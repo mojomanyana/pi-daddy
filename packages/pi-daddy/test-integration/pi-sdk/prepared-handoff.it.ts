@@ -112,7 +112,9 @@ test("prepared handoff corrects inputs, executes once and retains the same nativ
       const described = await success("delegate_describe", { agent: prepared.delegationArguments.agent });
       assert.equal(described.binding.package, "principal-pi-skills");
       assert.equal(described.binding.phase, prepared.phase);
-      assert.equal(prepared.statusArguments.operationId, prepared.operation_id);
+      // Either released ID helpers or newer task/step selectors must resolve the same prepared operation.
+      const preparedStatus = await success("principal_workflow", prepared.statusArguments);
+      assert.equal(preparedStatus.operation_id, prepared.operation_id);
       assert.equal(prepared.delegationArguments.operation_id, prepared.operation_id);
       const dispatch = {
         ...prepared.delegationArguments,

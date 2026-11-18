@@ -5,7 +5,7 @@
  *
  * Production changes that break this file: not retrying an eligible read-only child, retrying a second time,
  * retrying a write-capable child, a cancelled child, a stable operation or a child whose approval was spent;
- * ignoring `PI_DADDY_REPLAY_RETRY=0`; giving the retry a fresh full deadline; losing the `retryOf` link or the first
+ * ignoring `PI_DADDY_REPLAY_RETRY=0`; giving the retry a fresh full deadline; losing the retained retry link or the first
  * attempt's receipt; not telling the model that a retry happened; feeding a chain the first attempt's identity, or
  * dropping a later step's provenance on its retry; letting a retry on the workspace-routed path ask anyone; not
  * marking a stable operation's eligible failure `replayable`, or marking one any other guard refused; telling the
@@ -21,6 +21,7 @@ import grantsExtension from "../extensions/grants.ts";
 import { createGrantsSession } from "../extensions/session.ts";
 import { ENV_HERDR } from "../src/executors/executor.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
+import { openOperationArtifacts } from "../src/governance/operation-artifacts.ts";
 import {
   ENV_APPROVED,
   ENV_CHILD_IDLE_TIMEOUT,
@@ -42,6 +43,7 @@ import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { toolSources } from "./tool-sources-fixture.ts";
+import { assertReleasedHarnessLedger } from "./released-harness-fixture.ts";
 
 after(cleanupTempDirs);
 
@@ -90,6 +92,15 @@ fs.appendFileSync(path.join(dir, "launches"), JSON.stringify({ task: task.trim()
 const first = attempt === 1;
 if (task.includes("fail-always") || (task.includes("fail-once") && first)) process.exit(1);
 else if (task.includes("silent-once") && first) setTimeout(() => {}, 600000);
+else if (task.includes("answered-idle")) {
+  process.stdout.write("already answered");
+  process.removeAllListeners("exit");
+  __piFixture.persist(0);
+  __fixtureEmit({ type: "message_end", message: __fixtureMessage(0) });
+  __fixtureEmit({ type: "agent_end" });
+  __fixtureEmit({ type: "agent_settled" });
+  setTimeout(() => {}, 600000);
+}
 else if (task.includes("hold-once") && first)
   setInterval(() => fs.existsSync(path.join(dir, "release")) && process.exit(1), 20);
 else if (task.includes("busy-always") || task.includes("slow-always")) setInterval(() => process.stdout.write("."), 100);
@@ -413,11 +424,11 @@ test("the retry keeps the first attempt's model even if the session's choice cha
   assert.equal(second, first);
 });
 
-test("both attempts are in the ledger, linked by retryOf, and the retry inherits the first deadline", async () => {
+test("both attempts are in the ledger without expanding its contract, and inherit the first deadline", async () => {
   const dir = await tempDir("replay-retry-ledger-");
   const path = join(dir, "ledger.jsonl");
   const { call, launches } = await harness({ [ENV_GRANT]: GRANT, [ENV_LEDGER]: path });
-  await call("delegate", { task: "fail-once inspect", tools: ["read"] });
+  const result = await call("delegate", { task: "fail-once inspect", tools: ["read"] });
   const [first, second] = (await launches()).map((run) => run.execution);
   const events = await ledger(path);
   const decisions = events.filter((event) => event.event === "capability_decision");
@@ -425,7 +436,7 @@ test("both attempts are in the ledger, linked by retryOf, and the retry inherits
     decisions.map((event) => [event.executionId, event.retryOf ?? null, event.blocked]),
     [
       [first, null, false],
-      [second, first, false],
+      [second, null, false],
     ],
   );
   assert.equal(decisions[0].childId, decisions[1].childId, "same logical position");
@@ -439,7 +450,30 @@ test("both attempts are in the ledger, linked by retryOf, and the retry inherits
     Date.parse(lifecycle(second, "starting").deadlineAt) <= Date.parse(lifecycle(first, "starting").deadlineAt),
     "the retry may not run past the first attempt's deadline",
   );
-  assert.equal((await verifyLedger(path)).ok, true, "the closed reader accepts the link");
+  assert.equal(result.details.retry.executionId, second);
+  assert.equal(result.details.retry.first.cleanup.identity.executionId, first);
+  assert.equal((await verifyLedger(path)).ok, true, "the closed reader accepts both ordinary records");
+  await assertReleasedHarnessLedger(await readFile(path, "utf8"));
+});
+
+test("a complete final followed by idle timeout is kept without automatic retry or a replayable mark", async () => {
+  const { call, launches } = await harness(
+    { [ENV_GRANT]: GRANT, [ENV_CHILD_IDLE_TIMEOUT]: "2", [ENV_CHILD_TIMEOUT]: "15" },
+    { durable: true },
+  );
+  for (const spec of [
+    { task: "answered-idle direct", tools: ["read"] },
+    { task: "answered-idle operation", tools: ["read"], operation_id: "read:answered-timeout" },
+  ]) {
+    const result = await call("delegate", spec);
+    assert.equal(result.details.timedOut, true);
+    assert.equal(result.details.final.state, "complete");
+    assert.equal(result.details.final.text, "already answered");
+    assert.equal(result.details.cleanup.state, "settled");
+    assert.equal(result.details.retry, undefined);
+    assert.equal(result.details.replayable, undefined);
+  }
+  assert.equal((await launches()).length, 2, "one execution per request, including the operation-bound request");
 });
 
 test("a stable operation is never retried: its eligible failure is marked replayable, and a reuse is not", async () => {
@@ -511,7 +545,11 @@ test("a stable operation's failure is not marked replayable when any other guard
   }
   // The operation's status could not be recorded: a failed control step, so no mark either.
   {
-    const { call, launches, session } = await harness({ [ENV_GRANT]: GRANT }, { durable: true });
+    const { call, launches, session } = await harness(
+      { [ENV_GRANT]: `${GRANT},agent:look` },
+      { durable: true, definitions: { look: "read" } },
+    );
+    await call("delegate_describe", { agent: "look" });
     const operations = session.autoMode!.operations! as { claim: (...args: any[]) => Promise<any> };
     const claim = operations.claim.bind(operations);
     const unfinished: Array<() => Promise<unknown>> = [];
@@ -526,12 +564,19 @@ test("a stable operation's failure is not marked replayable when any other guard
       }
       return owned;
     };
-    const result = await call("delegate", operation("fail-always unrecorded", ["read"]));
+    const failedSpec = { ...operation("fail-always unrecorded", ["read"]), agent: "look" };
+    const result = await call("delegate", failedSpec);
     // The live registry still holds the operation as running; settle it so the owner can close.
     for (const finish of unfinished) await finish();
     assert.equal(result.details.control, "failed");
     assert.match(result.details.reason, /operation status update failed: Error: operation registry unavailable$/);
     await unmarked("control failed", result, 1, launches);
+    assert.equal(
+      session.reloadLifecycle.operationFinals!.artifacts!.history(failedSpec.operation_id)?.operation.runtime
+        ?.automaticRetryEligibility,
+      undefined,
+      "failed owner settlement must not publish durable automatic-retry evidence",
+    );
   }
 });
 
@@ -580,10 +625,10 @@ test("delegate_chain retries a step before deciding to continue, and the next st
     decisions.map((event) => [event.executionId, event.retryOf ?? null, event.taskFromExecutionId ?? null]),
     [
       [runs[0].execution, null, null],
-      [runs[1].execution, runs[0].execution, null],
+      [runs[1].execution, null, null],
       // ADR-0033 provenance names the execution that wrote the input, for the step and for its retry alike.
       [runs[2].execution, null, runs[1].execution],
-      [runs[3].execution, runs[2].execution, runs[1].execution],
+      [runs[3].execution, null, runs[1].execution],
     ],
   );
   assert.equal(result.details.outcomes[0].retry.attempts, 2);
@@ -676,7 +721,7 @@ test("a retry and a replayable mark keep the definition the call bound; one chan
   // the bound definitionId like any call; the mark changes neither the binding, the describe memory nor the request
   // an `operation_id` names.
   const path = join(await tempDir("replay-retry-binding-"), "ledger.jsonl");
-  const { call, launches, session, release } = await harness(
+  const { dir, call, launches, session, release } = await harness(
     { [ENV_GRANT]: `${GRANT},agent:look`, [ENV_LEDGER]: path },
     { durable: true, definitions: { look: "read, grep" } },
   );
@@ -689,7 +734,9 @@ test("a retry and a replayable mark keep the definition the call bound; one chan
   assert.deepEqual(retried.details.definitionBinding, remembered);
   const decisions = (await ledger(path)).filter((event) => event.event === "capability_decision");
   assert.equal(decisions.length, 2);
-  assert.equal(decisions[1].retryOf, decisions[0].executionId);
+  assert.equal(decisions[1].retryOf, undefined);
+  assert.equal(retried.details.retry.first.cleanup.identity.executionId, decisions[0].executionId);
+  assert.equal(retried.details.retry.executionId, decisions[1].executionId);
   assert.deepEqual(
     decisions[1].definitionDigest,
     decisions[0].definitionDigest,
@@ -702,6 +749,19 @@ test("a retry and a replayable mark keep the definition the call bound; one chan
   assert.equal(marked.details.replayable, true);
   assert.deepEqual(marked.details.definitionBinding, remembered);
   assert.deepEqual(memory(), [["look", definitionId]]);
+  const proof = {
+    version: 1,
+    eligible: true,
+    operationId: spec.operation_id,
+    executionId: marked.details.operation.executionId,
+    definitionId,
+  };
+  const freshStore = openOperationArtifacts(dir, { sessionId: `fixture:${dir}`, cwd: dir });
+  assert.deepEqual(
+    freshStore.history(spec.operation_id)?.operation.runtime?.automaticRetryEligibility,
+    proof,
+    "the original owner retains exact eligibility independently of the in-memory tool result",
+  );
   // The same request again is the same operation, with the ID remembered or supplied: a reference, not a conflict.
   for (const again of [spec, { ...spec, definitionId }]) {
     const reused = await call("delegate", again);

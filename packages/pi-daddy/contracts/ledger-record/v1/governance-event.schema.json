@@ -508,9 +508,6 @@
         },
         "taskFromExecutionId": {
           "$ref": "#/$defs/executionId"
-        },
-        "retryOf": {
-          "$ref": "#/$defs/executionId"
         }
       },
       "required": [

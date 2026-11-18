@@ -20,8 +20,6 @@ export async function recordDelegationDecision(input: {
   agent?: string;
   taskFrom?: string;
   taskFromExecutionId?: string;
-  /** The failed execution this one automatically retries (2026-11-17). */
-  retryOf?: string;
   approval?: ApprovalOutcome;
   approvalFacts?: ApprovalLedgerFacts;
 }): Promise<void> {
@@ -41,7 +39,6 @@ export async function recordDelegationDecision(input: {
       executor: session.executor.kind,
       taskFrom: input.taskFrom,
       taskFromExecutionId: input.taskFromExecutionId,
-      retryOf: input.retryOf,
       requested: plan.requested,
       // ADR-0078: what crossed, recorded as a fact about this child rather than as the parent's request.
       ...(plan.handoffRecord ? { handoff: plan.handoffRecord } : {}),

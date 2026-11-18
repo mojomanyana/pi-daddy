@@ -4,7 +4,7 @@
  * The decision is the kernel's (`src/kernel/replay-safe.ts`); this module gathers its facts and, when it says yes,
  * runs the same request again through the ordinary delegation path. The retry is a fresh execution: a new
  * execution identity, a new child process and session, its own capacity reservation and capability decision,
- * linked to the first by `retryOf` in the ledger. It is planned with nobody asked, so it can only be admitted if a
+ * linked to the first in the retained result details. It is planned with nobody asked, so it can only be admitted if a
  * fresh unprompted delegation would be, and it inherits the first attempt's wall-clock deadline. There is never a
  * third attempt: the retry's own outcome is returned, not judged again.
  */

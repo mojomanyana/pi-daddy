@@ -155,6 +155,7 @@ test("transient failures are classified from settlement facts only", () => {
   assert.equal(replayableFailure({ ...crashed, aborted: true }), undefined);
   assert.equal(replayableFailure({ ...crashed, aborted: true, timedOut: true }), undefined);
   assert.equal(replayableFailure({ ...crashed, final: { state: "complete" } }), undefined);
+  assert.equal(replayableFailure({ ...crashed, timedOut: true, final: { state: "complete" } }), undefined);
   assert.equal(replayableFailure({ ...crashed, spawnFailed: true, spawnError: "helper hash mismatch" }), undefined);
   assert.equal(replayableFailure({ ...crashed, spawnFailed: true }), undefined);
   assert.equal(replayableFailure({ ...crashed, exitCode: 0 }), undefined);
@@ -708,35 +709,27 @@ test("a replayable failure carries one stable field at the same path in details,
   assert.equal(JSON.stringify(summary.outcomes[0]).length - plain.length, ',"replayable":true'.length);
 });
 
-// --- ledger: `retryOf` names another execution, by the builder and by the closed reader ---------------------------
+// --- ledger: retry links stay outside the closed shared wire contract ------------------------------
 
-test("retryOf is an execution id other than the record's own, in the builder and the closed reader", () => {
-  const RETRY_ID = "exec:00000000-0000-4000-8000-000000000002";
-  const record = (retryOf?: string) =>
-    buildRecord({
-      executionId: RETRY_ID,
-      parentExecutionId: null,
-      parentId: "d0",
-      childId: "d0.1",
-      depth: 1,
-      requested: ["tool:read"],
-      parentGrant: ["tool:read"],
-      result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
-      blocked: false,
-      executor: "process",
-      taskDigest: "9".repeat(64),
-      ...(retryOf === undefined ? {} : { retryOf }),
-      now: new Date("2026-11-17T12:00:00.000Z"),
-    });
-  const linked = record(FIRST_ID);
-  assert.equal(linked.retryOf, FIRST_ID);
-  assert.equal(validateLedgerV3Event(JSON.parse(JSON.stringify(linked))), null);
-  assert.equal("retryOf" in record(), false);
-  assert.throws(() => record(RETRY_ID), /cannot retry itself/);
-  assert.throws(() => record("d0.0"), /retryOf must be a pi-daddy execution id/);
-  const wire = JSON.parse(JSON.stringify(linked));
-  assert.notEqual(validateLedgerV3Event({ ...wire, retryOf: RETRY_ID }), null);
-  assert.notEqual(validateLedgerV3Event({ ...wire, retryOf: "d0.0" }), null);
+test("the shared ledger remains closed to retry metadata", () => {
+  const record = buildRecord({
+    executionId: FIRST_ID,
+    parentExecutionId: null,
+    parentId: "d0",
+    childId: "d0.0",
+    depth: 1,
+    requested: ["tool:read"],
+    parentGrant: ["tool:read"],
+    result: { effective: ["tool:read"], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
+    blocked: false,
+    executor: "process",
+    taskDigest: "9".repeat(64),
+    now: new Date("2026-11-17T12:00:00.000Z"),
+  });
+  const wire = JSON.parse(JSON.stringify(record));
+  assert.equal("retryOf" in wire, false);
+  assert.equal(validateLedgerV3Event(wire), null);
+  assert.notEqual(validateLedgerV3Event({ ...wire, retryOf: "exec:00000000-0000-4000-8000-000000000002" }), null);
 });
 
 // --- execution: an inherited deadline bounds both the recorded deadline and the run ------------------------------

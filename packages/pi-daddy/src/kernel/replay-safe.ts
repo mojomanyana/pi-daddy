@@ -86,11 +86,10 @@ export interface ReplayAttempt {
 
 /** The transient failure this attempt shows, or none. A child that produced a complete final has answered. */
 export function replayableFailure(attempt: ReplayAttempt): ReplayFailure | undefined {
-  if (attempt.ok || attempt.aborted) return undefined;
+  if (attempt.ok || attempt.aborted || attempt.final?.state === "complete") return undefined;
   if (attempt.timedOut) return "timed out";
   if (attempt.spawnFailed)
     return TRANSIENT_SPAWN.test(attempt.spawnError ?? "") ? "spawn failed transiently" : undefined;
-  if (attempt.final?.state === "complete") return undefined;
   if (attempt.exitCode !== 0) return "process exited without a final";
   return attempt.final?.providerError ? "provider request failed" : undefined;
 }

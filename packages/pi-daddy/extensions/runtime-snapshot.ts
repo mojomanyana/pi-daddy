@@ -191,10 +191,25 @@ export function registerRuntimeSnapshot(
         )
           throw Error("operation owner changed during read");
         const artifact = operation ? operationArtifactReference(session, operation) : undefined;
+        const retained = operation ? operationHistory(session, operation.operationId, false) : undefined;
+        const proof =
+          retained?.operation.executionId === operation?.executionId
+            ? retained?.operation.runtime?.automaticRetryEligibility
+            : undefined;
         request.reply!({
           ...envelope,
           qualified: true,
-          operation: operation ? { ...operation, ...(artifact ? { artifact } : {}) } : null,
+          operation: operation
+            ? {
+                ...operation,
+                ...(artifact ? { artifact } : {}),
+                ...(proof &&
+                ["settled", "not-started"].includes(operation.state) &&
+                operation.runtime?.control !== "failed"
+                  ? { runtime: { ...operation.runtime, automaticRetryEligibility: proof } }
+                  : {}),
+              }
+            : null,
           ...(!operation
             ? { reason: "operation record is absent; this does not prove the dispatch was not started" }
             : {}),
