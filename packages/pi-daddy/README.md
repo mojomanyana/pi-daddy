@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.59.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.59.1` both resolve to this release.
+Source target: **0.60.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.60.0` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -377,6 +377,22 @@ flag, a bounded reason, the operation ID (or execution ID), and for a worker tha
 receipt's cause and signal. Complete final identities and process receipts stay in the result details, which Pi
 persists but does not send to the provider, and in opt-in public capture.
 
+A child whose tools only read (`read`, `grep`, `find`, `ls`, plus context handoff) is replay-safe, and
+`delegate_describe` (`replaySafe`), the `/grants` allow lines and the startup summary say so. When such a child
+fails without answering (it exited without a final, timed out, could not launch for want of system resources, or its
+model request failed), Daddy runs the same request once more in the same tool call: a new execution and process with
+the same task, definition, model and context, planned with nobody asked and bounded by the first attempt's
+wall-clock deadline. A child killed from outside the tool call (a person's `kill`, the OOM killer) exits like a
+crash and is retried once. Daddy never retries a child its parent's tool call cancelled, one whose cleanup is not
+settled, one that spent an approval (on a gated tool, or a gated context handoff such as the default-gated
+`context:fork`), one in a Herdr pane, or one carrying an `operation_id`, and it never retries twice. The summary
+then carries `"retry":{"attempts":2,"firstFailure":"…"}`, the details keep the first attempt complete, the
+result details link the two executions, and the usage reported to the Pi session covers both attempts. A failure carrying an `operation_id` that would otherwise have been retried is
+returned with `"replayable":true` instead, so its coordinator can retry it once as a new operation (Principal does).
+A complete answer is never retried, including after a later idle timeout. Bound operation failures retain optional
+owner-verified retry eligibility; a coordinator without that evidence keeps its manual retry path. Under the Herdr executor nothing is retried or marked. `PI_DADDY_REPLAY_RETRY=0` turns off the retry and the
+`replayable` mark; the replay-safe mark stays.
+
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` after a `delegate_describe` of each, which binds its `definitionId`; independent parallel work uses one `delegate_all` batch.
 
 Final capture preserves whitespace and concatenates text blocks without inserting separators. Tool-call terminals, empty visible finals and non-`stop` reasons are unavailable. Persisted message comparisons ignore object key order while preserving array order and every field value. The shared `final-conformance.json` table checks these semantics in both runtime and harness. Capture remains bounded: 4 MiB visible final, 32 MiB protocol line, 64 MiB persisted session, and a 3-second bounded session read. Exceeding a limit reports an unavailable final and blocks dependent handoffs; it does not imply the worker failed to settle.
@@ -495,12 +511,12 @@ replace a pin, then deliberately reload. There are no background registry checks
 Every variable is `PI_DADDY_*`. Operator-facing controls are grouped below; the environment overrides stored
 configuration where both exist.
 
-| Area                     | Variables                                                                                                                                                                                      |
-| :----------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Governance               | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE`                       |
-| Child execution          | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS` |
-| Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT`                                 |
-| Activity                 | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT`                                                                                                                                      |
+| Area                     | Variables                                                                                                                                                                                                               |
+| :----------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance               | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE`                                                |
+| Child execution          | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS`, `PI_DADDY_REPLAY_RETRY` |
+| Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT`                                                          |
+| Activity                 | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT`                                                                                                                                                               |
 
 `PI_DADDY_FANOUT` bounds active cooperating descendant sessions. Its default remains 8; literal 0 means exhausted,
 and malformed values refuse. A reservation includes the child and its disjoint descendant allowance, so concurrent

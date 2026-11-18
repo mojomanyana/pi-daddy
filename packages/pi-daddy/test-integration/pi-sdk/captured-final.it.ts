@@ -66,9 +66,12 @@ for (const scenario of ["success", "nested", "retry", "error", "stop-then-error"
       if (["success", "nested", "retry"].includes(scenario)) {
         assert.equal(output.final.state, "complete", JSON.stringify(output));
         assert.equal(output.text, FINAL);
+        assert.equal("providerError" in output.final, false);
       } else {
         assert.equal(output.final.state, "unavailable");
         assert.notEqual(output.text, FINAL);
+        // Pi's JSON mode exits 0 after a failed model request; this flag is the only record of it (2026-11-17).
+        assert.equal("providerError" in output.final && output.final.providerError, true);
       }
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -9,7 +9,8 @@
  * Breaks if: a result stops reporting `usage` or reports it for a reused operation; the reader counts a child's
  * delegation results as its own calls (the ledger and the root would count a grandchild twice) or drops them (the
  * root would miss it); an unmeasured child is counted as measured or given invented usage; a fan-out child that
- * threw after running loses its usage; or the dashboard and report stop saying the usage is already included.
+ * threw after running loses its usage; a retried child reports only one of its attempts; or the dashboard and report
+ * stop saying the usage is already included.
  */
 import assert from "node:assert/strict";
 import { chmod, readFile, writeFile } from "node:fs/promises";
@@ -40,6 +41,7 @@ import { appendRecord } from "../src/governance/record.ts";
 import { buildChildLifecycleEvent, type ChildUsageTotals } from "../src/governance/ledger-events.ts";
 import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
 import { ENV_DEPTH, ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER, ENV_MAX_DEPTH } from "../src/kernel/propagation.ts";
+import { ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
 import { renderDashboard } from "../src/products/dashboard-render.ts";
 import { renderEpisodeReport, reportEpisodes } from "../src/products/episode-report.ts";
 import { evidenceFromProvider, providerToolOutput } from "./execution-evidence-fixture.ts";
@@ -617,7 +619,17 @@ test("Pi's tool_result hook reports a thrown call's settled children once and le
 
 // ---- The real extension with inert children ----
 
-const KEYS = [ENV_GRANT, ENV_DEPTH, ENV_MAX_DEPTH, ENV_GATED, ENV_LEDGER, ENV_FANOUT, ENV_HERDR, ENV_CHILD_TIMEOUT];
+const KEYS = [
+  ENV_GRANT,
+  ENV_DEPTH,
+  ENV_MAX_DEPTH,
+  ENV_GATED,
+  ENV_LEDGER,
+  ENV_FANOUT,
+  ENV_HERDR,
+  ENV_CHILD_TIMEOUT,
+  ENV_REPLAY_RETRY,
+];
 const saved = new Map<string, string | undefined>();
 afterEach(() => {
   for (const [key, value] of saved) value === undefined ? delete process.env[key] : (process.env[key] = value);
@@ -858,7 +870,12 @@ test("a reused operation reports no usage again", async () => {
 });
 
 test("a failed child and a timed-out child report what was observed before they stopped", async () => {
-  const { run } = await harness(BY_TASK, { [ENV_CHILD_TIMEOUT]: "60", [ENV_CHILD_IDLE_TIMEOUT]: "3" });
+  // One attempt each: with the automatic retry on, these read-only children run twice (tested below).
+  const { run } = await harness(BY_TASK, {
+    [ENV_CHILD_TIMEOUT]: "60",
+    [ENV_CHILD_IDLE_TIMEOUT]: "3",
+    [ENV_REPLAY_RETRY]: "0",
+  });
   const failed = await run("delegate", "failed", { task: task(C1, "exit=3"), tools: ["read"] });
   assert.equal(failed.isError, true);
   assert.equal(failed.details.exitCode, 3);
@@ -922,7 +939,8 @@ test("a vetoed delegate and a chain stopped by a vetoed step report the children
 });
 
 test("a returned result passes Pi's hook unchanged, so its usage is counted once", async () => {
-  const { asPi } = await harness(BY_TASK);
+  // One attempt: with the automatic retry on, the failing read-only child runs twice (tested below).
+  const { asPi } = await harness(BY_TASK, { [ENV_REPLAY_RETRY]: "0" });
   const result = await asPi("delegate_all", "returned", {
     children: [
       { task: task(C1), tools: ["read"] },
@@ -960,4 +978,45 @@ console.log("child done");
     unmeasured: 1,
     coverage: "partial",
   });
+});
+
+/** An inert child that fails without a final on its first launch per task (or on every launch with `always`). */
+const ATTEMPTS = `#!/usr/bin/env node
+const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
+const task = process.argv.at(-1);
+const counter = path.join(path.dirname(process.argv[1]), "attempt-" + crypto.createHash("sha256").update(task).digest("hex"));
+const attempt = (fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0) + 1;
+fs.writeFileSync(counter, String(attempt));
+__piFixture.usage = attempt === 1 ? ${JSON.stringify(C1)} : ${JSON.stringify(C2)};
+if (attempt === 1 || task.includes("always")) process.exit(3);
+console.log("done");
+`;
+
+test("a retried read-only child reports both attempts' usage once, as the ledger records them", async () => {
+  // Integration with the automatic retry (2026-11-17): both attempts used the model, and each has its own lifecycle
+  // record, so the session's totals hold both or the two would disagree. Each attempt is one measured execution.
+  const { run, lifecycle } = await harness(ATTEMPTS);
+  const both = { reported: true, cost: 0.75, measured: 2, unmeasured: 0, coverage: "complete" };
+  const retried = await run("delegate", "retried", { task: "once", tools: ["read"] });
+  assert.equal(retried.isError, false);
+  assert.equal(retried.details.retry.attempts, 2);
+  assert.deepEqual(retried.usage, plus(C1, C2));
+  assert.deepEqual(retried.details.childUsage, both);
+  assert.deepEqual(retried.details.retry.first.observedUsage, { usage: C1, measured: 1, unmeasured: 0 });
+  const failed = await run("delegate", "failed", { task: "always", tools: ["read"] });
+  assert.equal(failed.isError, true);
+  assert.equal(failed.details.retry.attempts, 2);
+  assert.deepEqual(failed.usage, plus(C1, C2));
+  assert.deepEqual(failed.details.childUsage, both);
+  const all = await run("delegate_all", "all", { children: [{ task: "once in a fan-out", tools: ["read"] }] });
+  assert.deepEqual(all.usage, plus(C1, C2));
+  assert.deepEqual(all.details.childUsage, both);
+  const chain = await run("delegate_chain", "chain", { steps: [{ task: "once in a chain", tools: ["read"] }] });
+  assert.deepEqual(chain.usage, plus(C1, C2));
+  assert.deepEqual(chain.details.childUsage, both);
+  assert.deepEqual(
+    (await lifecycle()).map((event) => event.usage.cost.total).sort(),
+    [C1, C1, C1, C1, C2, C2, C2, C2].map((usage) => usage.cost.total).sort(),
+    "eight executions, each recorded with its own usage",
+  );
 });

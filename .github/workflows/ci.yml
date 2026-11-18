@@ -84,6 +84,33 @@ jobs:
         working-directory: packages/pi-daddy
         run: npm run test:smoke
 
+  released-harness-compatibility:
+    name: Current retry ledger with released Harness
+    runs-on: ubuntu-26.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+      - run: npm ci
+      - name: Install released reader and historical writer outside the checkout
+        run: >-
+          npm install --prefix "$RUNNER_TEMP/released-readers" --no-save --ignore-scripts
+          --legacy-peer-deps --no-audit --no-fund @skill-harness/adapters@0.35.6 pi-daddy@0.59.1
+      - name: Read both real retry attempts using the released consumer
+        working-directory: packages/pi-daddy
+        env:
+          DADDY_TEST_RELEASED_HARNESS_PACKAGE: ${{ runner.temp }}/released-readers/node_modules/@skill-harness/adapters
+          DADDY_TEST_RELEASED_DADDY_PACKAGE: ${{ runner.temp }}/released-readers/node_modules/pi-daddy
+          DADDY_TEST_RELEASED_HARNESS_RECEIPT: ${{ runner.temp }}/released-harness-receipt.json
+        run: |
+          node --test --test-name-pattern="both attempts are in the ledger" test/replay-retry-wiring.test.ts
+          node -e 'const r=JSON.parse(require("fs").readFileSync(process.env.DADDY_TEST_RELEASED_HARNESS_RECEIPT)); require("assert").deepStrictEqual(r,{status:"passed",reader:"0.35.6",historicalWriter:"0.59.1",attempts:2})'
+      - name: The check left tracked source unchanged
+        run: git diff --exit-code
+
   pi-152-native:
     name: Pi 1.5.2 native delivery and cleanup (no hosted provider)
     runs-on: ubuntu-26.04

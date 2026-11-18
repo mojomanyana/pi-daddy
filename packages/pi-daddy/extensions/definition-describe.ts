@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ceilingForDefinition, digestDefinition } from "../src/kernel/definitions.ts";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
+import { replaySafeCeiling } from "../src/kernel/replay-safe.ts";
 import { hostModel, liveParentTools } from "./parent-tool-host.ts";
 import type { GrantsSession } from "./session.ts";
 import type { ReloadLifecycle } from "./reload-environment.ts";
@@ -19,7 +20,7 @@ class DefinitionInputError extends Error {}
 export type DefinitionIdSource = "supplied" | "remembered";
 /**
  * The definitionId a delegation was checked against, and its source. Returned in tool result details only: the
- * ledger schema is closed and pinned by skill-harness, so recording it there needs a coordinated schema version.
+ * ledger schema stays compatible with independently released readers; richer evidence needs an optional contract.
  */
 export interface DefinitionBinding {
   definitionId: string;
@@ -135,6 +136,10 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
         // for a child on this session's own provider and model, which is the only kind it runs them for. Like the
         // rest of this answer, an observation: it grants nothing and admission still decides.
         parentRunTools: liveParentTools(session, ceilingForDefinition(definition).capabilities, ctx, hostModel(ctx)),
+        // 2026-11-17: its declared tools only read, so a failure without an answer may be run once more (see
+        // `replay-safe.ts` for when). Every admitted plan's tools are exactly these (context modes only read), so the
+        // ceiling answers for the plan.
+        replaySafe: replaySafeCeiling(ceilingForDefinition(definition)),
       };
       const capture = publicEvidenceCall(session.publicEvidence, _id, "delegate_describe", [{ agent: params.agent }]);
       capture.selected(0, definition);

@@ -46,6 +46,8 @@ export interface DelegationOutcome {
   aborted?: boolean;
   truncated?: boolean;
   spawnFailed?: boolean;
+  /** The executor's own launch failure, kept so a transient one can be told from a configuration fault. */
+  spawnError?: string;
   retention?: RetentionStatus;
   /** A loud best-effort post-execution observation failure; execution ownership is still settled. */
   control?: "failed";
@@ -57,8 +59,27 @@ export interface DelegationOutcome {
   diagnosticsTruncated?: boolean;
   /** The definitionId the identity check used and whether the call supplied it or Daddy remembered it. */
   definitionBinding?: import("./definition-describe.ts").DefinitionBinding;
-  /** This child's model usage and its delegations', as observed at settlement; reported to the parent session. */
+  /**
+   * This child's model usage and its delegations', as observed at settlement; reported to the parent session. After
+   * an automatic retry it covers both attempts (`retry.first` keeps the first attempt's own).
+   */
   observedUsage?: ObservedChildUsage;
+  /**
+   * The automatic retry of a replay-safe child (decision of 2026-11-17). Present only when the retry ran; this
+   * outcome is then the second attempt's, `executionId` names it and `first` keeps the first attempt complete.
+   */
+  retry?: {
+    attempts: 2;
+    firstFailure: import("../src/kernel/replay-safe.ts").ReplayFailure;
+    executionId: string;
+    first: DelegationOutcome;
+  };
+  /**
+   * A failed replay-safe attempt under a stable operation that passed every other retry guard (decision of
+   * 2026-11-17, "Principal retries once"). Daddy did not retry it; the operation's owner may, once, under a new
+   * operation. Never set on a success, a retry, a reused reference or when any guard refused.
+   */
+  replayable?: true;
 }
 /**
  * The upstream controller's token, honoured ONLY when the child otherwise exited cleanly non-zero.
@@ -145,6 +166,10 @@ export interface ChildExecutionInput {
   resolvedRuntime?: ResolvedDefinitionRuntime;
   signal?: AbortSignal;
   onProgress?: (update: ChildProgressUpdate) => void;
+  /** Epoch ms no deadline may pass: a retry inherits its first attempt's wall-clock deadline (2026-11-17). */
+  deadlineAt?: number;
+  /** Composition-only observation of the wall-clock deadline this execution recorded. */
+  onDeadline?: (deadlineAt: number) => void;
 }
 export async function executePlannedChild(input: ChildExecutionInput): Promise<DelegationOutcome> {
   let executorEntered = false;
@@ -285,7 +310,11 @@ async function executePreparedChild(
     );
     activityStarted = true;
   } catch {}
-  const configuredTimeoutMs = limits.wallMs;
+  // A retry gets only what remains of its first attempt's deadline; the recorded deadline below is clamped to it too.
+  const configuredTimeoutMs =
+    input.deadlineAt === undefined
+      ? limits.wallMs
+      : Math.max(1, Math.min(limits.wallMs, input.deadlineAt - Date.now()));
   // PR 3e: the working bound is inactivity; `deadlineAt` below is the runaway ceiling. Every child gets a pi session
   // file so the parent can see it working when its stdout is quiet (pi appends each message and tool result to it).
   const configuredIdleMs = limits.idleMs;
@@ -333,7 +362,10 @@ async function executePreparedChild(
         : `${file ?? "-"}|${tree ?? "-"}${waiting}`;
     };
     const startedAt = new Date();
-    const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
+    const deadlineAt = new Date(
+      Math.min(startedAt.getTime() + configuredTimeoutMs, input.deadlineAt ?? Number.POSITIVE_INFINITY),
+    ).toISOString();
+    input.onDeadline?.(Date.parse(deadlineAt));
     if (ledgerPath) {
       try {
         await appendLedgerEvent(
@@ -642,6 +674,7 @@ async function executePreparedChild(
           aborted: output.aborted,
           truncated: output.truncated,
           spawnFailed: Boolean(output.spawnError),
+          ...(output.spawnError ? { spawnError: output.spawnError } : {}),
         };
         await teardown();
         return withTeardownNotes(failed);

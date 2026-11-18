@@ -53,7 +53,33 @@ function cleanup(value: DelegationOutcome["cleanup"]) {
     },
   };
 }
-function outcomeEvidence(outcome: DelegationOutcome, index: number) {
+function outcomeEvidence(
+  outcome: DelegationOutcome,
+  index: number,
+): AttemptEvidence & { retry?: RetryEvidence; replayable?: true } {
+  return {
+    ...attemptEvidence(outcome, index),
+    // 2026-11-17: under a stable operation an otherwise retryable failure is marked for the operation's owner.
+    ...(outcome.replayable ? { replayable: true as const } : {}),
+    // 2026-11-17: an automatic retry of a replay-safe child. The first attempt stays complete here, never merged.
+    ...(outcome.retry
+      ? {
+          retry: {
+            attempts: outcome.retry.attempts,
+            firstFailure: outcome.retry.firstFailure,
+            first: attemptEvidence(outcome.retry.first, index),
+          },
+        }
+      : {}),
+  };
+}
+type AttemptEvidence = ReturnType<typeof attemptEvidence>;
+interface RetryEvidence {
+  attempts: number;
+  firstFailure: string;
+  first: AttemptEvidence;
+}
+function attemptEvidence(outcome: DelegationOutcome, index: number) {
   const final = outcome.final;
   return {
     ordinal: index + 1,
@@ -161,6 +187,12 @@ function outcomeSummary(complete: CompleteOutcome) {
     ...(complete.aborted ? { aborted: true } : {}),
     ...(complete.truncated ? { truncated: true } : {}),
     ...(complete.spawnFailed ? { spawnFailed: true } : {}),
+    // A retry is said, with why the first attempt failed in one fixed phrase; the first receipt stays in details.
+    ...(complete.retry
+      ? { retry: { attempts: complete.retry.attempts, firstFailure: complete.retry.firstFailure } }
+      : {}),
+    // The one stable field a coordinator acts on: retry this operation once under a new one (2026-11-17).
+    ...(complete.replayable ? { replayable: true as const } : {}),
     final: !final
       ? null
       : final.reason !== undefined

@@ -18,7 +18,9 @@
  *    exception thrown outside it;
  *  - admitting a child whose model is not the root's current provider and model, or not re-checking the live
  *    conditions (switch, host, the root's own grant, the root's model) at launch and at every call;
- *  - `delegate_describe` and the startup summary not saying which declared tools the parent runs.
+ *  - `delegate_describe` and the startup summary not saying which declared tools the parent runs;
+ *  - retrying, or marking replayable, a child that holds a parent-run tool, or calling such a definition replay-safe
+ *    in describe, the startup summary or `/grants` (stacked with the automatic retry, 2026-11-17).
  */
 import assert from "node:assert/strict";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -37,7 +39,15 @@ import { toolSources } from "./tool-sources-fixture.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
-const KEYS = [...GRANT_ENV_KEYS, ENV_HERDR, ENV_PARENT_TOOLS, ENV_WORKSPACE_REGISTRY, "PI_DADDY_GATED", "PATH"];
+const KEYS = [
+  ...GRANT_ENV_KEYS,
+  ENV_HERDR,
+  ENV_PARENT_TOOLS,
+  ENV_WORKSPACE_REGISTRY,
+  "PI_DADDY_GATED",
+  "PATH",
+  "PI_CODING_AGENT_DIR",
+];
 const saved = new Map<string, string | undefined>();
 afterEach(() => {
   for (const [key, value] of saved) value === undefined ? delete process.env[key] : (process.env[key] = value);
@@ -103,6 +113,8 @@ note({ args, key: process.env.PI_DADDY_PROXIED_TOOLS_KEY ?? null, ref: process.e
   } catch (error) {
     console.log(JSON.stringify({ error: error.message }));
   }
+  // A child that fails without a final after its call, as a crash would.
+  if (process.env.FIXTURE_EXIT_CODE) process.exitCode = Number(process.env.FIXTURE_EXIT_CODE);
 })();
 `;
   await writeFile(join(bin, "pi"), piFixtureScript(source));
@@ -120,6 +132,10 @@ async function harness(
     delayMs?: number;
     /** `executeTool` throws this, as Pi's does for a context that has gone stale. */
     throws?: Error;
+    /** More selected definitions beside `scout-public`, by name: their `allowed-tools`. */
+    more?: Record<string, string>;
+    /** A durable session owner, which a delegation with `operation_id` needs. */
+    durable?: boolean;
   } = {},
 ) {
   const dir = await tempDir("grants-parent-tools-");
@@ -131,11 +147,20 @@ async function harness(
     await mkdir(join(dir, ".pi", "skills", "scout-public"), { recursive: true });
     await writeFile(join(dir, ".pi", "skills", "scout-public", "SKILL.md"), SCOUT_PUBLIC);
   }
+  for (const [name, tools] of Object.entries(options.more ?? {})) {
+    await mkdir(join(dir, ".pi", "skills", name), { recursive: true });
+    await writeFile(
+      join(dir, ".pi", "skills", name, "SKILL.md"),
+      `---\nname: ${name}\ndescription: Does ${name} work.\nallowed-tools: ${tools}\n---\n\nDo the ${name} job.\n`,
+    );
+  }
   const record = await installChild(dir);
   process.env.PATH = `${join(dir, "bin")}:${saved.get("PATH")}`;
-  Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
+  delete process.env.PI_CODING_AGENT_DIR;
+  Object.assign(process.env, { [ENV_HERDR]: "0", ...(options.durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
 
   const registered = new Map<string, any>();
+  const commands = new Map<string, any>();
   const hooks = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   const notes: Array<[string, string]> = [];
   const executed: Array<{ name: string; args: unknown; signal?: AbortSignal }> = [];
@@ -143,6 +168,7 @@ async function harness(
   const active = ["read", "scout_research", "delegate", "delegate_all", "delegate_chain", "delegate_describe"];
   let prompts = 0;
   const ctx: Record<string, unknown> = {
+    ...(options.durable ? { sessionManager: { getSessionId: () => `fixture:${dir}` } } : {}),
     cwd: dir,
     hasUI: false,
     ui: {
@@ -185,21 +211,17 @@ async function harness(
     {
       on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => void hooks.set(name, handler),
       registerTool: (spec: { name: string }) => void registered.set(spec.name, spec),
-      registerCommand: () => {},
+      registerCommand: (name: string, spec: unknown) => void commands.set(name, spec),
       getAllTools: () => [...native, scoutInfo],
       getActiveTools: () => active,
       setActiveTools: () => {},
       // Pi's selected skills, as the real host reports them; definitions then carry their exact identity.
       getCommands: () =>
-        options.definitions
-          ? [
-              {
-                source: "skill",
-                name: "skill:scout-public",
-                sourceInfo: { path: join(dir, ".pi", "skills", "scout-public", "SKILL.md") },
-              },
-            ]
-          : [],
+        [...(options.definitions ? ["scout-public"] : []), ...Object.keys(options.more ?? {})].map((name) => ({
+          source: "skill",
+          name: `skill:${name}`,
+          sourceInfo: { path: join(dir, ".pi", "skills", name, "SKILL.md") },
+        })),
     } as never,
     session,
   );
@@ -211,7 +233,7 @@ async function harness(
       .filter(Boolean)
       .map((line) => JSON.parse(line));
   const close = () => hooks.get("session_shutdown")!({ reason: "quit" }, ctx);
-  return { dir, ctx, session, tools: registered, executed, children, notes, close, prompts: () => prompts };
+  return { dir, ctx, session, tools: registered, commands, executed, children, notes, close, prompts: () => prompts };
 }
 
 /** The child's printed answer, as returned in the delegate result's text. */
@@ -628,6 +650,90 @@ test("a child waiting on its root is active, so a short idle bound does not stop
     );
   } finally {
     delete process.env.PI_DADDY_CHILD_IDLE_TIMEOUT;
+    await f.close();
+  }
+});
+
+test("a child that holds a parent-run tool is never retried nor marked replayable when it fails without answering", async () => {
+  // Integration with the automatic retry (2026-11-17). The root ran scout_research for the first attempt, an effect
+  // with its own cost outside the child, so the plan is not replay-safe; every other retry guard holds here.
+  const f = await harness(
+    { PI_DADDY_GRANT: "agent:scout-public,tool:read,tool:scout_research,tool:delegate", FIXTURE_EXIT_CODE: "1" },
+    { definitions: true, durable: true },
+  );
+  try {
+    const described = (await f.tools
+      .get("delegate_describe")
+      .execute("describe", { agent: "scout-public" }, undefined, undefined, f.ctx)) as any;
+    assert.deepEqual(described.details.parentRunTools, ["scout_research"]);
+    assert.equal(described.details.replaySafe, false);
+    for (const [label, extra] of [
+      ["without an operation", {}],
+      ["with an operation", { operation_id: "research:parent-run-once" }],
+    ] as const) {
+      const before = f.executed.length;
+      const result = (await f.tools
+        .get("delegate")
+        .execute(
+          "parent-call",
+          { agent: "scout-public", task: "research", ...extra },
+          undefined,
+          undefined,
+          f.ctx,
+        )) as any;
+      assert.equal(result.isError, true, label);
+      assert.equal(result.details.exitCode, 1, label);
+      assert.equal(result.details.retry, undefined, label);
+      assert.equal(result.details.replayable, undefined, label);
+      assert.equal(f.executed.length, before + 1, `${label}: the root ran scout_research once`);
+    }
+    assert.equal((await f.children()).filter((row) => row.args).length, 2, "one launch per delegation");
+  } finally {
+    await f.close();
+  }
+});
+
+test("the startup summary, /grants and describe show parent-run and replay-safe definitions side by side", async () => {
+  // Integration of parent-run tools with the automatic retry (2026-11-17): disjoint sets, each named once.
+  const f = await harness(
+    { PI_DADDY_GRANT: "agent:scout-public,agent:look,tool:read,tool:scout_research,tool:delegate" },
+    { definitions: true, more: { look: "read" } },
+  );
+  try {
+    await f.session.ensureDefinitions?.(); // as Pi's first request does: selected definitions are then reported
+    const retried =
+      "retried once automatically if it fails without answering; with operation_id, marked replayable for the " +
+      "coordinator to retry instead";
+    const summary = f.notes.filter(([, message]) => message.includes("definition")).map(([, message]) => message);
+    assert.deepEqual(summary, [
+      "grants: 2 of 2 definitions spawnable — look, scout-public\n" +
+        "  run by this session for the child: scout-public (scout_research)\n" +
+        `  replay-safe (${retried}): look`,
+    ]);
+    let grants = "";
+    const ui = { ...(f.ctx.ui as object), notify: (text: string) => void (grants = text) };
+    await f.commands.get("grants").handler("", { ...f.ctx, ui });
+    const runtime = "[model anthropic/claude-sonnet-5 (pi); thinking pi default (pi)]";
+    assert.deepEqual(
+      grants.split("\n").filter((line) => /^ {4}(allow|BLOCK|AUTO) |^ {2}replay-safe/.test(line)),
+      [
+        `    allow  scout-public  ${runtime}  tool:scout_research`,
+        `    allow  look  ${runtime}  tool:read  replay-safe`,
+        `  replay-safe: ${retried}`,
+      ],
+    );
+    const described: Record<string, unknown> = {};
+    for (const agent of ["scout-public", "look"]) {
+      const { details } = (await f.tools
+        .get("delegate_describe")
+        .execute("describe", { agent }, undefined, undefined, f.ctx)) as any;
+      described[agent] = { parentRunTools: details.parentRunTools, replaySafe: details.replaySafe };
+    }
+    assert.deepEqual(described, {
+      "scout-public": { parentRunTools: ["scout_research"], replaySafe: false },
+      look: { parentRunTools: [], replaySafe: true },
+    });
+  } finally {
     await f.close();
   }
 });

@@ -1,5 +1,5 @@
 /** Non-authorizing dispatch election. The elected caller still runs the ordinary governance path. */
-import { claimWithArtifact, retainOperationArtifact } from "./delegation-artifacts.ts";
+import { claimWithArtifact, retainOperationArtifact, retainOperationRetryEligibility } from "./delegation-artifacts.ts";
 import { openOperationArtifacts, type OperationArtifactStore } from "../src/governance/operation-artifacts.ts";
 import type { OperationArtifactRef } from "../src/kernel/operation-artifact.ts";
 import type { DashboardResultDescription } from "../src/kernel/dashboard-observation.ts";
@@ -168,28 +168,35 @@ export async function claimDelegationOperation(
       ...asked,
       definitionId: spec.agent ? session.definitions.get(spec.agent)?.definitionId : undefined,
     };
-    const requestDigest = createHash("sha256")
-      .update(
-        JSON.stringify(
-          canonical({
-            request,
-            cwd,
-            model,
-            piThinking: session.currentThinking?.(),
-            definitionDigest: preview.definitionDigest,
-            grant: [...session.ownGrant].sort(),
-            gated: [...session.gated].sort(),
-            depth: session.depth,
-            maxDepth: session.maxDepth,
-            executor: session.executor.kind,
-            definition: spec.agent ? session.definitions.get(spec.agent)?.body : null,
-            runtimeSettings: session.definitionRuntimeSettings,
-            runtimeOverrides: [...session.definitionRuntimeOverrides.entries()].sort(([a], [b]) => a.localeCompare(b)),
-            workspaceRoot: spec.workspace ? session.workspacePin?.get(spec.workspace.workspace_id) : null,
-          }),
-        ),
-      )
-      .digest("hex");
+    const digest = (request: typeof asked) =>
+      createHash("sha256")
+        .update(
+          JSON.stringify(
+            canonical({
+              request,
+              cwd,
+              model,
+              piThinking: session.currentThinking?.(),
+              definitionDigest: preview.definitionDigest,
+              grant: [...session.ownGrant].sort(),
+              gated: [...session.gated].sort(),
+              depth: session.depth,
+              maxDepth: session.maxDepth,
+              executor: session.executor.kind,
+              definition: spec.agent ? session.definitions.get(spec.agent)?.body : null,
+              runtimeSettings: session.definitionRuntimeSettings,
+              runtimeOverrides: [...session.definitionRuntimeOverrides.entries()].sort(([a], [b]) =>
+                a.localeCompare(b),
+              ),
+              workspaceRoot: spec.workspace ? session.workspacePin?.get(spec.workspace.workspace_id) : null,
+            }),
+          ),
+        )
+        .digest("hex");
+    const requestDigest = digest(request);
+    const definition = spec.agent ? session.definitions.get(spec.agent) : undefined;
+    const { definitionId: _definitionId, ...legacyRequest } = asked;
+    const legacyRequestDigest = definition && !definition.binding ? digest(legacyRequest) : undefined;
     const identity = {
       operationId,
       requestDigest,
@@ -199,10 +206,14 @@ export async function claimDelegationOperation(
     };
     const agent = spec.agent && /^[a-z][a-z0-9_-]{0,48}$/i.test(spec.agent) ? spec.agent : undefined;
     const summary = dashboardContentEnabled(process.env) ? safeDashboardSummary(spec.dashboardSummary) : undefined;
-    return claimWithArtifact(session, identity, () => operations.claim(identity, signal), operationScope, {
-      agent,
-      summary,
-    });
+    return claimWithArtifact(
+      session,
+      identity,
+      () => operations.claim(identity, signal),
+      operationScope,
+      { agent, summary },
+      legacyRequestDigest,
+    );
   };
   if (!denied) return elect();
 
@@ -244,8 +255,16 @@ export function existingOperationOutcome(claim: OperationClaim, depth: number): 
       `No new child started. Operation ${claim.operation.operationId} already exists (${claim.operation.state}), execution ${claim.operation.executionId}. ` +
       (active
         ? "Follow the original operation; this reference is not its final result."
-        : "No mutation result was replayed. Inspect the original outcome before an intentional new attempt with a new operation_id."),
-    reason: active ? "existing-operation" : "operation-already-ended",
+        : claim.legacyResult
+          ? "Historical completed result from before the definition-binding update. " +
+            "The old record did not capture the full definition identity; this is not new execution or current approval.\n\n" +
+            claim.legacyResult.text
+          : "No mutation result was replayed. Inspect the original outcome before an intentional new attempt with a new operation_id."),
+    reason: active
+      ? "existing-operation"
+      : claim.legacyResult
+        ? "legacy-completed-operation"
+        : "operation-already-ended",
     granted: [],
     depth,
     exitCode: null,
@@ -257,6 +276,7 @@ export async function finishDelegationOperation(
   result: DelegationOutcome,
   session: GrantsSession,
   finalScope: object | undefined,
+  boundDefinitionId?: string,
 ) {
   const cleanup = result.cleanup;
   const state: OperationReference["state"] =
@@ -314,6 +334,15 @@ export async function finishDelegationOperation(
         : {}),
   });
   await claim.finish!(state, runtime);
+  if (result.replayable && boundDefinitionId) {
+    retainOperationRetryEligibility(claim, {
+      version: 1,
+      eligible: true,
+      operationId: claim.operation.operationId,
+      executionId: claim.operation.executionId,
+      definitionId: boundDefinitionId,
+    });
+  }
   retainOperationFinal(session, claim, result, finalScope);
   result.operation = {
     ...claim.operation,

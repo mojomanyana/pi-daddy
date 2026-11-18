@@ -1,4 +1,11 @@
 import type { OperationArtifactRef } from "./operation-artifact.ts";
+export interface AutomaticRetryEligibility {
+  version: 1;
+  eligible: true;
+  operationId: string;
+  executionId: string;
+  definitionId: string;
+}
 /** Explicit operation identity prevents duplicate dispatch, never authorizes work or caches results. */
 export interface OperationReference {
   artifact?: OperationArtifactRef;
@@ -10,6 +17,8 @@ export interface OperationReference {
   startedAt: string;
   updatedAt: string;
   runtime?: {
+    /** Qualified optional owner evidence, never accepted from a caller's retry argument. */
+    automaticRetryEligibility?: AutomaticRetryEligibility;
     control?: "failed";
     work?: "succeeded" | "failed" | "unknown";
     final?: { state: string; sessionId?: string; messageId?: string; leafId?: string; sha256?: string };
@@ -26,6 +35,8 @@ export interface OperationRequest {
 export interface OperationClaim {
   operation: OperationReference;
   reused: boolean;
+  /** Read-only compatibility result; never a new admission or current semantic approval. */
+  legacyResult?: { text: string; definitionIdentity: "not-recorded" };
   /** Only the elected caller receives these methods. Neither grants execution authority. */
   started?(cwd: string, workspaceId: string | null): Promise<void>;
   finish?(state: "settled" | "not-started" | "uncertain", runtime?: OperationReference["runtime"]): Promise<void>;

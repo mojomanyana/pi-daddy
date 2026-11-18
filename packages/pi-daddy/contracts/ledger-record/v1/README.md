@@ -40,6 +40,12 @@ Earlier schema snapshots omitted `context:` even though the runtime emitted and 
 validation of existing records; it changes no grant or execution authority. Consumers pinned to older schemas
 must explicitly adopt the corrected contract. The closed field and identifier-tail rules remain unchanged.
 
+## Retry linkage (2026-11-18)
+
+Automatic retry does not change the shared record-v1 contract. Both executions emit ordinary capability and
+lifecycle records; their explicit retry relationship remains in the delegation's result details and retained
+session evidence. Released readers can continue to consume the ledger independently of Daddy updates.
+
 ## Execution identity
 
 Every v3 execution event carries:
