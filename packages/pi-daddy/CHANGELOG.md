@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.60.0 — 2026-11-18
 
 - Independent upgrades keep the shared ledger readable by released consumers. A completed answer followed by idle timeout is retained without another execution. Bound replay-eligible failures retain exact optional owner evidence for coordinators; no eligibility is inferred when running with an older producer.
 
