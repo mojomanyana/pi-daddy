@@ -222,6 +222,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             runtimeChoices.set(step, selected);
             return selected.model;
           },
+          ctx,
         );
         if (chainPlan.doomed) {
           const message =

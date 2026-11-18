@@ -28,6 +28,7 @@ import { CHILD_ATTRIBUTION_ENV_KEYS, ENV_EPISODE_ID } from "../src/kernel/env-na
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
 import { resolvedModelOf, type ResolvedDefinitionRuntime } from "./definition-runtime.ts";
+import { openParentTools, type ParentToolHost, type ParentToolSession } from "./parent-tool-host.ts";
 export interface DelegationOutcome {
   operation?: import("../src/kernel/dispatch-operation.ts").OperationReference & { reused: boolean };
   cwd?: string;
@@ -133,6 +134,8 @@ export interface ChildExecutionInput {
   parentExecutionId: string | null;
   toolCallId?: string;
   cwd: string;
+  /** The waiting delegation's own tool context, which runs the plan's parent-run tools (2026-11-17). */
+  parentToolHost?: ParentToolHost;
   preparedWorkspace?: PreparedWorkspace;
   resolvedRuntime?: ResolvedDefinitionRuntime;
   signal?: AbortSignal;
@@ -142,11 +145,15 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
   let executorEntered = false;
   const runtime = input.session.reloadLifecycle?.runtimeSettlement;
   let registered = false;
+  let parentTools: ParentToolSession | undefined;
   try {
     const limits = childExecutionLimits(input.session);
     input = { ...input, cwd: await realpath(input.preparedWorkspace?.workspace.root ?? input.cwd) };
     runtime?.begin(input.executionId);
     registered = Boolean(runtime);
+    // Registered before the child exists and closed once it has settled, on every path: an unknown or finished
+    // child is refused, and a call still in flight when it settles is cancelled. A refusal here starts nothing.
+    parentTools = openParentTools(input.session, input.plan, input.executionId, input.parentToolHost);
     const result = await executePreparedChild(
       input,
       () => {
@@ -155,7 +162,8 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
       },
       runtime,
       limits,
-    );
+      parentTools,
+    ).finally(() => parentTools?.close());
     try {
       await runtime?.finish(
         input.executionId,
@@ -220,6 +228,7 @@ async function executePreparedChild(
   onExecutorEntry: () => void,
   runtime: import("../src/governance/runtime-settlement.ts").RuntimeSettlement | undefined,
   limits: ReturnType<typeof childExecutionLimits>,
+  parentTools?: ParentToolSession,
 ): Promise<DelegationOutcome> {
   const { session, plan, childId, executionId, parentExecutionId, preparedWorkspace, signal, onProgress } = input;
   const ledgerPath = session.ledgerPath;
@@ -312,7 +321,11 @@ async function executePreparedChild(
         activitySession.probe(),
         childPid === undefined ? undefined : processTreeActivity(childPid),
       ]);
-      return file === undefined && tree === undefined ? undefined : `${file ?? "-"}|${tree ?? "-"}`;
+      // A child waiting on its parent to run a tool is working, not idle. Its wall-clock bound still applies.
+      const waiting = parentTools ? `|${parentTools.activity()}` : "";
+      return file === undefined && tree === undefined && !waiting
+        ? undefined
+        : `${file ?? "-"}|${tree ?? "-"}${waiting}`;
     };
     const startedAt = new Date();
     const deadlineAt = new Date(startedAt.getTime() + configuredTimeoutMs).toISOString();
@@ -436,7 +449,7 @@ async function executePreparedChild(
           },
           command: "pi",
           args,
-          env: mergeChildEnv(process.env, plan.env),
+          env: mergeChildEnv(process.env, parentTools ? { ...plan.env, ...parentTools.env } : plan.env),
           cwd,
           signal: executionSignal,
           // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer

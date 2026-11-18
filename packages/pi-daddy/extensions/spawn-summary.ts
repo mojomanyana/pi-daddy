@@ -52,6 +52,8 @@ export interface SpawnableSummary {
   withheld: WithheldDefinition[];
   /** Extension capabilities have not been observed yet; this is not an installation failure. */
   awaitingTools?: string[];
+  /** Spawnable definitions whose allowlisted tools this session runs for the child (2026-11-17). */
+  parentRun?: { name: string; tools: string[] }[];
   /**
    * Set when NOTHING can be spawned for a reason about the SESSION rather than about any definition — no
    * `tool:delegate`, or a depth bound that forbids spawning. Per-definition work is skipped entirely.
@@ -137,11 +139,13 @@ export async function summariseSpawnable(
   const spawnable: string[] = [];
   const withheld: WithheldDefinition[] = [];
   const awaitingTools: string[] = [];
+  const parentRun: { name: string; tools: string[] }[] = [];
 
   for (const name of names.slice(0, PREVIEW_LIMIT)) {
     const { plan } = await preview(name);
     if (plan.ok) {
       spawnable.push(name);
+      if (plan.parentTools?.length) parentRun.push({ name, tools: plan.parentTools });
       continue;
     }
     // The initial catalog contains built-ins before Pi exposes its callable extension tools. Preserve
@@ -182,6 +186,7 @@ export async function summariseSpawnable(
     spawnable,
     withheld,
     ...(awaitingTools.length ? { awaitingTools } : {}),
+    ...(parentRun.length ? { parentRun } : {}),
     notChecked: Math.max(0, names.length - PREVIEW_LIMIT),
   };
 }
@@ -240,6 +245,11 @@ export function renderSpawnableSummary(summary: SpawnableSummary, total: number)
     const shown = summary.withheld.slice(0, NAMES_SHOWN).map(clause);
     const extra = summary.withheld.length - shown.length;
     lines.push(`  withheld: ${shown.join("; ")}${extra > 0 ? `; … and ${extra} more` : ""}`);
+  }
+  // A new path for authority is named where the operator reads what is spawnable, not left to be discovered.
+  if (summary.parentRun?.length) {
+    const runs = summary.parentRun.map((run) => `${safeName(run.name)} (${list(run.tools.map(safeName))})`);
+    lines.push(`  run by this session for the child: ${list(runs)}`);
   }
   if (summary.awaitingTools?.length) {
     lines.push(`  checking available tools: ${list(summary.awaitingTools.map(safeName))} — updates when work starts`);

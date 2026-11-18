@@ -192,6 +192,9 @@ const NOT_REFUSAL_CODES = new Set([
   // NEITHER of them, and "the environment lists" would leave a reader unable to check that.
   "GRANT_ENV_KEYS",
   "GOVERNANCE_ENV_KEYS",
+  // The parent-run tool allowlist (2026-11-17). Named in the decision because it is the one place that list is
+  // widened, and "the allowlist" would leave a reader unable to find it.
+  "PARENT_PROXIED_TOOLS",
 ]);
 
 test("every refusal code the documents name exists", async () => {

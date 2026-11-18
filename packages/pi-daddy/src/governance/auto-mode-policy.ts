@@ -1,5 +1,7 @@
 import { createDispatchOperations } from "./dispatch-operations.ts";
 import { connectDispatchOperations } from "./dispatch-operation-client.ts";
+import { createParentToolCalls, type ParentToolCalls } from "./parent-tool-calls.ts";
+import { MAX_PARENT_TOOL_REQUEST_CHARS } from "../kernel/parent-tools.ts";
 /** Root-owned live Auto authority. Descendants receive read/admit access, never mutation access. */
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, unlink } from "node:fs/promises";
@@ -25,6 +27,8 @@ const validPending = (value: unknown): value is PendingApproval => {
 export interface AutoModeAuthority extends AutoModeReader {
   snapshot(): AutoModeSnapshot;
   set(enabled: boolean, source: AutoModeSource): AutoModeSnapshot;
+  /** Running children that may ask this owner to run an allowlisted parent-only tool, and nothing else. */
+  readonly parentTools: ParentToolCalls;
 }
 
 export async function createAutoModeAuthority(initial: {
@@ -41,6 +45,7 @@ export async function createAutoModeAuthority(initial: {
     revision = 0,
     closed = false;
   const operations = createDispatchOperations();
+  const parentTools = createParentToolCalls();
   const pending = new Map<string, PendingApproval>();
   const waiters = new Set<() => void>();
   const sockets = new Set<Socket>();
@@ -113,14 +118,20 @@ export async function createAutoModeAuthority(initial: {
         return;
       }
       input += chunk;
-      if (input.length > 4096) {
+      // One action carries bounded tool arguments; every other request keeps the 4096-character line.
+      if (input.length > MAX_PARENT_TOOL_REQUEST_CHARS) {
         socket.destroy();
         return;
       }
       if (!input.includes("\n")) return;
       handled = true;
       try {
-        const request = JSON.parse(input.slice(0, input.indexOf("\n")));
+        const line = input.slice(0, input.indexOf("\n"));
+        const request = JSON.parse(line);
+        if (line.length > 4096 && request?.action !== "parent-tool") {
+          socket.destroy();
+          return;
+        }
         if (request.token !== reference.token || request.ownerId !== reference.ownerId)
           throw new Error("Unauthorized Auto policy request");
         assertOpen();
@@ -149,6 +160,10 @@ export async function createAutoModeAuthority(initial: {
         } else if (request.action === "operation-finish") {
           operations.finish(request.operationId, request.ticket, request.state, request.runtime);
           reply({ ok: true });
+        } else if (request.action === "parent-tool") {
+          // Held like `wait`: the socket closing is the child leaving, and that cancels the call it made.
+          socket.setTimeout(0);
+          void parentTools.handle(request.call, controller.signal).then((value) => reply({ ok: true, value }));
         } else throw new Error("Unknown Auto policy action");
       } catch (error) {
         reply({ ok: false, error: String(error) });
@@ -176,6 +191,7 @@ export async function createAutoModeAuthority(initial: {
   const operationAccess = connectDispatchOperations(reference);
   return {
     operations: operationAccess,
+    parentTools,
     reference,
     snapshot,
     read: async () => snapshot(),
@@ -198,6 +214,7 @@ export async function createAutoModeAuthority(initial: {
       if (closed) return;
       closed = true;
       operationAccess.close();
+      parentTools.close();
       enabled = false;
       for (const wake of [...waiters]) wake();
       for (const socket of sockets) socket.destroy();

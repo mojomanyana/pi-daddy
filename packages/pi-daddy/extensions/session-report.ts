@@ -20,6 +20,8 @@ import { existsSync } from "node:fs";
 import { legacyApprovalsPath, sharedApprovalsPath } from "../src/governance/approval-store.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
 import { AGENT_WILDCARD } from "../src/kernel/resolve.ts";
+import { ENV_PARENT_TOOLS } from "../src/kernel/env-names.ts";
+import { parentToolsSwitch } from "../src/kernel/parent-tools.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import type { GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
@@ -68,6 +70,12 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
   // the moment somebody tries to delegate to it.
   for (const reason of session.definitionSkips)
     ctx.ui.notify(`grants: a definition was not loaded — ${reason}`, "warning");
+  // The parent-run tool switch fails closed; a typo that silently changed it would not be a choice anyone made.
+  if (session.depth === 0 && parentToolsSwitch(process.env[ENV_PARENT_TOOLS]).malformed)
+    ctx.ui.notify(
+      `grants: ${ENV_PARENT_TOOLS} must be literal 1 or 0 — no tool is run for a child by this session (failing closed)`,
+      "warning",
+    );
   // A registered workspace that could not be pinned is not routable this session, and the routing refusal an
   // operator would otherwise meet names neither the directory nor the reason.
   // Trust on first use, announced rather than silent: a control that installs itself quietly is one nobody

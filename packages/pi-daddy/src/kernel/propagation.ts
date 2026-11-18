@@ -26,6 +26,7 @@
  */
 
 import { ENV_AUTO_MODE, ENV_AUTO_MODE_REF, ENV_PUBLIC_EVIDENCE_DIR } from "./env-names.ts";
+import { ENV_PROXIED_TOOLS, ENV_PROXIED_TOOLS_KEY } from "./env-names.ts";
 import type { AutoModeRef } from "./auto-mode.ts";
 import type { Capability } from "./resolve.ts";
 import { attenuateWorkspacePin, formatWorkspacePin, type WorkspacePins } from "./workspace-pin.ts";
@@ -116,6 +117,10 @@ export const GRANT_ENV_KEYS = [
   // ADR-0042: a child must never keep its parent's unnarrowed pin, so it is stripped like every other
   // governance value and re-supplied only by the spawn plan.
   ENV_WORKSPACE_PIN,
+  // Parent-run tools: one child's tool list and its per-execution key. A grandchild that inherited either could
+  // ask the root to run a tool its own grant never named, so both are stripped and re-supplied per child.
+  ENV_PROXIED_TOOLS,
+  ENV_PROXIED_TOOLS_KEY,
 ] as const;
 
 export const parseList = (raw: string | undefined): Capability[] =>

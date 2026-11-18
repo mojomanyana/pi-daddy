@@ -7,6 +7,7 @@ import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { assertNarrowing, type Capability, type ResolveResult, expandSubsumed, resolve } from "./resolve.ts";
 import { childToolDeliveryRefusal } from "./child-tools.ts";
+import { parentProxiedTools } from "./parent-tools.ts";
 import { selectedResourcePrompt } from "./selected-resources.ts";
 import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
 import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
@@ -40,6 +41,7 @@ import type { Delegation, DelegationContext, DelegationRequest } from "./delegat
 import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 import { ENV_CHILD_DEFINITION, ENV_CHILD_EPISODE, ENV_CHILD_EXECUTION, GOVERNANCE_ENV_KEYS } from "./env-names.ts";
+import { ENV_PROXIED_TOOLS } from "./env-names.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
   const childDepth = ctx.depth + 1;
@@ -301,8 +303,11 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // Refuse undeliverable tools before calculating a permission request. Preserve escalation precedence:
   // a caller without authority still receives the ordinary denial and its exact denied capability set.
   const authority = resolve({ requested, parentGrant: ctx.ownGrant });
+  // Parent-run tools are decided against the model THIS child is given (`--model`), never a caller's claim about
+  // it. A separate `--provider` makes Pi resolve the pair differently, so it counts as not known.
+  const parentToolFacts = { ...ctx, childModel: request.provider === undefined ? request.model : undefined };
   if (authority.denied.length === 0 && authority.universal.length === 0) {
-    const unavailable = childToolDeliveryRefusal(requested, ctx);
+    const unavailable = childToolDeliveryRefusal(requested, parentToolFacts);
     if (unavailable) return { ...empty, requested, reason: unavailable.message, refusal: unavailable };
   }
 
@@ -404,6 +409,12 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // `-e` loads even under `--no-extensions`. A delegate-capable child loads the governance extension;
   // a leaf gets only the no-tool observer. Neither path alters --tools or the computed grant.
   const args = [...plan.args];
+  // Parent-run tools (2026-11-17): the child loads Daddy's own child-side entrypoint and is told, as public
+  // metadata, which tools it may ask the root to run. The same predicate kept these out of the delivery refusal
+  // above; here it is applied to what the child actually received. Loaded before the observer or governance
+  // entrypoint, so it reads its binding before anything republishes the environment.
+  const parentTools = parentProxiedTools(result.effective, parentToolFacts);
+  if (parentTools.length > 0) args.splice(args.length - 1, 0, "-e", ctx.parentToolExtensionPath!);
   const observer = canSubDelegate ? ctx.extensionPath : ctx.observerExtensionPath;
   if (observer) args.splice(args.length - 1, 0, "-e", observer);
 
@@ -443,6 +454,8 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   // reason on the other path.
   env[ENV_APPROVED] = inheritApprovals(ctx.approved ?? [], inheritable).join(",");
   if (ctx.ledgerPath) env[ENV_LEDGER] = ctx.ledgerPath;
+  // Names, descriptions and schemas only. The per-execution key is minted at launch, never planned.
+  if (parentTools.length > 0) env[ENV_PROXIED_TOOLS] = JSON.stringify(parentTools);
   // ADR-0042, through the SAME builder `childEnv` uses. This is the fork the comment above is about: a rule
   // spelled once in `childEnv` and not here is a rule that does not hold on the path a delegated child
   // actually takes. Without this a routed grandchild inherits no pin and can route nowhere — fail-closed,
@@ -468,6 +481,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     ...(grantedHandoff ? { handoff: grantedHandoff } : {}),
     ...(staged?.record ? { handoffRecord: staged.record } : {}),
     ...(staged?.dispose ? { disposeHandoff: staged.dispose } : {}),
+    ...(parentTools.length > 0
+      ? { parentTools: parentTools.map((tool) => tool.name), parentToolModel: parentToolFacts.childModel }
+      : {}),
     childId: ctx.childSpawnId,
     executionId: ctx.childExecutionId,
     taskDigest,

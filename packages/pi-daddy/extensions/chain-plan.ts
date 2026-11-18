@@ -38,6 +38,8 @@ export async function planChain(
   executionIds: readonly string[],
   preflightModel?: (model: string | undefined) => StructuredRefusal | undefined,
   resolveModel?: (step: ChainStep) => string | undefined,
+  /** The chain call's live tool context, which decides parent-run tools exactly as each step's run will. */
+  host?: import("./parent-tool-host.ts").ParentToolHost,
 ): Promise<ChainPlan> {
   const requests: GateRequest[] = [];
   const uses = new Map<number, Set<string>>();
@@ -47,7 +49,10 @@ export async function planChain(
   // session, and this plan is thrown away and remade by `runOneDelegation` when the step actually runs. Leaving it
   // in would read every step's files upfront and allocate a fork directory that nothing would ever dispose, for
   // steps a doomed chain never reaches.
-  const { stageHandoff: _stageHandoff, ...context } = await session.delegationContext();
+  const { stageHandoff: _stageHandoff, ...context } = {
+    ...(await session.delegationContext()),
+    ...(host ? session.parentToolContext?.(host) : {}),
+  };
 
   for (const [index, step] of steps.entries()) {
     let model = step.model;

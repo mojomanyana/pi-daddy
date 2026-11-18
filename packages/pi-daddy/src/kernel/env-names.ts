@@ -47,6 +47,20 @@ export const ENV_WORKSPACE_REGISTRY = "PI_DADDY_WORKSPACE_REGISTRY";
 export const ENV_WORKSPACE_LEASE_DIR = "PI_DADDY_WORKSPACE_LEASE_DIR";
 /** ADR-0042: what each authorised workspace id MEANT when the grant was established. Authority, not metadata. */
 export const ENV_WORKSPACE_PIN = "PI_DADDY_WORKSPACE_PIN";
+/**
+ * Parent-run tools (decision of 2026-11-17). Three variables, three owners.
+ *
+ * `ENV_PARENT_TOOLS` is the operator's kill switch: unset or literal `1` leaves the path on, literal `0` turns it
+ * off, and any other value is malformed and also off. `ENV_PROXIED_TOOLS` is written by the planner for one child:
+ * the public name, description and argument schema of each tool that child may ask the root to run.
+ * `ENV_PROXIED_TOOLS_KEY` is written at launch for that one execution: the secret a request must present beside
+ * its execution id.
+ *
+ * The two child-facing names are in `GRANT_ENV_KEYS` as well, so a grandchild never inherits its parent's.
+ */
+export const ENV_PARENT_TOOLS = "PI_DADDY_PARENT_TOOLS";
+export const ENV_PROXIED_TOOLS = "PI_DADDY_PROXIED_TOOLS";
+export const ENV_PROXIED_TOOLS_KEY = "PI_DADDY_PROXIED_TOOLS_KEY";
 /** Explicit operator-only local public-response capture; never inherited by a captured child. */
 export const ENV_PUBLIC_EVIDENCE_DIR = "PI_DADDY_PUBLIC_EVIDENCE_DIR";
 export const ENV_EXECUTION_ARCHIVE = "PI_DADDY_EXECUTION_ARCHIVE";
@@ -106,6 +120,9 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_WORKSPACE_REGISTRY,
   ENV_WORKSPACE_LEASE_DIR,
   ENV_WORKSPACE_PIN,
+  ENV_PARENT_TOOLS,
+  ENV_PROXIED_TOOLS,
+  ENV_PROXIED_TOOLS_KEY,
   ENV_PUBLIC_EVIDENCE_DIR,
   ENV_EXECUTION_ARCHIVE,
   ENV_NATIVE_SESSION_ROOT,

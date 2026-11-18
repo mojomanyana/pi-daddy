@@ -19,6 +19,7 @@ import { createGrantsSession } from "../extensions/session.ts";
 import { classifyToolNames, makeCatalog } from "../src/kernel/catalog.ts";
 import { snapshotChildTools, type ChildToolSource } from "../src/kernel/child-tools.ts";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
+import { modelRefOf } from "../src/kernel/parent-tools.ts";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import { toolSources } from "./tool-sources-fixture.ts";
 
@@ -50,6 +51,8 @@ interface Options {
   extensionPath?: string;
   ownGrant?: string[];
   definitions?: Record<string, string>;
+  /** Tools this root offers to run for a child, as `extensions/parent-tool-host.ts` would report them. */
+  parentTools?: { name: string; description: string; parameters: Record<string, unknown> }[];
 }
 
 function fixture(options: Options = {}) {
@@ -72,6 +75,16 @@ function fixture(options: Options = {}) {
   session.catalogReady = Promise.resolve(session.catalog);
   // The shape `extensions/grants.ts` wires: public origins re-read on every call.
   if (options.inventory) session.childToolSources = () => snapshotChildTools(options.inventory!());
+  if (options.parentTools) {
+    // A root with an owner channel and the child entrypoint, as `bindParentTools` wires it.
+    session.autoMode = { reference: { socketPath: "/fixture/owner.sock", token: "t", ownerId: "o" } } as never;
+    // Without a delegation's tool context there is no child model yet, so the model rule is left to dispatch.
+    session.parentToolContext = (host) => ({
+      parentToolExtensionPath: "/fixture/parent-tool-proxy.ts",
+      parentTools: options.parentTools,
+      rootModel: host ? modelRefOf(host.model) : "preview",
+    });
+  }
 
   const tools = new Map<string, { parameters: any }>();
   const pi = { registerTool: (tool: { name: string; parameters: any }) => void tools.set(tool.name, tool) };
@@ -236,4 +249,75 @@ test("a definition whose ceiling cannot be read is not offered and does not stop
   f.session.ownGrant = [...f.session.ownGrant, "agent:unreadable"];
   assert.doesNotThrow(() => f.registration.refreshSpawnable());
   assert.deepEqual(f.advertised(), ["coordinator", "handoff-reader", "native-only", "tool-less"]);
+});
+
+test("a definition whose tool this root runs for the child is advertised exactly when the planner admits it", async () => {
+  // Breaks if `spawnable()` stops handing `childToolDeliveryRefusal` the parent-run facts `delegationContext`
+  // hands the planner: scout-public would then stay hidden although every delegation to it is admitted.
+  const research = { name: "scout_research", description: "Public research.", parameters: { type: "object" } };
+  const definitions = {
+    "native-only": "Read Grep",
+    "scout-public": "scout_research",
+    "scout-mixed": "read scout_research",
+  };
+  for (const [label, parentTools, expected] of [
+    ["offered by this root", [research], ["native-only", "scout-mixed", "scout-public"]],
+    ["not offered (switched off or not callable)", undefined, ["native-only"]],
+    ["offered twice, so ambiguous", [research, research], ["native-only"]],
+  ] as const) {
+    const f = fixture({
+      inventory: parentInventory,
+      extensionPath,
+      definitions,
+      parentTools: parentTools && [...parentTools],
+    });
+    assert.deepEqual(f.advertised(), expected, label);
+    for (const name of Object.keys(definitions)) {
+      const refusal = (await f.plan(name)).refusal;
+      assert.equal(!refusal, expected.includes(name as never), `${label}: ${name} ${refusal?.message ?? "admitted"}`);
+    }
+  }
+});
+
+test("a parent-run context that throws is treated as none offered", () => {
+  const f = fixture({ inventory: parentInventory, extensionPath, definitions: { "scout-public": "scout_research" } });
+  f.session.parentToolContext = () => {
+    throw new Error("stale tool context");
+  };
+  f.registration.refreshSpawnable();
+  assert.deepEqual(f.advertised(), []);
+});
+
+test("the list assumes a delegation that keeps this session's model; dispatch on another model is refused", async () => {
+  // Breaks if the list starts applying a model it cannot know (scout-public would vanish although a delegation
+  // that keeps this session's model is admitted), or if dispatch stops applying the same-model rule.
+  const research = { name: "scout_research", description: "Public research.", parameters: { type: "object" } };
+  const f = fixture({
+    inventory: parentInventory,
+    extensionPath,
+    definitions: { "native-only": "Read Grep", "scout-public": "scout_research" },
+    parentTools: [research],
+  });
+  assert.deepEqual(f.advertised(), ["native-only", "scout-public"]);
+  const host = { model: { provider: "fixture", id: "root-model" } };
+  const dispatch = async (agent: string, model: string) =>
+    (
+      await planWithApprovals(
+        f.session,
+        { task: "(dispatch)", agent, model },
+        { ...f.session.parentToolContext!(host) },
+        null,
+      )
+    ).plan;
+  for (const name of f.advertised()) assert.equal((await dispatch(name, "fixture/root-model")).ok, true, name);
+  assert.equal((await dispatch("native-only", "fixture/other-model")).ok, true);
+  const other = await dispatch("scout-public", "fixture/other-model");
+  assert.equal(other.refusal?.code, "UNKNOWN_TOOL");
+  assert.ok(
+    other.refusal?.message.endsWith(
+      "This session runs scout_research for a sub-agent only when the sub-agent uses this session's own provider " +
+        "and model, and this delegation's model is different or not known.",
+    ),
+    other.refusal?.message,
+  );
 });
