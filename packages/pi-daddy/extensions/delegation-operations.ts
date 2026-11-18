@@ -13,7 +13,7 @@ import { planDelegation } from "../src/kernel/delegate.ts";
 import type { OperationClaim, OperationReference } from "../src/kernel/dispatch-operation.ts";
 import { validOperationId } from "../src/kernel/dispatch-operation.ts";
 import { GovernanceRefusal } from "../src/kernel/refusals.ts";
-import { assertDefinitionIdentity } from "./definition-describe.ts";
+import { assertDefinitionIdentity, type DefinitionBinding } from "./definition-describe.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import { recordDelegationDecision } from "./delegation-ledger.ts";
 import type { GrantsSession } from "./session.ts";
@@ -130,6 +130,8 @@ export async function claimDelegationOperation(
   ids: ExecutionOccurrenceIds,
   ctx: DelegationToolContext,
   signal?: AbortSignal,
+  /** Trusted: bound by the calling tool from its own arguments and the session's describe memory; wording only. */
+  definitionBinding?: DefinitionBinding,
 ): Promise<OperationClaim | undefined> {
   const operationScope = session.reloadLifecycle?.operationFinals;
   const operationId = spec.operation_id;
@@ -138,7 +140,7 @@ export async function claimDelegationOperation(
   if (!validOperationId(operationId)) throw Error("Invalid operation_id");
   if (signal?.aborted) throw Error("Operation request aborted");
   await session.ensureDefinitions?.();
-  assertDefinitionIdentity(session, spec);
+  assertDefinitionIdentity(session, spec, definitionBinding?.source);
   const context = { ...(await session.delegationContext()), ...session.parentToolContext?.(ctx) };
   const model = spec.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
   const preview = planDelegation(
@@ -158,7 +160,14 @@ export async function claimDelegationOperation(
     if (!operations) throw Error("Session operation admission is unavailable; no dispatch started");
     const cwd = await realpath(ctx.cwd);
     // A display-only caption may change when resuming the very same task.
-    const { operation_id: _id, dashboardSummary: _caption, ...request } = spec;
+    const { operation_id: _id, dashboardSummary: _caption, ...asked } = spec;
+    // Digest the selected definition's ID, not how the call got one (supplied, filled from a describe, or omitted):
+    // the identity check above proved any ID present equals it. Describe memory then cannot turn an identical retry
+    // into a conflict, and a changed selected definition is a different request.
+    const request = {
+      ...asked,
+      definitionId: spec.agent ? session.definitions.get(spec.agent)?.definitionId : undefined,
+    };
     const requestDigest = createHash("sha256")
       .update(
         JSON.stringify(

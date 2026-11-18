@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertDefinitionIdentity } from "../extensions/definition-describe.ts";
+import { assertDefinitionIdentity, definitionIdDescription } from "../extensions/definition-describe.ts";
 import { registerDelegationTools } from "../extensions/delegation.ts";
 import { claimDelegationOperation } from "../extensions/delegation-operations.ts";
 import { createAutoModeAuthority } from "../src/governance/auto-mode-policy.ts";
@@ -80,9 +80,14 @@ test("describe returns the exact dispatch pair without claiming work or widening
     const single = f.tools.get("delegate").parameters.properties;
     const batch = f.tools.get("delegate_all").parameters.properties.children.items.properties;
     const chain = f.tools.get("delegate_chain").parameters.properties.steps.items.properties;
+    // 2026-11-17: describe binds the ID, so no schema tells the model to copy it any more.
     for (const schema of [single, batch, chain]) {
-      assert.match(schema.definitionId.description, /Copy its agent together/);
-      assert.match(schema.agent.description, /delegationArguments/);
+      assert.equal(schema.definitionId.description, definitionIdDescription);
+      assert.match(schema.agent.description, /delegate_describe binds its definitionId\./);
+      assert.doesNotMatch(
+        `${schema.definitionId.description} ${schema.agent.description}`,
+        /copy|delegationArguments/i,
+      );
     }
     f.session.ownGrant = ["tool:read", "tool:delegate"];
     await assert.rejects(
@@ -98,7 +103,10 @@ test("missing, unknown and stale definition inputs have distinct corrective erro
   const f = await fixture();
   try {
     const cases = [
-      [{ definitionId: definition.definitionId }, /Missing delegation agent.*BOTH agent and definitionId/],
+      [
+        { definitionId: definition.definitionId },
+        /^Missing delegation agent: definitionId does not select an agent\. Name the agent\. No definition was selected\.$/,
+      ],
       [
         { agent: "buid", definitionId: definition.definitionId },
         /agent "buid" is not in the current selected definitions/,
@@ -121,10 +129,10 @@ test("missing, unknown and stale definition inputs have distinct corrective erro
       assert.deepEqual(spec, original, "no inferred agent or replacement ID");
     }
     f.session.definitions.set("build", { ...definition, binding: { package: "principal-pi-skills", phase: "build" } });
-    assert.throws(
-      () => assertDefinitionIdentity(f.session as never, { agent: "build" }),
-      /Principal delegation.*missing definitionId/,
-    );
+    assert.throws(() => assertDefinitionIdentity(f.session as never, { agent: "build" }), {
+      message:
+        'Principal delegation for agent "build" has no described definition. Describe it first with delegate_describe.',
+    });
     assertDefinitionIdentity(f.session as never, { agent: "build", definitionId: definition.definitionId });
     assertDefinitionIdentity(f.session as never, {});
     f.session.definitions.set("build", { ...definition, definitionId: undefined });

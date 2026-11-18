@@ -6,41 +6,85 @@ import { ceilingForDefinition, digestDefinition } from "../src/kernel/definition
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
 import { hostModel, liveParentTools } from "./parent-tool-host.ts";
 import type { GrantsSession } from "./session.ts";
+import type { ReloadLifecycle } from "./reload-environment.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 export const definitionIdDescription =
-  "Exact definitionId from delegate_describe.delegationArguments. Copy its agent together with this ID; " +
-  "the ID alone does not select an agent. Required for Principal phases.";
+  "Optional; omit it after delegate_describe, which binds the agent's current definitionId for this session " +
+  "(required for Principal phases).";
 
 class DefinitionInputError extends Error {}
+
+/** Where a delegation's definitionId came from: its own arguments, or this session's last describe of the agent. */
+export type DefinitionIdSource = "supplied" | "remembered";
+/**
+ * The definitionId a delegation was checked against, and its source. Returned in tool result details only: the
+ * ledger schema is closed and pinned by skill-harness, so recording it there needs a coordinated schema version.
+ */
+export interface DefinitionBinding {
+  definitionId: string;
+  source: DefinitionIdSource;
+}
+
+/**
+ * Owner decision 2026-11-17: the harness carries the IDs. Each omitted definitionId is filled from this Pi
+ * session's last successful describe of the same agent (kept on the reload lifecycle, see `ReloadLifecycle`).
+ * A supplied ID wins and never enters that memory. Call once per tool call, before any check, so every
+ * entry of one call is bound from one reading. The identity check that follows is the same either way.
+ */
+export function bindDescribedDefinitions<T extends { agent?: string; definitionId?: string }>(
+  session: GrantsSession,
+  specs: readonly T[],
+): { specs: T[]; bindings: Array<DefinitionBinding | undefined> } {
+  const described = session.reloadLifecycle?.describedDefinitions;
+  const bindings = specs.map((spec): DefinitionBinding | undefined => {
+    if (spec.definitionId !== undefined) return { definitionId: spec.definitionId, source: "supplied" };
+    const remembered = spec.agent === undefined ? undefined : described?.get(spec.agent);
+    return remembered === undefined ? undefined : { definitionId: remembered, source: "remembered" };
+  });
+  return {
+    specs: specs.map((spec, index) => {
+      const binding = bindings[index];
+      return binding?.source === "remembered" ? { ...spec, definitionId: binding.definitionId } : spec;
+    }),
+    bindings,
+  };
+}
+
+/** A new, resumed or forked session, or a move in the session tree, has not seen this session's describes. */
+export function forgetDescribedDefinitions(lifecycle: ReloadLifecycle): void {
+  delete lifecycle.describedDefinitions;
+}
 
 export function assertDefinitionIdentity(
   session: GrantsSession,
   spec: { agent?: string; definitionId?: string },
+  source: DefinitionIdSource = "supplied",
 ): void {
   const definition = spec.agent ? session.definitions.get(spec.agent) : undefined;
   if (spec.definitionId !== undefined) {
     if (!spec.agent)
       throw new DefinitionInputError(
-        "Missing delegation agent: definitionId does not select an agent. Copy BOTH agent and definitionId " +
-          "from delegate_describe.delegationArguments, then add the task. No definition was selected.",
+        "Missing delegation agent: definitionId does not select an agent. Name the agent. No definition was selected.",
       );
-    if (!definition)
+    if (!definition && source === "supplied")
       throw new DefinitionInputError(
         `Delegation agent ${JSON.stringify(spec.agent)} is not in the current selected definitions. ` +
           "Use the exact agent name returned by delegate_describe; refreshing an ID cannot correct a wrong agent name.",
       );
-    if (definition.definitionId !== spec.definitionId)
+    if (definition?.definitionId !== spec.definitionId)
       throw new DefinitionInputError(
         `Definition snapshot changed or is unavailable for agent ${JSON.stringify(spec.agent)}: ` +
-          "the supplied definitionId does not match its current selection. " +
-          "Call delegate_describe for that agent and copy BOTH fields from delegationArguments; do not shorten or invent the ID.",
+          (source === "remembered"
+            ? "it changed since this session described it. Describe it again with delegate_describe."
+            : "the supplied definitionId does not match its current selection. " +
+              "Describe it again with delegate_describe and omit the ID."),
       );
   }
   if (definition?.binding && !spec.definitionId)
     throw new DefinitionInputError(
-      `Principal delegation for agent ${JSON.stringify(spec.agent)} is missing definitionId. ` +
-        "Call delegate_describe for that agent and copy BOTH fields from delegationArguments.",
+      `Principal delegation for agent ${JSON.stringify(spec.agent)} has no described definition. ` +
+        "Describe it first with delegate_describe.",
     );
 }
 
@@ -48,9 +92,10 @@ export function assertDefinitionIdentity(
 export function assertDefinitionInputsBeforeAdmission(
   session: GrantsSession,
   specs: readonly { agent?: string; definitionId?: string }[],
+  bindings: readonly (DefinitionBinding | undefined)[] = [],
 ): void {
   try {
-    for (const spec of specs) assertDefinitionIdentity(session, spec);
+    for (const [index, spec] of specs.entries()) assertDefinitionIdentity(session, spec, bindings[index]?.source);
   } catch (error) {
     if (!(error instanceof DefinitionInputError)) throw error;
     error.message +=
@@ -66,10 +111,10 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
     label: "Describe a governed definition",
     description:
       "Read the exact selected definition identity and Principal binding before delegation. " +
-      "Copy delegationArguments (agent and definitionId) into delegate or a batch/chain entry, then add its task. " +
-      "Starts no child and grants nothing.",
+      "Binds its definitionId to this agent's later delegations in this session. Starts no child and grants nothing.",
     parameters: Type.Object({ agent: Type.String() }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
+      const lifecycle = session.reloadLifecycle;
       assertDelegationAuthority(session);
       await session.ensureDefinitions?.();
       if (!maySpawnDefinition(session.ownGrant, params.agent))
@@ -93,7 +138,10 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
       };
       const capture = publicEvidenceCall(session.publicEvidence, _id, "delegate_describe", [{ agent: params.agent }]);
       capture.selected(0, definition);
-      return capture.finish({ content: [{ type: "text" as const, text: JSON.stringify(details) }], details });
+      const result = capture.finish({ content: [{ type: "text" as const, text: JSON.stringify(details) }], details });
+      // Only an answer actually returned binds; the lifecycle read at entry, so a replaced owner never receives it.
+      if (lifecycle) (lifecycle.describedDefinitions ??= new Map()).set(params.agent, definition.definitionId);
+      return result;
     },
   });
 }

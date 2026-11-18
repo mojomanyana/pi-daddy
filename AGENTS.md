@@ -198,6 +198,33 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-17 — `delegate_describe` binds the definitionId for the session
+
+Owner's decision: "The harness carries the IDs, and describe stays. Daddy remembers the ID from this session's
+last describe of that agent and fills it in, and still refuses if the definition changed since." A successful
+describe records agent → `definitionId` on the reload lifecycle; a refused or failed describe records nothing.
+`delegate`, each `delegate_all` child and each `delegate_chain` step that names an agent and omits `definitionId`
+gets the remembered one before any check; the unchanged identity check then compares it with
+the current selection, so a definition changed since the describe refuses before admission with "describe it
+again". A supplied ID always wins, is checked as before and never enters the memory; an agent never described
+behaves as before (a Principal phase refuses with "describe it first", an ordinary definition runs unbound).
+The memory survives `/reload`, because the conversation that saw the describe continues and a reload is exactly
+when a definition can change; `/new`, resume, fork, tree navigation and an explicit root replacement drop it
+(new owner lifecycle, explicit clear at every non-reload `session_start`, and a `session_tree` handler).
+Result details carry `definitionBinding` (`supplied` | `remembered`). The ledger does not: skill-harness pins
+the closed capability-decision schema and rejects a whole ledger on an undeclared field, so recording the binding
+there needs a schema version coordinated with skill-harness. The model-visible evidence summary and public
+capture's `requestedDefinitionId` (the caller's own claim) are unchanged, and `delegationArguments` keeps its
+shape. An `operation_id` request digests the selected definition's `definitionId` in place of the caller's
+spelling (the identity check has proved any ID present equals it), so hidden describe memory cannot turn an
+identical retry into a conflict, and a changed selected definition is a different request. Operations retained
+with a supplied ID or without an agent keep their digest; ones that named an agent without an ID get a new one
+once. Rejected: clearing on reload too. A selected snapshot changes only at a session start, so a remembered ID
+could then never be stale, and an ordinary definition edited and reloaded after its describe would run unbound.
+The binding is a precondition, never a grant or an approval. No model was run; whether models stop mis-copying
+IDs is not established. principal-pi-skills' own texts still tell coordinators to copy `definitionId`;
+simplifying them is a separate change in that repository.
+
 ### 2026-11-17 — The model receives an execution evidence summary; complete receipts stay outside its context
 
 Owner decision: per child, `delegate`, `delegate_all` and `delegate_chain` return a version 2 summary to the
@@ -295,6 +322,8 @@ source, grant, ownership, admission and cleanup checks. Never infer a missing ag
 replace a stale identity silently. A normally settled parent turn is shown as ended,
 not as successful execution of its last tool action. Retain failed actions separately;
 only current permission, input and review requests ask for user attention.
+2026-11-17: describe also binds that ID for the session, so an omitted one is filled in (decision above). A
+remembered ID that went stale refuses like a supplied one; nothing infers an agent or replaces a stale identity.
 
 **2026-11-16 — current status and useful saved content are separate terminal observations.**
 The visible dashboard requests bounded, coalesced producer refresh independent of open choices. Only an

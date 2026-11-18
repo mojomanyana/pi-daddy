@@ -46,6 +46,7 @@ import { snapshotChildTools } from "../src/kernel/child-tools.ts";
 import { bindParentTools } from "./parent-tool-host.ts";
 import { snapshotOf } from "./approvals.ts";
 import { registerDelegationTools } from "./delegation.ts";
+import { forgetDescribedDefinitions } from "./definition-describe.ts";
 import { grantsCommand } from "./grants-command.ts";
 import { runInit } from "./init-command.ts";
 import { planWithApprovals } from "./run-delegation.ts";
@@ -137,6 +138,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         ? { previous: event.previousSessionFile, target: ctx.sessionManager?.getSessionFile?.(), cwd: ctx.cwd }
         : undefined;
     const reload = bindReloadLifecycle(owner, session.reloadLifecycle, replacement);
+    // A describe binds only for the conversation that saw it: `/reload` keeps it, every other start drops it.
+    if (event?.reason !== "reload") forgetDescribedDefinitions(reload.lifecycle);
     session.reconcileEnvironment(reload.environment, reload.lifecycle, ctx.cwd);
     session.ownerBound = true;
     const projectMemoryReady = projectMemory.begin(ctx);
@@ -336,6 +339,12 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         console.error("grants: session-start diagnostic failed", error, diagnosticError);
       }
     }
+    return undefined;
+  });
+
+  // Moving in the session tree can leave the describe off the active branch, so it no longer binds.
+  pi.on("session_tree", () => {
+    forgetDescribedDefinitions(session.reloadLifecycle);
     return undefined;
   });
 
