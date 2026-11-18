@@ -2,7 +2,7 @@
 
 ## 0.61.0 — 2026-11-18
 
-- Added optional, off-by-default remote LLM hardware telemetry in dashboard Settings. The owner can show observed GPU activity, edge temperature and physical system RAM through configured read-only SSH probes without starting the model. Stopped service, inaccessible probes and unavailable readings stay distinct; GPU allocation and live token rates are not inferred. Probe settings do not reach delegated children or model prompts.
+- Added optional, off-by-default remote LLM hardware telemetry in dashboard Settings. The owner can show observed GPU activity, edge temperature and physical system RAM through configured read-only SSH probes without starting the model. Stopped service, inaccessible probes and unavailable readings stay distinct; GPU allocation and live token rates are not inferred. Probe settings do not reach delegated children or model prompts. Owners that do not advertise telemetry retain their existing Settings layout and keyboard choices.
 - Disabling telemetry cancels and reaps the active local SSH process before acknowledging the stop. Normal dashboard close requests the same owner-bound stop; an unreachable or replaced owner reports it as unconfirmed. Shutdown and reload await cleanup, re-enabling cannot overlap a previous probe, and a cancelled sample cannot launch later commands or update the display. Documented how to build and explicitly load a source checkout's dashboard.
 
 ## 0.60.0 — 2026-11-18

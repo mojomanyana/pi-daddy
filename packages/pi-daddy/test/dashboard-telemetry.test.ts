@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { after, test } from "node:test";
+import { readFile } from "node:fs/promises";
+import { tempDir, cleanupTempDirs } from "./tmp.ts";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -15,6 +15,7 @@ import {
   closeTelemetry,
 } from "../extensions/dashboard-telemetry.ts";
 import type { GrantsSession } from "../extensions/session.ts";
+after(cleanupTempDirs);
 
 test("amdgpu_top JSON preserves unsupported/null readings instead of inventing zeros", () => {
   assert.deepEqual(
@@ -232,7 +233,7 @@ test(
   "owned process cancellation settles only after process exit, including a SIGTERM-resistant probe",
   { timeout: 15000 },
   async () => {
-    const folder = await mkdtemp(join(tmpdir(), "pi-telemetry-cancel-"));
+    const folder = await tempDir("pi-telemetry-cancel-");
     const pidFile = join(folder, "pid");
     const controller = new AbortController();
     const result = executeTelemetry(
@@ -270,7 +271,6 @@ test(
     } finally {
       controller.abort();
       await settled;
-      await rm(folder, { recursive: true, force: true });
     }
   },
 );

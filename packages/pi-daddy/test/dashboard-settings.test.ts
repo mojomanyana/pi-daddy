@@ -18,7 +18,7 @@ import { newEpisodeId } from "../src/kernel/episode-id.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { renderDashboardScreen } from "../src/products/dashboard-screen.ts";
 import { cellWidth } from "../src/products/dashboard-render.ts";
-import { dashboardSettingsLines } from "../src/products/dashboard-settings.ts";
+import { dashboardSettingsLines, visibleSettingKeys } from "../src/products/dashboard-settings.ts";
 
 async function fixture() {
   const session = {
@@ -118,6 +118,11 @@ test("Settings names telemetry lifecycle states and never implies unsupported li
     assert.match(observed, /RAM: 8.0 \/ 32.0 GiB/);
     assert.match(observed, /GPU: 0%.*39°C/);
     assert.doesNotMatch(observed, /Shared RAM.*unavailable/);
+    const keys = visibleSettingKeys(settings.jev, true);
+    assert.equal(keys.indexOf("telemetry") + 1, keys.indexOf("wall"), "navigation follows display order");
+    delete settings.telemetry;
+    assert.equal(visibleSettingKeys(settings.jev).includes("telemetry"), false);
+    assert.doesNotMatch(dashboardSettingsLines(settings, false, "auto", 100).join("\n"), /TELEMETRY|Shared system RAM/);
     settings.telemetry = { enabled: false, status: "disabled" };
     assert.match(dashboardSettingsLines(settings, false, "auto", 100).join("\n"), /disabled/);
   } finally {
@@ -232,6 +237,10 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     assert.equal(display.screen.settingKey, "jev");
     assert.equal(display.key("return"), "setting");
     display.key("down");
+    assert.equal(display.screen.settingKey, "telemetry");
+    assert.match(draw(), /> Telemetry: disabled/);
+    display.key("down");
+    assert.equal(display.screen.settingKey, "wall");
     display.key("down");
     assert.equal(display.screen.settingKey, "idle");
     frame = draw();
