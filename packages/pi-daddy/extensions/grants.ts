@@ -410,7 +410,9 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       await session.catalogReady;
       assertDiscoveryHealthy(session, lifecycle);
       // Refresh and report only after the catalog includes the observed extension tools. Otherwise the
-      // settled summary can repeat startup's provisional "unknown capability" diagnosis.
+      // settled summary can repeat startup's provisional "unknown capability" diagnosis. The refresh also
+      // re-reads the child-tool inventory, which by now holds Daddy's own tools, so a sub-delegating
+      // definition can first be offered here.
       delegation.refreshSpawnable();
       await reportSelectedDefinitions(session, ctx);
     } catch {

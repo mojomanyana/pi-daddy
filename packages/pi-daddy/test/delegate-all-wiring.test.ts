@@ -614,6 +614,60 @@ test("R-39: a definition the session may NOT spawn is not advertised", async () 
   assert.match(described, /Available: none/, "an unauthorised definition must not be advertised (ADR-0017)");
 });
 
+test("a definition whose tools no governed child can load is not advertised, though the grant covers it", async () => {
+  // The description disagreeing with the enforcer again, over a newer rule. 0.57.0 made the planner refuse,
+  // before any prompt, a delegation naming a tool a governed child cannot load, and the description kept
+  // listing such definitions because it asked only `maySpawnDefinition`. `scout_research` is another
+  // extension's tool in this harness's inventory and is in the grant with `agent:scout-public`, so child
+  // delivery is all that stands between it and a spawn.
+  //
+  // Reintroduce it by dropping the `childToolDeliveryRefusal` filter from `spawnable()` in
+  // `extensions/delegation.ts` and the description assertions fail with `Available: reviewer, scout-public.`
+  const dir = await tempDir("grants-fanout-");
+  for (const [name, allowedTools] of [
+    ["reviewer", "Read"],
+    ["scout-public", "scout_research"],
+  ]) {
+    await mkdir(join(dir, ".pi", "skills", name), { recursive: true });
+    await writeFile(
+      join(dir, ".pi", "skills", name, "SKILL.md"),
+      `---\nname: ${name}\ndescription: Does ${name} work.\nallowed-tools: ${allowedTools}\n---\nDo the work.`,
+      "utf8",
+    );
+  }
+  const { tools, commands, hooks, ctx } = await harness(
+    { [ENV_GRANT]: "agent:reviewer,agent:scout-public,tool:read,tool:scout_research,tool:delegate" },
+    dir,
+  );
+  const assertAdvertised = (when: string) => {
+    for (const name of ["delegate", "delegate_all"])
+      assert.match(agentDescriptionOf(tools.get(name)!), /Available: reviewer\.$/, `${name} ${when}`);
+  };
+  assertAdvertised("once session_start has loaded the definitions");
+  // The first provider request tightens the grant and teaches the catalog `scout_research`; the list is
+  // refreshed there too, and must not regain the name once the session demonstrably holds the tool.
+  await hooks.get("before_provider_request")!(
+    { payload: { tools: ["read", "scout_research", "delegate", "delegate_all"].map((name) => ({ name })) } },
+    ctx,
+  );
+  assertAdvertised("after the first provider request");
+
+  // The enforcer on this same session: the hidden name is one every attempt at which is refused.
+  await assert.rejects(
+    () =>
+      tools
+        .get("delegate")!
+        .execute("hidden-definition", { task: "research", agent: "scout-public" }, undefined, undefined, ctx),
+    /child tool unavailable: scout_research/,
+  );
+  // `/grants` previews through the planner and already told the operator so; it is unchanged by this.
+  const shown: string[] = [];
+  Object.assign(ctx.ui, { notify: (text: string) => void shown.push(text) });
+  await commands.get("grants").handler("", ctx);
+  assert.match(shown.join("\n"), /BLOCK {2}scout-public {2}.*child tool unavailable: scout_research/);
+  assert.match(shown.join("\n"), /allow {2}reviewer {2}/);
+});
+
 test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every delegation", async () => {
   // **The refusal must land in the PLANNER's path, not at the executor.** A child that reaches `tab create`
   // has already had its ledger line written, so a refusal any later would record a spawn that never happened

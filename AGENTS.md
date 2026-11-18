@@ -226,6 +226,16 @@ projection: scoped titles, summaries, findings and gaps, with exact references u
 injects context into the model nor grants model-facing read permission. Saved research, current worker readiness
 and the latest run outcome remain distinct. Keep legacy producers working without invented inventory or counts.
 
+**2026-11-16 — the advertised agent list follows child delivery.** The `agent` description on `delegate` and
+`delegate_all` omits a definition whose declared ceiling `childToolDeliveryRefusal` refuses, given the tool
+inventory and extension path the planner is handed. It is a description, not a second enforcer: the planner
+still decides every spawn and `/grants` still reports each refusal with its reason. The filter only removes
+names, is recomputed only at the existing refresh points, and treats an unreadable inventory as unobserved
+and an unreadable ceiling as not offered rather than throwing into a Pi hook. Definitions refused for an
+undeclared or pattern ceiling are still listed when their remaining entries are deliverable.
+Model-free controls compare the list with the planner in both directions; no model run establishes which
+definition a model then chooses.
+
 **2026-11-13 — child delivery is checked separately from parent permission.** The current public Pi tool
 origins must identify a qualified native tool or Daddy's own explicit governance entrypoint before an
 authorized request can ask for approval. External extension, MCP and SDK-only tools are refused instead of

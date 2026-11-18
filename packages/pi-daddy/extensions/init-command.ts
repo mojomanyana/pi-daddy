@@ -176,7 +176,7 @@ async function runOwnedInit(
   // what is recorded cannot disagree.
   session.adoptGrant(finalGrant, ledger);
   // Order matters: the grant first, then the reload, because `refreshSpawnable` filters the definitions it
-  // advertises through `maySpawnDefinition` against the grant the session now holds.
+  // advertises through `maySpawnDefinition` against the grant the session now holds, then by child delivery.
   await refresh(lifecycle);
   assertDiscoveryHealthy(session, lifecycle);
 

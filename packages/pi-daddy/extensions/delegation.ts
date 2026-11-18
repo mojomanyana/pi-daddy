@@ -22,6 +22,8 @@ import {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
+import { ceilingForDefinition } from "../src/kernel/definitions.ts";
+import { childToolDeliveryRefusal, type ChildToolSource } from "../src/kernel/child-tools.ts";
 import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/kernel/fanout.ts";
 import {
   PAINT_INTERVAL_MS,
@@ -134,7 +136,8 @@ export interface DelegationRegistration {
    *
    * Must be called once the session knows the answer — `session_start` loads the definitions, and the first
    * provider request tightens `ownGrant`. Both change the list, and neither has happened when the tools are
-   * registered. See R-39: without this the answer is permanently `none`.
+   * registered. See R-39: without this the answer is permanently `none`. Each call also re-reads the child-tool
+   * inventory, which lacks Daddy's own tools until they are registered.
    */
   refreshSpawnable: () => void;
 }
@@ -148,14 +151,41 @@ export interface DelegationRegistration {
  */
 export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession): DelegationRegistration {
   /**
-   * Definitions this session is actually authorised to spawn (ADR-0017), for the tool description.
+   * Definitions this session is actually authorised to spawn (ADR-0017) and whose declared tools a governed
+   * child can load, for the tool description.
    *
    * Listing all of them would tell the model it can spawn things every attempt at which is refused — the
    * R-28 shape again, a description disagreeing with the enforcer. Computed from the same
-   * `maySpawnDefinition` the planner uses.
+   * `maySpawnDefinition` the planner uses, and from the same `childToolDeliveryRefusal` over the two inputs
+   * `session.delegationContext` hands it. The planner's per-call `context:` handling adds and removes no
+   * tool name, so the declared ceiling alone decides delivery.
+   *
+   * Both filters only remove names. This runs inside `session_start`, `ensureDefinitions` and the
+   * provider-request hook, so the delivery filter must not throw: Pi's `getAllTools` asserts a bound, live
+   * runtime, and an unreadable inventory falls back to the planner's own unobserved rule (native tools,
+   * nothing external). A ceiling that cannot be read is not offered. The planner re-reads the inventory at
+   * dispatch and remains the enforcer.
    */
-  const spawnable = () =>
-    [...session.definitions.keys()].filter((name) => maySpawnDefinition(session.ownGrant, name)).sort();
+  const spawnable = () => {
+    let childToolSources: readonly ChildToolSource[] | undefined;
+    try {
+      childToolSources = session.childToolSources?.();
+    } catch {
+      // Left unobserved, as for a caller that supplies no inventory.
+    }
+    const delivery = { childToolSources, extensionPath: session.extensionPath };
+    const deliverable = (definition: Parameters<typeof ceilingForDefinition>[0]) => {
+      try {
+        return !childToolDeliveryRefusal(ceilingForDefinition(definition).capabilities, delivery);
+      } catch {
+        return false; // An unreadable ceiling is not offered; dispatch fails on the same read.
+      }
+    };
+    return [...session.definitions]
+      .filter(([name, definition]) => maySpawnDefinition(session.ownGrant, name) && deliverable(definition))
+      .map(([name]) => name)
+      .sort();
+  };
 
   /**
    * **R-39.** This used to be computed once, right here, and it was always `[]`.
