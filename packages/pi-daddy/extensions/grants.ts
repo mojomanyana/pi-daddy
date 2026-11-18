@@ -1,5 +1,5 @@
 import { registerProjectMemoryOwner } from "./project-memory-owner.ts";
-import { registerDashboardSettings, childExecutionLimits } from "./dashboard-settings.ts";
+import { registerDashboardSettings, childExecutionLimits, closeDashboardTelemetry } from "./dashboard-settings.ts";
 import { bindEcosystemVersions } from "./ecosystem-versions.ts";
 import {
   initializeSessionAutoMode,
@@ -367,6 +367,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         cwd: ctx.cwd,
       });
     projectMemory.close();
+    await closeDashboardTelemetry(session);
     if (event.reason !== "reload") await closeSessionAutoMode(session);
   });
 

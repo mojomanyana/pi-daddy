@@ -39,6 +39,9 @@ import {
   ENV_ADVISOR_MODEL,
   ENV_ADVISOR_TASK_EGRESS,
   ENV_ADVISOR_KEY,
+  ENV_LLM_TELEMETRY_SSH_TARGET,
+  ENV_LLM_TELEMETRY_SSH_IDENTITY,
+  ENV_LLM_TELEMETRY_SERVICE,
   ENV_ADVISOR,
   ENV_GRANT,
   ENV_FANOUT,
@@ -121,6 +124,10 @@ export const GRANT_ENV_KEYS = [
   // ask the root to run a tool its own grant never named, so both are stripped and re-supplied per child.
   ENV_PROXIED_TOOLS,
   ENV_PROXIED_TOOLS_KEY,
+  // Telemetry SSH access belongs only to the owning dashboard session, never a delegated child.
+  ENV_LLM_TELEMETRY_SSH_TARGET,
+  ENV_LLM_TELEMETRY_SSH_IDENTITY,
+  ENV_LLM_TELEMETRY_SERVICE,
 ] as const;
 
 export const parseList = (raw: string | undefined): Capability[] =>

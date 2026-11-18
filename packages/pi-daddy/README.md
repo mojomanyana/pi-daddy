@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.60.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.60.0` both resolve to this release.
+Source target: **0.61.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.61.0` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -58,6 +58,31 @@ The startup delegation summary may say **checking available tools** until Pi pro
 Task descriptions can come from a short public description supplied by the delegating model. When that description is unavailable, the dashboard uses the activity it actually observed. This works without a summarization request or JEV. Open details to inspect a source, and use **x** when offered to see exact references. Saved evidence, process completion and approval are separate facts. Explicit **p** and **f** reads use the existing retention controls.
 
 The resource display covers the parent Pi process. Transcripts, private reasoning, shell commands and tool results are outside the session activity feed. The dashboard displays only the current owner's tasks and sources.
+
+### Optional remote LLM telemetry
+
+The dashboard's **Settings → Telemetry** row enables or disables a session-local hardware probe; it is off by default and disabling it cancels its active local SSH process and stops further probe steps. Pi session shutdown and reload await that same cleanup. It uses the configured SSH client and existing remote `amdgpu_top`; it does not install software, start services, or start the model. Telemetry is display-only and never enters a model prompt. Failures are isolated from delegation and the rest of the dashboard.
+
+Configure these three values before starting Pi (they are not stored in the project or displayed back as credentials):
+
+```bash
+export PI_DADDY_LLM_TELEMETRY_SSH_TARGET='user@host'
+export PI_DADDY_LLM_TELEMETRY_SSH_IDENTITY="$HOME/.ssh/your-diagnostics-key"
+export PI_DADDY_LLM_TELEMETRY_SERVICE='your-llm.service'
+pi
+```
+
+The account needs non-interactive SSH access, permission to run `~/.local/bin/amdgpu_top`, and permission to query the configured systemd service. Configure the service as a systemd unit name without shell punctuation; host targets must be a host or `user@host` form. Telemetry SSH settings are removed from delegated child environments. Each SSH command has its own timeout (2–4 seconds) and bounded output; the next probe starts at least two seconds after the previous probe finishes. In Settings select Telemetry and press Enter to enable; select it and press Enter again to stop. States distinguish disabled, missing SSH configuration/dependency, confirmed inactive model service, disconnected SSH, stale sample and connected. A failed service query other than systemd's inactive result is reported as disconnected. GPU activity and edge temperature are shown only when numeric samples exist. System RAM used/total comes from `/proc/meminfo` (`MemTotal` minus `MemAvailable`), including when the model is stopped. On an APU this is a shared system pool, not a GPU-only allocation; the `amdgpu_top` GTT/VRAM heaps are not substituted for physical RAM. Missing, malformed or inconsistent memory values remain unavailable. Prompt/generation speed remains unavailable; `llama.cpp --metrics` may expose aggregate metrics, but no verified per-token speed is claimed. A stopped model therefore remains stopped without an inferred rate.
+
+To try a source checkout, build its dashboard before loading that checkout's extension; editing source does not change an installed package or an already running dashboard:
+
+```bash
+# From the checkout root, with its development dependencies already available:
+npm run build
+pi --no-extensions -e "$PWD/packages/pi-daddy/extensions/grants.ts"
+```
+
+This explicit test session loads only the selected extension. Keep other normal sessions separate. If Herdr asks to relink its shared dashboard plugin to this checkout, that changes which dashboard code Herdr loads; inspect that prompt and reopen the dashboard after accepting. Do not silently replace an existing plugin or assume an old pane displays the new build. After testing, start Pi normally to use its installed extensions.
 
 Controls remain the existing authenticated owner controls. Changes show pending, applied, refused or
 unconfirmed status. Unconfirmed mutations need owner inspection before retry. Auto changes current

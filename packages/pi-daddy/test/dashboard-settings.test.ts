@@ -18,6 +18,7 @@ import { newEpisodeId } from "../src/kernel/episode-id.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { renderDashboardScreen } from "../src/products/dashboard-screen.ts";
 import { cellWidth } from "../src/products/dashboard-render.ts";
+import { dashboardSettingsLines } from "../src/products/dashboard-settings.ts";
 
 async function fixture() {
   const session = {
@@ -91,6 +92,35 @@ test("authenticated Settings transport uses the owner and leaves capacity reserv
     await assert.rejects(request({ action: "set-jev", enabled: true }), /bridge unavailable/);
   } finally {
     await endpoint.close();
+    await closeSessionAutoMode(session);
+  }
+});
+
+test("Settings names telemetry lifecycle states and never implies unsupported live token speed", async () => {
+  const session = await fixture();
+  try {
+    const settings = await import("../extensions/dashboard-settings.ts").then(({ dashboardSettingsSnapshot }) =>
+      dashboardSettingsSnapshot(session),
+    );
+    settings.telemetry = { enabled: true, status: "stale" };
+    const lines = dashboardSettingsLines(settings, false, "auto", 100).join("\n");
+    assert.match(lines, /stale/);
+    assert.match(lines, /live prompt\/generation speed are unavailable/);
+    settings.telemetry = {
+      enabled: true,
+      status: "stopped",
+      gpuPercent: 0,
+      temperatureC: 39,
+      ramUsedBytes: 8 * 1024 ** 3,
+      ramTotalBytes: 32 * 1024 ** 3,
+    };
+    const observed = dashboardSettingsLines(settings, false, "telemetry", 120).join("\n");
+    assert.match(observed, /RAM: 8.0 \/ 32.0 GiB/);
+    assert.match(observed, /GPU: 0%.*39°C/);
+    assert.doesNotMatch(observed, /Shared RAM.*unavailable/);
+    settings.telemetry = { enabled: false, status: "disabled" };
+    assert.match(dashboardSettingsLines(settings, false, "auto", 100).join("\n"), /disabled/);
+  } finally {
     await closeSessionAutoMode(session);
   }
 });

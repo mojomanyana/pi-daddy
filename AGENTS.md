@@ -1582,3 +1582,8 @@ historical evidence while its current cleanup receipt remains unavailable. The o
 admission continues to prevent exact-ID replay. A compatible consumer owns current authorization,
 source reconciliation and any fresh successor election. No legacy absence tombstone, owner transfer,
 semantic approval or model-supplied execution fact is introduced.
+
+
+### 2026-11-18 — Optional display-only remote hardware telemetry
+
+Telemetry remains off by default and owner-controlled. Use only configured read-only SSH probes; no model calls, service starts or automatic installations. Cancellation kills and reaps the owned local process before acknowledging a stop, and re-enable cannot overlap that process. Physical RAM comes from validated system memory fields; GPU heaps and stopped-model state never imply RAM allocation or token speed. Normal dashboard close requests the same owner-bound stop; disconnection and abrupt dashboard death cannot claim confirmed cleanup.

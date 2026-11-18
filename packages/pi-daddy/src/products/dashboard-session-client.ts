@@ -46,6 +46,7 @@ export type DashboardSessionAction = (
   | { action: "set"; edits: string }
   | { action: "set-auto"; enabled: boolean }
   | { action: "set-jev"; enabled: boolean }
+  | { action: "set-telemetry"; enabled: boolean }
   | { action: "edit-jev"; option: JevEditAction }
   | { action: "set-limit"; key: "wall" | "idle"; seconds: number }
 ) & { expectedOwner?: { sessionId: string; cwd: string; generation: string } };
@@ -254,7 +255,9 @@ export function createDashboardConnection(
               ? "use the main Pi session; current values shown below"
               : action.action === "set-jev"
                 ? "current JEV session; separate paid-call and storage choices"
-                : "future children; running children unchanged";
+                : action.action === "set-telemetry"
+                  ? "optional telemetry polling in this Pi session"
+                  : "future children; running children unchanged";
       state.acknowledgment = { action: action.action, state: "pending", effect };
       try {
         const snapshot = await request({

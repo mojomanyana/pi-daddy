@@ -366,6 +366,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       ? (action) => dashboardSessionRequest(sessionSocket, sessionToken, action)
       : undefined,
   );
+  let telemetryChange: Promise<void> | undefined;
   let previous = "",
     notice = "",
     command: string | undefined;
@@ -507,7 +508,17 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       else if (selected === "descendants") notice = "Startup only: set PI_DADDY_FANOUT before restarting Pi";
       else if (selected === "depth") notice = "Startup only: set PI_DADDY_MAX_DEPTH before restarting Pi";
       else if (selected === "perCall") notice = "Children per call is a fixed safety bound";
-      else if (!settings.jev.available)
+      else if (selected === "telemetry") {
+        const enabled = !settings.telemetry?.enabled;
+        telemetryChange = connection.change({ action: "set-telemetry", enabled }).then((changed) => {
+          notice = changed
+            ? enabled
+              ? "Telemetry enabled; probe is starting."
+              : "Telemetry disabled; polling stopped."
+            : connection.state.error || "Telemetry setting unavailable";
+          redraw();
+        });
+      } else if (!settings.jev.available)
         notice = "JEV controls unavailable; load skill-harness in the parent Pi session";
       else if (selected === "limit" || selected === "configure" || selected === "hints") {
         if (!settings.jev.controls?.includes(selected)) notice = "Update skill-harness to edit this setting";
@@ -585,6 +596,20 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     process.off("SIGTERM", stop);
     process.off("SIGWINCH", redraw);
     input?.close();
+    await telemetryChange;
+    const snapshot = connection.state.snapshot ?? connection.state.lastObserved;
+    const owner = snapshot?.observation;
+    if (sessionSocket && sessionToken && owner && (snapshot?.settings?.telemetry?.enabled || telemetryChange)) {
+      try {
+        await dashboardSessionRequest(sessionSocket, sessionToken, {
+          action: "set-telemetry",
+          enabled: false,
+          expectedOwner: { sessionId: owner.sessionId, cwd: owner.cwd, generation: owner.generation },
+        });
+      } catch {
+        process.stderr.write("Telemetry stop unconfirmed; check Settings in the owning Pi session.\n");
+      }
+    }
     if (interactive) {
       process.stdin.off("keypress", keypress);
       process.stdin.setRawMode(oldRaw || false);

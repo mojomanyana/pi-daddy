@@ -1,7 +1,12 @@
 import type { DashboardChoiceDetail } from "../src/kernel/dashboard-choice.ts";
 import { isJevEditAction } from "../src/products/dashboard-settings.ts";
 import { dashboardObservation } from "./dashboard-observation.ts";
-import { dashboardSettingsSnapshot, dashboardJev, setDashboardLimit } from "./dashboard-settings.ts";
+import {
+  dashboardSettingsSnapshot,
+  dashboardJev,
+  setDashboardLimit,
+  setDashboardTelemetry,
+} from "./dashboard-settings.ts";
 import { randomBytes } from "node:crypto";
 import { chmod, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
@@ -131,6 +136,7 @@ async function respond(
   if (
     choiceAction ||
     request.action === "edit-jev" ||
+    request.action === "set-telemetry" ||
     (request.action !== "get" && request.expectedOwner !== undefined)
   ) {
     const observed = session.dashboardObservations?.(),
@@ -184,6 +190,9 @@ async function respond(
   } else if (request.action === "set-jev") {
     if (typeof request.enabled !== "boolean") return { ok: false, error: "JEV requires an explicit boolean" };
     jev = await dashboardJev(session, request.enabled ? "enable" : "disable");
+  } else if (request.action === "set-telemetry") {
+    if (typeof request.enabled !== "boolean") return { ok: false, error: "Telemetry requires an explicit boolean" };
+    await setDashboardTelemetry(session, request.enabled);
   } else if (request.action === "set-auto") {
     if (typeof request.enabled !== "boolean") return { ok: false, error: "Auto mode requires an explicit boolean" };
     await setAutoApproval(session, request.enabled, "dashboard");

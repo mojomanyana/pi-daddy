@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { createServer } from "node:net";
 import { after, test } from "node:test";
 import { DASHBOARD_PROTOCOL_VERSION, dashboardFrame } from "../src/products/dashboard-cli.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
@@ -286,3 +287,74 @@ test("shutdown during an awaited frame read cannot write after restoring the par
   `;
   execFileSync(process.execPath, ["--input-type=module", "--eval", script], { timeout: 5000 });
 });
+
+for (const refused of [false, true])
+  test(
+    `normal dashboard close requests telemetry stop from the same owner (${refused ? "refused" : "confirmed"})`,
+    { timeout: 10000 },
+    async () => {
+      const cwd = await tempDir("dashboard-telemetry-close-");
+      const socketPath = join(cwd, "owner.sock");
+      const owner = { sessionId: "telemetry-session", cwd, generation: "telemetry-generation" };
+      const requests: Array<Record<string, unknown>> = [];
+      const reply = {
+        ok: true,
+        rows: [],
+        cost: null,
+        auto: { enabled: false, source: "default" },
+        pendingApprovals: [],
+        observation: owner,
+        settings: { telemetry: { enabled: true, status: "connected" } },
+      };
+      const server = createServer((socket) => {
+        let input = "";
+        socket.on("data", (data) => {
+          input += data;
+          if (!input.includes("\n")) return;
+          const request = JSON.parse(input);
+          requests.push(request);
+          if (request.action === "set-telemetry" && refused)
+            socket.end(JSON.stringify({ ok: false, error: "owner changed" }));
+          else socket.end(JSON.stringify(reply));
+        });
+      });
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      const child = spawn(
+        process.execPath,
+        [join(import.meta.dirname, "..", "src", "products", "dashboard-cli.ts"), "--no-color"],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            PI_DADDY_DASHBOARD_SESSION_SOCKET: socketPath,
+            PI_DADDY_DASHBOARD_SESSION_TOKEN: "fixture-token",
+          },
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      );
+      let stderr = "";
+      child.stderr.on("data", (value) => {
+        stderr += value;
+      });
+      const closed = new Promise<number | null>((resolve) => child.once("close", resolve));
+      try {
+        await new Promise<void>((resolve, reject) => {
+          child.stdout.once("data", () => resolve());
+          child.once("error", reject);
+        });
+        child.kill("SIGTERM");
+        assert.equal(await closed, 0);
+        const stop = requests.filter((request) => request.action === "set-telemetry");
+        assert.equal(stop.length, 1);
+        assert.equal(stop[0].enabled, false);
+        assert.deepEqual(stop[0].expectedOwner, owner);
+        assert.equal(stop[0].token, "fixture-token");
+        if (refused) assert.match(stderr, /Telemetry stop unconfirmed/);
+        else assert.doesNotMatch(stderr, /unconfirmed/);
+      } finally {
+        child.kill("SIGKILL");
+        await closed;
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
