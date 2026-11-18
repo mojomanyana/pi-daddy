@@ -449,7 +449,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "Finished means observed completion, not acceptance.",
     );
   else if (screen.view === "settings") {
-    screen.settingKeys = visibleSettingKeys(session?.settings?.jev);
+    screen.settingKeys = visibleSettingKeys(session?.settings?.jev, Boolean(session?.settings?.telemetry));
     if (screen.settingKey && !screen.settingKeys.includes(screen.settingKey)) screen.settingKey = "jev";
     body.push(
       ...(disconnected

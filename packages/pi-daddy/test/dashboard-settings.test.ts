@@ -18,6 +18,7 @@ import { newEpisodeId } from "../src/kernel/episode-id.ts";
 import { createDashboardDisplayControls } from "../src/products/dashboard-display-controls.ts";
 import { renderDashboardScreen } from "../src/products/dashboard-screen.ts";
 import { cellWidth } from "../src/products/dashboard-render.ts";
+import { dashboardSettingsLines, visibleSettingKeys } from "../src/products/dashboard-settings.ts";
 
 async function fixture() {
   const session = {
@@ -91,6 +92,40 @@ test("authenticated Settings transport uses the owner and leaves capacity reserv
     await assert.rejects(request({ action: "set-jev", enabled: true }), /bridge unavailable/);
   } finally {
     await endpoint.close();
+    await closeSessionAutoMode(session);
+  }
+});
+
+test("Settings names telemetry lifecycle states and never implies unsupported live token speed", async () => {
+  const session = await fixture();
+  try {
+    const settings = await import("../extensions/dashboard-settings.ts").then(({ dashboardSettingsSnapshot }) =>
+      dashboardSettingsSnapshot(session),
+    );
+    settings.telemetry = { enabled: true, status: "stale" };
+    const lines = dashboardSettingsLines(settings, false, "auto", 100).join("\n");
+    assert.match(lines, /stale/);
+    assert.match(lines, /live prompt\/generation speed are unavailable/);
+    settings.telemetry = {
+      enabled: true,
+      status: "stopped",
+      gpuPercent: 0,
+      temperatureC: 39,
+      ramUsedBytes: 8 * 1024 ** 3,
+      ramTotalBytes: 32 * 1024 ** 3,
+    };
+    const observed = dashboardSettingsLines(settings, false, "telemetry", 120).join("\n");
+    assert.match(observed, /RAM: 8.0 \/ 32.0 GiB/);
+    assert.match(observed, /GPU: 0%.*39°C/);
+    assert.doesNotMatch(observed, /Shared RAM.*unavailable/);
+    const keys = visibleSettingKeys(settings.jev, true);
+    assert.equal(keys.indexOf("telemetry") + 1, keys.indexOf("wall"), "navigation follows display order");
+    delete settings.telemetry;
+    assert.equal(visibleSettingKeys(settings.jev).includes("telemetry"), false);
+    assert.doesNotMatch(dashboardSettingsLines(settings, false, "auto", 100).join("\n"), /TELEMETRY|Shared system RAM/);
+    settings.telemetry = { enabled: false, status: "disabled" };
+    assert.match(dashboardSettingsLines(settings, false, "auto", 100).join("\n"), /disabled/);
+  } finally {
     await closeSessionAutoMode(session);
   }
 });
@@ -202,6 +237,10 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     assert.equal(display.screen.settingKey, "jev");
     assert.equal(display.key("return"), "setting");
     display.key("down");
+    assert.equal(display.screen.settingKey, "telemetry");
+    assert.match(draw(), /> Telemetry: disabled/);
+    display.key("down");
+    assert.equal(display.screen.settingKey, "wall");
     display.key("down");
     assert.equal(display.screen.settingKey, "idle");
     frame = draw();

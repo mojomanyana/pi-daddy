@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
 import type { DashboardJevState, DashboardSettingsSnapshot } from "../src/products/dashboard-settings.ts";
+import { telemetrySnapshot, setTelemetryEnabled, closeTelemetry } from "./dashboard-telemetry.ts";
 import { isJevEditAction, type JevEditAction } from "../src/products/dashboard-settings.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import {
@@ -176,5 +177,14 @@ export async function dashboardSettingsSnapshot(
     maxDepth: session.maxDepth ?? 0,
     perCall: MAX_CHILDREN_PER_CALL,
     jev: jev ?? (await dashboardJev(session, "status")),
+    telemetry: telemetrySnapshot(session),
   };
+}
+export async function setDashboardTelemetry(session: GrantsSession, enabled: boolean): Promise<void> {
+  owner(session, true);
+  if (enabled) setTelemetryEnabled(session, true);
+  else await closeTelemetry(session);
+}
+export function closeDashboardTelemetry(session: GrantsSession): Promise<void> {
+  return closeTelemetry(session);
 }

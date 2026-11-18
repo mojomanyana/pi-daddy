@@ -7,7 +7,7 @@ export type JevEditAction = (typeof JEV_EDIT_ACTIONS)[number];
 export const isJevEditAction = (value: unknown): value is JevEditAction =>
   JEV_EDIT_ACTIONS.some((key) => value === key);
 export type DashboardSettingKey =
-  JevEditAction | "auto" | "jev" | "wall" | "idle" | "descendants" | "depth" | "perCall";
+  JevEditAction | "auto" | "jev" | "wall" | "idle" | "descendants" | "depth" | "perCall" | "telemetry";
 export const DASHBOARD_SETTING_KEYS: DashboardSettingKey[] = [
   "auto",
   "jev",
@@ -36,9 +36,9 @@ export interface DashboardJevState {
   storageRoot?: string;
   error?: string;
 }
-export function visibleSettingKeys(jev?: DashboardJevState): DashboardSettingKey[] {
+export function visibleSettingKeys(jev?: DashboardJevState, telemetry = false): DashboardSettingKey[] {
   const extra = JEV_EDIT_ACTIONS.filter((key) => jev?.available && jev.controls?.includes(key));
-  return ["auto", "jev", ...extra, ...DASHBOARD_SETTING_KEYS.slice(2)];
+  return ["auto", "jev", ...extra, ...(telemetry ? ["telemetry" as const] : []), ...DASHBOARD_SETTING_KEYS.slice(2)];
 }
 export interface DashboardSettingsSnapshot {
   editable: boolean;
@@ -51,6 +51,16 @@ export interface DashboardSettingsSnapshot {
   maxDepth: number;
   perCall: number;
   jev: DashboardJevState;
+  telemetry?: {
+    enabled: boolean;
+    status: "disabled" | "missing-dependency" | "stopped" | "disconnected" | "stale" | "connected";
+    gpuPercent?: number;
+    temperatureC?: number;
+    ramUsedBytes?: number;
+    ramTotalBytes?: number;
+    note?: string;
+    sampledAt?: number;
+  };
 }
 export const JEV_EDITOR_NOTICE = "Finish editing in the main Pi session.";
 export const JEV_CONSENT_NOTICE = "Complete JEV paid-call and LoRA-storage choices in the parent Pi session";
@@ -72,6 +82,13 @@ export function dashboardSettingsLines(
   const jev = settings.jev;
   const canConfigure = jev.controls?.includes("configure");
   const providerIndent = canConfigure ? "      " : "    ";
+  const telemetry = settings.telemetry;
+  const gpu = telemetry?.gpuPercent === undefined ? "unavailable" : `${telemetry.gpuPercent}%`;
+  const temperature = telemetry?.temperatureC === undefined ? "unavailable" : `${telemetry.temperatureC}°C`;
+  const ram =
+    telemetry?.ramUsedBytes === undefined || telemetry.ramTotalBytes === undefined
+      ? "unavailable"
+      : `${(telemetry.ramUsedBytes / 1024 ** 3).toFixed(1)} / ${(telemetry.ramTotalBytes / 1024 ** 3).toFixed(1)} GiB`;
   const providerLines = [
     jev.controls?.includes("limit")
       ? `Provider status: ${jev.availability ?? "unknown"}`
@@ -126,6 +143,17 @@ export function dashboardSettingsLines(
       : ["    Load skill-harness to connect JEV controls."]),
     ...(jev.error ? [`    ${jev.error}`] : []),
     "",
+    ...(telemetry
+      ? [
+          sectionHeading("LLM TELEMETRY · optional", width),
+          row("telemetry", `Telemetry: ${telemetry?.enabled ? telemetry.status : "disabled"}`),
+          `    GPU: ${gpu} · temperature: ${temperature}`,
+          `    Shared system RAM: ${ram}`,
+          `    ${telemetry?.note ?? "Press Enter to enable; configure SSH target and identity in the Pi environment."}`,
+          "    GPU-only allocation and live prompt/generation speed are unavailable; no rates are inferred.",
+          "",
+        ]
+      : []),
     sectionHeading("CHILD TIMEOUTS", width),
     row("wall", `Child wall: ${settings.wallSeconds}s (${settings.wallSource})`),
     row("idle", `Child idle: ${settings.idleSeconds}s (${settings.idleSource})`),
