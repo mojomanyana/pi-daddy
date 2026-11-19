@@ -27,6 +27,7 @@ import { grantStorePath, projectLedgerPath } from "../../src/governance/grant-st
 import { projectSettingsPath } from "../../src/kernel/project-paths.ts";
 import { GRANT_ENV_KEYS } from "../../src/kernel/propagation.ts";
 import { createFixture } from "./fixture-harness.ts";
+import { workModeSnapshot } from "../../extensions/work-mode.ts";
 
 for (const contribute of [true, false]) {
   test(`interactive startup revalidates selected agents before dispatch ${contribute ? "with late contributions" : "even with identical selected paths"}`, async () => {
@@ -238,6 +239,8 @@ test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner",
     await host.session.bindExtensions({ mode: "tui", uiContext });
     await host.session.prompt("/grants auto on");
     const first = sessions[0]!;
+    await host.session.prompt("/work-mode ambitious session depth range");
+    assert.equal(workModeSnapshot(first).selection.mode, "ambitious");
     const previousLease = leases.at(-1);
     assert.ok(previousLease && previousLease.isCurrent());
     const old = await ensureDashboardSessionServer(first);
@@ -246,6 +249,8 @@ test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner",
     assert.deepEqual(await host.newSession(), { cancelled: false });
     assert.equal(previousLease.isCurrent(), false);
     const fresh = sessions[1]!;
+    assert.deepEqual(workModeSnapshot(fresh).selection, { mode: "standard", emphases: [] });
+    assert.equal(workModeSnapshot(fresh).active, undefined);
     assert.equal(fresh.depth, 0, "the replacement chat is a parent in the same folder");
     assert.equal(fresh.capacity.total, 3);
     assert.notEqual(fresh.episodeId, first.episodeId);

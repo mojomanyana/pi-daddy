@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 0.62.0 — 2026-11-19
+
+- Added optional Work mode controls in dashboard Settings and `/work-mode`. Standard keeps current behavior; Ambitious supplies proportionate approach guidance with combinable emphases. Select a session default or one-request override, see active versus next settings separately, and cancel drafts without applying them. Permissions, JEV, models and limits remain independent.
+- Captured work-mode guidance follows delegated children and descendants without changing their task or definition identity. Mid-run edits apply later; `/new` starts Standard, and changing mode never replays completed work. Native session metadata supports reload and resume. Local checks verify the controls and propagation; model-quality improvement is not yet established.
+
 ## 0.61.0 — 2026-11-18
 
 - Added optional, off-by-default remote LLM hardware telemetry in dashboard Settings. The owner can show observed GPU activity, edge temperature and physical system RAM through configured read-only SSH probes without starting the model. Stopped service, inaccessible probes and unavailable readings stay distinct; GPU allocation and live token rates are not inferred. Probe settings do not reach delegated children or model prompts. Owners that do not advertise telemetry retain their existing Settings layout and keyboard choices.

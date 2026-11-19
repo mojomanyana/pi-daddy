@@ -8,6 +8,7 @@ import { DASHBOARD_RESPONSE_BYTES, type DashboardOwnerObservation } from "../ker
 import type { DashboardSettingsSnapshot, JevEditAction } from "./dashboard-settings.ts";
 import type { EcosystemVersions } from "./ecosystem-versions.ts";
 import { createConnection } from "node:net";
+import type { WorkModeSelection } from "../kernel/work-mode.ts";
 
 export interface DashboardSessionSnapshot {
   rows: Array<{ definition: string; model: string; thinking: string; source: string }>;
@@ -26,6 +27,7 @@ export interface DashboardSessionSnapshot {
 interface DashboardSessionReply extends DashboardSessionSnapshot {
   choiceDetail?: DashboardChoiceDetail;
   choiceSaved?: true;
+  workModeApplied?: true;
   choiceRefreshRequested?: true;
   sourceRefreshRequested?: true;
 }
@@ -49,6 +51,7 @@ export type DashboardSessionAction = (
   | { action: "set-telemetry"; enabled: boolean }
   | { action: "edit-jev"; option: JevEditAction }
   | { action: "set-limit"; key: "wall" | "idle"; seconds: number }
+  | { action: "set-work-mode"; selection: WorkModeSelection; scope: "session" | "next-request" }
 ) & { expectedOwner?: { sessionId: string; cwd: string; generation: string } };
 
 export async function dashboardSessionRequest(
@@ -92,6 +95,8 @@ export async function dashboardSessionRequest(
           throw Error("The owner returned an unavailable choice.");
         if (request.action === "answer-choice" && parsed.choiceSaved !== true)
           throw Error("Bookie did not confirm the answer.");
+        if (request.action === "set-work-mode" && parsed.workModeApplied !== true)
+          throw Error("The owner did not confirm the work mode.");
         if (
           !parsed.auto ||
           typeof parsed.auto.enabled !== "boolean" ||
@@ -255,9 +260,13 @@ export function createDashboardConnection(
               ? "use the main Pi session; current values shown below"
               : action.action === "set-jev"
                 ? "current JEV session; separate paid-call and storage choices"
-                : action.action === "set-telemetry"
-                  ? "optional telemetry polling in this Pi session"
-                  : "future children; running children unchanged";
+                : action.action === "set-work-mode"
+                  ? action.scope === "next-request"
+                    ? "next request only, including its children"
+                    : "future requests in this session; active work unchanged"
+                  : action.action === "set-telemetry"
+                    ? "optional telemetry polling in this Pi session"
+                    : "future children; running children unchanged";
       state.acknowledgment = { action: action.action, state: "pending", effect };
       try {
         const snapshot = await request({
@@ -274,7 +283,20 @@ export function createDashboardConnection(
         });
         if (action.action === "answer-choice" && (snapshot.choiceSaved !== true || !matchesOwner(snapshot, action)))
           throw Error("Bookie did not confirm the answer.");
-        const { choiceDetail: _detail, choiceSaved: _saved, ...observed } = snapshot;
+        if (action.action === "set-work-mode") {
+          const expected = action.expectedOwner ?? observedOwner;
+          const acknowledged = snapshot.observation;
+          if (
+            snapshot.workModeApplied !== true ||
+            !expected ||
+            !acknowledged ||
+            expected.sessionId !== acknowledged.sessionId ||
+            expected.cwd !== acknowledged.cwd ||
+            expected.generation !== acknowledged.generation
+          )
+            throw Error("The owner did not confirm the work mode in this session.");
+        }
+        const { choiceDetail: _detail, choiceSaved: _saved, workModeApplied: _modeApplied, ...observed } = snapshot;
         if (!accept(observed)) throw Error("owner acknowledgment is stale; reconcile before another action");
         state.acknowledgment.state =
           action.action === "edit-jev"

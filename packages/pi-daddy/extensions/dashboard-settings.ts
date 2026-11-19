@@ -6,6 +6,7 @@ import type { DashboardJevState, DashboardSettingsSnapshot } from "../src/produc
 import { telemetrySnapshot, setTelemetryEnabled, closeTelemetry } from "./dashboard-telemetry.ts";
 import { isJevEditAction, type JevEditAction } from "../src/products/dashboard-settings.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
+import { workModeSnapshot } from "./work-mode.ts";
 import {
   ENV_CHILD_TIMEOUT,
   ENV_CHILD_IDLE_TIMEOUT,
@@ -178,6 +179,7 @@ export async function dashboardSettingsSnapshot(
     perCall: MAX_CHILDREN_PER_CALL,
     jev: jev ?? (await dashboardJev(session, "status")),
     telemetry: telemetrySnapshot(session),
+    workMode: workModeSnapshot(session),
   };
 }
 export async function setDashboardTelemetry(session: GrantsSession, enabled: boolean): Promise<void> {

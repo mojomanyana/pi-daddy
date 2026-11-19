@@ -198,6 +198,28 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-19 — Optional work mode steers approach without changing execution authority
+
+Standard is the default and an exact guidance no-op. Only explicit operator selection in the
+dashboard or `/work-mode` chooses Ambitious, for the session or one next request. Preserve a
+separate active snapshot through children and retries: later UI changes must not rewrite running
+work, selected definition bodies, task bytes, operation IDs, tool grants, models or execution limits.
+Bounded static mode data travels separately in the child launch; ambient data is stripped first.
+This field is not permission authority and never enables JEV. Principal and other skill packages
+remain optional and independently usable. No compulsory research, delegation, memory or evaluation
+stage is added. A read-only role remains read-only.
+
+Native session metadata stores operator choices and one-shot consumption. Restore session preferences
+from the active branch, use all current-session consumption records to avoid reviving used overrides
+on tree navigation, drop pending overrides on fork, and start Standard on /new. Invalid optional
+metadata reports Standard rather than blocking delivery. A failed setting save keeps the prior choice;
+failed consumption skips that override. Missing optional evidence narrows claims while independent
+authorized work continues. This is bounded approach guidance, not standing background authorization.
+
+Local and scripted-Pi regressions cover lifecycle, propagation, prompt restoration, authenticated
+dashboard edits and compatibility. They do not prove a quality, speed or cost improvement for real
+model delivery; any such claim requires a separate matched evaluation.
+
 ### 2026-11-18 — Independent upgrades preserve existing evidence and completed work
 
 The owner requires each package to work independently with released siblings. This reverses the 2026-11-17

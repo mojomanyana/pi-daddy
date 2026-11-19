@@ -12,6 +12,7 @@ import type { Catalog } from "./catalog.ts";
 import type { ApprovalBinding, CorrelationMetadata } from "./correlation.ts";
 import type { StructuredRefusal } from "./refusals.ts";
 import type { WorkspacePins } from "./workspace-pin.ts";
+import type { WorkModeSelection } from "./work-mode.ts";
 
 /** The two ways a child can be started. Defined here, below the executors, so the ledger and the planner can name it without importing an executor (ADR-0076 layering). */
 export const EXECUTOR_KINDS = ["process", "herdr"] as const;
@@ -59,6 +60,8 @@ export interface DelegationRequest {
 }
 
 export interface DelegationContext {
+  /** Optional working-style snapshot; no capability, approval or task-identity authority. */
+  workMode?: WorkModeSelection;
   autoModeRef?: AutoModeRef;
   ownGrant: Capability[];
   /** Stable identity shared by the root session and every descendant. */

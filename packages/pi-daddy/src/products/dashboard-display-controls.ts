@@ -1,6 +1,7 @@
 import { openChoice, choiceKey } from "./dashboard-choice-picker.ts";
 import { DASHBOARD_DESTINATIONS } from "./dashboard-panels.ts";
 import { DASHBOARD_SETTING_KEYS } from "./dashboard-settings.ts";
+import { workModeEditorKey } from "./dashboard-work-mode.ts";
 /** Local display controls; these never dispatch actions to an owner or change ledger state. */
 import { dashboardScreenState } from "./dashboard-screen.ts";
 import { ActivityTimelineAliases } from "./activity-timeline.ts";
@@ -23,7 +24,27 @@ export function createDashboardDisplayControls(details: boolean, ledger: boolean
     key(
       key: string,
       text?: string,
-    ): "auto" | "quit" | "command" | "setting" | "inspect-choice" | "answer-choice" | undefined {
+    ): "auto" | "quit" | "command" | "setting" | "inspect-choice" | "answer-choice" | "apply-work-mode" | undefined {
+      if (screen.view === "work-mode") {
+        if (key === "q" || key === "ctrl-c") return "quit";
+        if (key === "pageup" || key === "pagedown") {
+          screen.manualScroll = true;
+          screen.offset = Math.max(0, screen.offset + (key === "pageup" ? -8 : 8));
+          return;
+        }
+        if (["up", "down", "j", "k"].includes(key)) screen.manualScroll = false;
+        if (!screen.workModeEditor) {
+          screen.view = "settings";
+          return;
+        }
+        const action = workModeEditorKey(screen.workModeEditor, key);
+        if (action === "cancel-work-mode") {
+          delete screen.workModeEditor;
+          screen.view = "settings";
+          screen.offset = 0;
+        } else return action;
+        return;
+      }
       if (screen.view === "choice") return choiceKey(screen, key, text);
       if (key === "?" || key === "r") {
         const reading = key === "?" ? "help" : "recap";

@@ -8,6 +8,7 @@
  */
 
 import { toPiToolsAllowlist, type Capability } from "./resolve.ts";
+import { parseWorkMode, workModeGuidance, type WorkModeSelection } from "./work-mode.ts";
 
 export interface SpawnPlanInput {
   effective: Capability[];
@@ -34,6 +35,8 @@ export interface SpawnPlanInput {
    * `--append-system-prompt`, which pi accepts more than once.
    */
   contextPrompt?: string;
+  /** Trusted request snapshot; separate from the task and the immutable skill definition. */
+  workMode?: WorkModeSelection;
   /** Non-interactive by default: a governed child should not prompt a human. */
   print?: boolean;
   /**
@@ -146,6 +149,8 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   // remit: the G1 hazard is a model-controlled string reaching a parser, and this is not one.
   if (input.systemPrompt) args.push("--append-system-prompt", input.systemPrompt);
   if (input.selectedResourcePrompt) args.push("--append-system-prompt", input.selectedResourcePrompt);
+  const workModePrompt = workModeGuidance(parseWorkMode(input.workMode), "child");
+  if (workModePrompt) args.push("--append-system-prompt", workModePrompt);
   // After the definition body, so a child reads what it IS before what it was told (ADR-0078). Operator- and
   // parent-authored text, never a model-chosen argv position, so `neutralisePrompt` has no remit here either.
   if (input.contextPrompt) args.push("--append-system-prompt", input.contextPrompt);

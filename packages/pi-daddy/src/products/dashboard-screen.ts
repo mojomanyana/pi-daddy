@@ -14,6 +14,12 @@ import { versionLines } from "./dashboard-components.ts";
 import { sessionRecapLines } from "./dashboard-recap.ts";
 import { colorSessionLine, previewWidth, sectionHeading } from "./dashboard-layout.ts";
 import { visibleSettingKeys, dashboardSettingsLines, type DashboardSettingKey } from "./dashboard-settings.ts";
+import {
+  availableWorkMode,
+  workModeOverview,
+  workModeEditorLines,
+  type DashboardWorkModeEditor,
+} from "./dashboard-work-mode.ts";
 /** Height-bounded, task-first view. Permission state is always supplied by the owner. */
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import type { DashboardProjection } from "./dashboard-projection.ts";
@@ -42,8 +48,19 @@ export interface DashboardItem {
   agent?: boolean;
 }
 export interface DashboardScreenState {
-  view: "main" | "details" | "models" | "help" | "versions" | "version-details" | "settings" | "recap" | "choice";
+  view:
+    | "main"
+    | "details"
+    | "models"
+    | "help"
+    | "versions"
+    | "version-details"
+    | "settings"
+    | "recap"
+    | "choice"
+    | "work-mode";
   picker?: ChoicePicker;
+  workModeEditor?: DashboardWorkModeEditor;
   destination?: DashboardDestination;
   expanded?: boolean;
   sourceDetails?: boolean;
@@ -236,6 +253,7 @@ function sessionLocation(screen: DashboardScreenState, width: number): string {
     "version-details": "Version details",
     recap: "Session recap",
     choice: "Answer choice",
+    "work-mode": "Work mode",
   };
   const name = destinationNames[destination];
   if (screen.view in overlays) return `${name} / ${overlays[screen.view as keyof typeof overlays]}`;
@@ -251,6 +269,7 @@ function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | und
   const view = screen.view;
   const brief = width < 34;
   if (view === "choice") return choiceKeys(screen);
+  if (view === "work-mode") return ["↑↓ select · Enter/Space change", "Apply saves · Esc cancels"];
   if (view === "main") {
     if (selected?.choice) return ["↑↓ select · Enter answer", "d details · q close"];
     const action = selected?.browse ? "browse" : "details";
@@ -342,16 +361,18 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
   const footer =
     options.command !== undefined
       ? [`: ${clean(options.command)}`]
-      : modern
-        ? sessionKeys(screen, selected, width)
-        : screen.view === "settings"
-          ? ["↑↓ select · Enter toggle/edit · Esc back", "0 default limit · PgUp/PgDn scroll · s settings"]
-          : screen.view === "main" || screen.view === "versions"
-            ? ["↑↓ select · Enter details · a Auto", "m models · v versions · s settings · ?"]
-            : [
-                "↑↓ scroll · Esc back · a Auto",
-                screen.view === "details" ? "p prompt · f final · : command · ? help" : ": command · ? help",
-              ];
+      : screen.view === "work-mode"
+        ? ["↑↓ select · Enter/Space change", "Apply saves · Esc cancels"]
+        : modern
+          ? sessionKeys(screen, selected, width)
+          : screen.view === "settings"
+            ? ["↑↓ select · Enter toggle/edit · Esc back", "0 default limit · PgUp/PgDn scroll · s settings"]
+            : screen.view === "main" || screen.view === "versions"
+              ? ["↑↓ select · Enter details · a Auto", "m models · v versions · s settings · ?"]
+              : [
+                  "↑↓ scroll · Esc back · a Auto",
+                  screen.view === "details" ? "p prompt · f final · : command · ? help" : ": command · ? help",
+                ];
   const fixed = [
     modern && options.connected !== false ? `${header} · Connected` : header,
     ...(!modern
@@ -380,6 +401,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
           "edit-jev": "JEV settings",
           set: "model",
           "set-limit": "limit",
+          "set-work-mode": "work mode",
         } as Record<string, string>
       )[ack.action] ?? "setting";
     fixed.push(
@@ -396,6 +418,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     fixed.push(`Filter: ${options.filter} · Tab to change`);
   if (modern && options.height >= 22) fixed.push("");
   if (modern && screen.view === "main" && (screen.destination ?? "now") === "now" && !disconnected) {
+    fixed.push(...wrapDashboardLines(workModeOverview(session?.settings?.workMode), width));
     const [heading, action] = sessionNextLines(options);
     const recommendation = action !== "No current next step reported.";
     if (recommendation) {
@@ -407,7 +430,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (options.height >= 22) fixed.push("");
   }
   const body: string[] = [];
-  if (screen.view === "choice") body.push(...choiceLines);
+  if (screen.view === "work-mode")
+    body.push(
+      ...(screen.workModeEditor ? workModeEditorLines(screen.workModeEditor) : ["Reopen Work mode from Settings."]),
+    );
+  else if (screen.view === "choice") body.push(...choiceLines);
   else if (screen.view === "recap") {
     const recap = sessionRecapLines(options);
     const activity = recap.findIndex(
@@ -449,7 +476,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "Finished means observed completion, not acceptance.",
     );
   else if (screen.view === "settings") {
-    screen.settingKeys = visibleSettingKeys(session?.settings?.jev, Boolean(session?.settings?.telemetry));
+    screen.settingKeys = visibleSettingKeys(
+      session?.settings?.jev,
+      Boolean(session?.settings?.telemetry),
+      Boolean(availableWorkMode(session?.settings?.workMode)),
+    );
     if (screen.settingKey && !screen.settingKeys.includes(screen.settingKey)) screen.settingKey = "jev";
     body.push(
       ...(disconnected
@@ -608,7 +639,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
     if (row < screen.offset) screen.offset = row;
     else if (row + 1 >= screen.offset + room) screen.offset = Math.max(0, row + 2 - room);
   }
-  if (screen.view === "settings" && room > 0 && !screen.manualScroll) {
+  if ((screen.view === "settings" || screen.view === "work-mode") && room > 0 && !screen.manualScroll) {
     const row = detailBody.findIndex((line) => line.startsWith(">"));
     if (row >= 0) {
       // Keep the first supporting detail with its control, even when the detail wraps.

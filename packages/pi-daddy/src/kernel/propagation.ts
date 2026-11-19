@@ -27,6 +27,7 @@
 
 import { ENV_AUTO_MODE, ENV_AUTO_MODE_REF, ENV_PUBLIC_EVIDENCE_DIR } from "./env-names.ts";
 import { ENV_PROXIED_TOOLS, ENV_PROXIED_TOOLS_KEY } from "./env-names.ts";
+import { ENV_WORK_MODE } from "./env-names.ts";
 import type { AutoModeRef } from "./auto-mode.ts";
 import type { Capability } from "./resolve.ts";
 import { attenuateWorkspacePin, formatWorkspacePin, type WorkspacePins } from "./workspace-pin.ts";
@@ -92,6 +93,7 @@ export {
  * to give it.
  */
 export const GRANT_ENV_KEYS = [
+  ENV_WORK_MODE,
   ENV_AUTO_MODE,
   ENV_AUTO_MODE_REF,
   ENV_PUBLIC_EVIDENCE_DIR,
