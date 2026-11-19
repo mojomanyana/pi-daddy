@@ -85,6 +85,157 @@ function fixture() {
   };
 }
 
+test("choice reclassification is optional, revision-bound and serialized with answers", async () => {
+  const f = fixture(),
+    old = f.publisher();
+  f.bind(old.generation);
+  assert.equal(f.display.choices.controls()?.reclassify, undefined);
+  assert.equal(await f.display.choices.reclassify(old.generation, id, revision, () => {}), "refused");
+  const source = f.publisher();
+  let release!: () => void,
+    entered!: () => void,
+    corrections = 0,
+    answers = 0;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  f.bind(source.generation, {
+    async answer() {
+      answers++;
+      return "saved";
+    },
+    async reclassify(gotId, gotRevision, fence) {
+      assert.equal(gotId, id);
+      assert.equal(gotRevision, revision);
+      entered();
+      await gate;
+      fence();
+      corrections++;
+      return "saved";
+    },
+  });
+  assert.equal(f.display.choices.controls()?.reclassify, true);
+  assert.equal(await f.display.choices.reclassify(source.generation, id, "wrong", () => {}), "refused");
+  const pending = f.display.choices.reclassify(source.generation, id, revision, () => {});
+  await started;
+  assert.equal(await f.display.choices.answer(source.generation, id, revision, { option: "Red" }, () => {}), "refused");
+  assert.equal(await f.display.choices.reclassify(source.generation, id, revision, () => {}), "refused");
+  release();
+  assert.equal(await pending, "saved");
+  assert.equal(corrections, 1);
+  assert.equal(answers, 0);
+  f.expire();
+  assert.equal(await f.display.choices.reclassify(source.generation, id, revision, () => {}), "refused");
+  f.display.close();
+});
+
+test("choice reclassification socket confirms correction separately and keeps private failures hidden", async () => {
+  const f = fixture(),
+    source = f.publisher();
+  const session = {
+    episodeId: newEpisodeId(),
+    ownerBound: true,
+    reloadLifecycle: { root: {} },
+    definitions: new Map(),
+    definitionRuntimeSettings: { definitions: new Map(), defaults: {} },
+    definitionRuntimeOverrides: new Map(),
+    dashboardObservations: f.display.snapshot,
+    dashboardChoices: f.display.choices,
+  } as unknown as GrantsSession;
+  await initializeSessionAutoMode(session, {}, "choice-correction-test");
+  const endpoint = await ensureDashboardSessionServer(session);
+  try {
+    let calls = 0,
+      fail = false;
+    f.bind(source.generation, {
+      async reclassify(_id, rev, fence) {
+        calls++;
+        fence();
+        if (rev !== revision) return "refused";
+        if (fail) throw Error("PRIVATE source contents");
+        return "saved";
+      },
+    });
+    const send = (q: Parameters<typeof dashboardSessionRequest>[2]) =>
+      dashboardSessionRequest(endpoint.socketPath, endpoint.token, q);
+    const connection = createDashboardConnection(send);
+    await connection.refresh();
+    assert.equal(connection.state.snapshot!.choiceControls?.reclassify, true);
+    const owner = connection.state.snapshot!.observation!;
+    const action = {
+      action: "reclassify-choice" as const,
+      choiceId: id,
+      sourceGeneration: source.generation,
+      revision,
+      expectedOwner: { sessionId: owner.sessionId, cwd: owner.cwd, generation: owner.generation },
+    };
+    await assert.rejects(send({ ...action, answer: { custom: "fake answer" } } as never));
+    assert.equal(calls, 0);
+    assert.equal(await connection.change({ ...action, revision: "sha256:" + "b".repeat(64) }), false);
+    assert.equal(connection.state.acknowledgment?.state, "refused");
+    assert.ok(connection.state.snapshot, "explicit refusal retains the current snapshot");
+    const saved = await send(action);
+    assert.equal(saved.choiceReclassified, true);
+    assert.equal(saved.choiceSaved, undefined);
+    assert.equal(await connection.change(action), true);
+    assert.equal(connection.state.acknowledgment?.state, "applied");
+    assert.match(connection.state.acknowledgment!.effect, /original note/);
+    fail = true;
+    assert.equal(await connection.change(action), false);
+    assert.equal(connection.state.acknowledgment?.state, "unconfirmed");
+    assert.doesNotMatch(JSON.stringify(connection.state), /PRIVATE/);
+    let missingAcknowledgments = 0;
+    const incomplete = createDashboardConnection(async (request) => {
+      if (request.action === "reclassify-choice") missingAcknowledgments++;
+      return send({ action: "get" });
+    });
+    await incomplete.refresh();
+    assert.equal(await incomplete.change(action), false);
+    assert.equal(incomplete.state.acknowledgment?.state, "unconfirmed");
+    assert.equal(incomplete.state.snapshot, undefined);
+    assert.equal(missingAcknowledgments, 1, "no implicit retry follows a missing acknowledgment");
+  } finally {
+    await endpoint.close();
+    await closeSessionAutoMode(session);
+    f.display.close();
+  }
+});
+
+test("answer and correction cannot overlap, and a revoked correction does not write", async () => {
+  for (const pendingKind of ["answer", "correction"] as const) {
+    const f = fixture(),
+      source = f.publisher();
+    let release!: () => void,
+      writes = 0;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const write = async (fence: () => void) => {
+      await gate;
+      fence();
+      writes++;
+      return "saved" as const;
+    };
+    f.bind(source.generation, {
+      answer: async (_id, _revision, _answer, fence) => write(fence),
+      reclassify: async (_id, _revision, fence) => write(fence),
+    });
+    const answer = () => f.display.choices.answer(source.generation, id, revision, { option: "Red" }, () => {});
+    const correction = () => f.display.choices.reclassify(source.generation, id, revision, () => {});
+    const pending = pendingKind === "answer" ? answer() : correction();
+    assert.equal(await answer(), "refused");
+    assert.equal(await correction(), "refused");
+    source.close();
+    release();
+    assert.equal(await pending, "unconfirmed");
+    assert.equal(writes, 0);
+    f.display.close();
+  }
+});
+
 test("choice controls require a separate Bookie registration on the exact live display publisher", async () => {
   const f = fixture(),
     other = f.publisher("scout-local"),

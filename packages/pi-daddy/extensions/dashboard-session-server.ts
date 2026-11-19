@@ -129,7 +129,8 @@ async function respond(
   checkClient: () => void,
 ): Promise<Record<string, unknown>> {
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
-  const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
+  const choiceAction =
+    request.action === "inspect-choice" || request.action === "answer-choice" || request.action === "reclassify-choice";
   if (request.action === "set-work-mode") {
     const allowed = ["token", "action", "expectedOwner", "selection", "scope"];
     if (Object.keys(request).some((key) => !allowed.includes(key)))
@@ -138,6 +139,7 @@ async function respond(
   if (choiceAction) {
     const allowed = ["token", "action", "expectedOwner", "sourceGeneration", "choiceId"];
     if (request.action === "answer-choice") allowed.push("revision", "answer");
+    if (request.action === "reclassify-choice") allowed.push("revision");
     if (Object.keys(request).some((key) => !allowed.includes(key)))
       return { ok: false, choiceOutcome: "refused", error: "Invalid choice request" };
   }
@@ -191,6 +193,22 @@ async function respond(
             choiceOutcome: "refused",
             error: "Bookie declined the answer. Refresh and check the choice and answer.",
           };
+  } else if (request.action === "reclassify-choice") {
+    const outcome = await session.dashboardChoices?.reclassify(
+      request.sourceGeneration,
+      request.choiceId,
+      request.revision,
+      checkClient,
+    );
+    if (outcome !== "saved")
+      return {
+        ok: false,
+        choiceOutcome: outcome === "unconfirmed" ? "unconfirmed" : "refused",
+        error:
+          outcome === "unconfirmed"
+            ? "Bookie could not confirm the correction. Check project memory before retrying."
+            : "Bookie declined the correction. Refresh and reopen the item.",
+      };
   } else if (request.action === "set-work-mode") {
     checkClient();
     setWorkMode(session, request.selection, request.scope);
@@ -241,6 +259,7 @@ async function respond(
     ...(sourceRefreshRequested ? { sourceRefreshRequested: true } : {}),
     ...(choiceDetail ? { choiceDetail } : {}),
     ...(request.action === "answer-choice" ? { choiceSaved: true } : {}),
+    ...(request.action === "reclassify-choice" ? { choiceReclassified: true } : {}),
     ...(request.action === "set-work-mode" ? { workModeApplied: true } : {}),
     ...controls,
     ...dashboardObservation(session),

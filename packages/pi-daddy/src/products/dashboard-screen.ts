@@ -43,6 +43,7 @@ export interface DashboardItem {
   taskKey?: string;
   timelinePath?: string;
   choice?: DashboardChoiceTarget;
+  reclassifyChoice?: true;
   approval?: boolean;
   skills?: boolean;
   agent?: boolean;
@@ -252,7 +253,7 @@ function sessionLocation(screen: DashboardScreenState, width: number): string {
     versions: "Versions",
     "version-details": "Version details",
     recap: "Session recap",
-    choice: "Answer choice",
+    choice: "Project choice",
     "work-mode": "Work mode",
   };
   const name = destinationNames[destination];
@@ -391,7 +392,9 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       fixed.push(...wrapDashboardLines(["In the current Pi chat, run /grants dashboard."], width));
   } else if (screen.view !== "choice" && (options.notice || options.problem))
     fixed.push(`! ${clean(options.notice || options.problem || "")}`);
-  const ack = options.acknowledgment?.action === "answer-choice" ? undefined : options.acknowledgment;
+  const ack = ["answer-choice", "reclassify-choice"].includes(options.acknowledgment?.action ?? "")
+    ? undefined
+    : options.acknowledgment;
   if (ack?.state === "unconfirmed") {
     const setting =
       (

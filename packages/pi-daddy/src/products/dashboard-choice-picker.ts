@@ -10,11 +10,15 @@ export interface ChoicePicker {
   draft: string;
   detail?: DashboardChoiceDetail;
   error?: string;
+  canReclassify?: boolean;
+  reclassifying?: boolean;
 }
 
 function current(screen: DashboardScreenState, picker: ChoicePicker) {
-  const choice = screen.items.find((item) => item.key === screen.selectedKey)?.choice;
+  const item = screen.items.find((item) => item.key === screen.selectedKey);
+  const choice = item?.choice;
   return (
+    (!picker.reclassifying || item?.reclassifyChoice === true) &&
     choice?.choiceId === picker.target.choiceId &&
     choice.sourceGeneration === picker.target.sourceGeneration &&
     choice.expectedOwner.sessionId === picker.target.expectedOwner.sessionId &&
@@ -24,9 +28,10 @@ function current(screen: DashboardScreenState, picker: ChoicePicker) {
 }
 
 export function openChoice(screen: DashboardScreenState): boolean {
-  const target = screen.items.find((item) => item.key === screen.selectedKey)?.choice;
+  const item = screen.items.find((item) => item.key === screen.selectedKey);
+  const target = item?.choice;
   if (!target) return false;
-  screen.picker = { target, phase: "loading", index: 0, draft: "" };
+  screen.picker = { target, phase: "loading", index: 0, draft: "", canReclassify: item?.reclassifyChoice === true };
   screen.view = "choice";
   screen.offset = 0;
   screen.manualScroll = false;
@@ -100,13 +105,17 @@ export function choiceKey(
     return;
   }
   if (picker.phase !== "options") return;
-  const last = detail.options.length + 1;
+  const later = detail.options.length + 1;
+  const last = later + (picker.canReclassify ? 1 : 0);
   if (["up", "down", "k", "j"].includes(key)) {
     picker.index = Math.max(0, Math.min(last, picker.index + (key === "up" || key === "k" ? -1 : 1)));
     screen.manualScroll = false;
   } else if (key === "return") {
-    if (picker.index === last) close(screen);
-    else picker.phase = picker.index === last - 1 ? "custom" : "confirm";
+    if (picker.index === later) close(screen);
+    else {
+      picker.reclassifying = picker.canReclassify === true && picker.index === later + 1;
+      picker.phase = picker.index === detail.options.length ? "custom" : "confirm";
+    }
     screen.offset = 0;
     screen.manualScroll = false;
   }
@@ -119,7 +128,7 @@ export function choiceKeys(screen: DashboardScreenState): string[] {
     case "custom":
       return ["Enter review · Esc cancel"];
     case "confirm":
-      return ["Enter save to Bookie", "e edit · Esc cancel"];
+      return [screen.picker.reclassifying ? "Enter confirm correction" : "Enter save to Bookie", "e edit · Esc cancel"];
     case "refused":
       return ["r review again · e edit", "Esc cancel"];
     case "saving":
@@ -138,8 +147,12 @@ export function choiceBody(screen: DashboardScreenState): string[] {
     picker.draft = "";
     if (picker.phase !== "saving" && picker.phase !== "saved") picker.phase = "unavailable";
   }
-  if (picker.phase === "saved") return ["Answer saved in Bookie."];
-  if (picker.phase === "saving") return ["Saving your answer in Bookie…"];
+  if (picker.phase === "saved")
+    return picker.reclassifying
+      ? ["Removed from Open choices.", "Original note retained. No answer recorded."]
+      : ["Answer saved in Bookie."];
+  if (picker.phase === "saving")
+    return [picker.reclassifying ? "Saving the correction in Bookie…" : "Saving your answer in Bookie…"];
   if (picker.phase === "loading") return ["Reading this choice from Bookie…"];
   if (picker.phase === "unavailable" || !picker.detail)
     return [
@@ -148,15 +161,25 @@ export function choiceBody(screen: DashboardScreenState): string[] {
     ];
   const detail = picker.detail;
   const issues = picker.error ? [picker.error, ""] : [];
+  if (picker.phase === "options") {
+    picker.canReclassify = screen.items.find((item) => item.key === screen.selectedKey)?.reclassifyChoice === true;
+    picker.index = Math.min(picker.index, detail.options.length + 1 + (picker.canReclassify ? 1 : 0));
+  }
   if (picker.phase === "custom") return [...issues, detail.label, "", "Write your own answer", picker.draft + "▏"];
   if (picker.phase === "confirm" || picker.phase === "refused")
     return [
       ...issues,
       detail.label,
       "",
-      "Save this answer in Bookie?",
+      picker.reclassifying ? "Not a separate decision?" : "Save this answer in Bookie?",
       "",
-      detail.options[picker.index] ?? picker.draft.trim(),
+      ...(picker.reclassifying
+        ? [
+            "Remove only this item from Open choices.",
+            "The original note stays in memory.",
+            "No answer will be recorded.",
+          ]
+        : [detail.options[picker.index] ?? picker.draft.trim()]),
     ];
   return [
     detail.label,
@@ -170,6 +193,9 @@ export function choiceBody(screen: DashboardScreenState): string[] {
     ),
     (picker.index === detail.options.length ? "> " : "  ") + "Write my own answer",
     (picker.index === detail.options.length + 1 ? "> " : "  ") + "Decide later",
+    ...(picker.canReclassify
+      ? [(picker.index === detail.options.length + 2 ? "> " : "  ") + "Not a separate decision"]
+      : []),
     ...(detail.recommendation
       ? [
           "",
@@ -202,12 +228,19 @@ export async function saveChoice(screen: DashboardScreenState, connection: Choic
   const picker = screen.picker;
   if (!picker || picker.phase !== "saving" || !picker.detail || !current(screen, picker)) return;
   const option = picker.detail.options[picker.index];
-  const saved = await connection.change({
-    action: "answer-choice",
+  const target = {
     ...picker.target,
     revision: picker.detail.revision,
-    answer: option === undefined ? { custom: picker.draft.trim() } : { option },
-  });
+  };
+  const saved = await connection.change(
+    picker.reclassifying
+      ? { action: "reclassify-choice", ...target }
+      : {
+          action: "answer-choice",
+          ...target,
+          answer: option === undefined ? { custom: picker.draft.trim() } : { option },
+        },
+  );
   if (saved) {
     picker.phase = "saved";
     picker.detail = undefined;
@@ -223,6 +256,8 @@ export async function saveChoice(screen: DashboardScreenState, connection: Choic
       connection.state.error ??
       (connection.state.acknowledgment?.state === "refused"
         ? connection.state.acknowledgment.effect
-        : "Bookie could not save this answer.");
+        : picker.reclassifying
+          ? "Bookie could not confirm the correction."
+          : "Bookie could not save this answer.");
   }
 }

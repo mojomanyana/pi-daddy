@@ -73,6 +73,8 @@ Principal 4.12.0 introduced automatic operation IDs and exact candidate/report r
 The dashboard shows the selected task's last observed tool event and time since that event.
 With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
 
+Select an open choice and press **Enter** to answer or **Decide later**. When Bookie supports corrections, **Not a separate decision** offers a separate confirmation: remove only that item from Open choices, keep the original note, and record no answer. Use it for a progress summary mistakenly presented as another decision. Decide later still leaves the choice open. Older Bookie versions retain their existing answer/view controls; no question is hidden by its wording.
+
 **Memory** and **Research** show what compatible tools can currently access and a short preview of saved topics.
 Select a row and press **Enter** to browse its summaries and gaps; press **x** in details for exact source references.
 An empty inventory, unavailable access, a bounded selection and an unchecked worker are labelled separately.

@@ -207,6 +207,16 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+### 2026-11-19 — Correcting a non-decision is separate from answering
+
+The optional `reclassify(id, revision, assertCurrent)` callback on Bookie's v1 choice registration means only
+the explicit user action **Not a separate decision**. Daddy advertises `choiceControls.reclassify: true` only
+when that callback exists; the strict choice-detail DTO is unchanged. Older Daddy ignores the optional callback,
+and new Daddy with an older Bookie offers no correction. The authenticated `reclassify-choice` request carries
+the existing owner/source/choice identity and revision, never answer text. Confirmation explains that the
+original note stays and no answer is recorded. Answer and correction share the owner write lock. Bookie owns
+canonical provenance, persistence and answer/correction exclusion; Daddy does not classify question prose.
+
 ### 2026-11-19 — Optional work mode steers approach without changing execution authority
 
 Standard is the default and an exact guidance no-op. Only explicit operator selection in the

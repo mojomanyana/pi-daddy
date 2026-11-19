@@ -15,7 +15,7 @@ export interface DashboardSessionSnapshot {
   cost: number | null;
   /** Delegation results in the owning Pi session that reported child usage, and those its host recorded. */
   childUsage?: { results: number; recorded: number; cost: number };
-  choiceControls?: { sourceGeneration: string };
+  choiceControls?: { sourceGeneration: string; reclassify?: true };
   observation?: DashboardOwnerObservation;
   activity?: { rootId: string; path: string; taskId: string };
   versions?: EcosystemVersions;
@@ -27,6 +27,7 @@ export interface DashboardSessionSnapshot {
 interface DashboardSessionReply extends DashboardSessionSnapshot {
   choiceDetail?: DashboardChoiceDetail;
   choiceSaved?: true;
+  choiceReclassified?: true;
   workModeApplied?: true;
   choiceRefreshRequested?: true;
   sourceRefreshRequested?: true;
@@ -37,7 +38,7 @@ class ChoiceDeclined extends Error {
     super(
       stale
         ? "Choice is no longer available. Refresh and reopen it."
-        : "Bookie declined the answer. Refresh and check the choice and answer.",
+        : "Bookie declined the choice change. Refresh and reopen the item.",
     );
     this.stale = stale;
   }
@@ -63,7 +64,10 @@ export async function dashboardSessionRequest(
     const socket = createConnection(socketPath);
     let output = "";
     socket.setEncoding("utf8");
-    const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
+    const choiceAction =
+      request.action === "inspect-choice" ||
+      request.action === "answer-choice" ||
+      request.action === "reclassify-choice";
     socket.setTimeout(choiceAction ? 30_000 : 2_000, () =>
       socket.destroy(new Error("dashboard session request timed out")),
     );
@@ -95,6 +99,8 @@ export async function dashboardSessionRequest(
           throw Error("The owner returned an unavailable choice.");
         if (request.action === "answer-choice" && parsed.choiceSaved !== true)
           throw Error("Bookie did not confirm the answer.");
+        if (request.action === "reclassify-choice" && parsed.choiceReclassified !== true)
+          throw Error("Bookie did not confirm the correction.");
         if (request.action === "set-work-mode" && parsed.workModeApplied !== true)
           throw Error("The owner did not confirm the work mode.");
         if (
@@ -239,7 +245,12 @@ export function createDashboardConnection(
     },
     async change(action: Exclude<DashboardSessionAction, { action: "get" | "inspect-choice" }>) {
       if (!request || !state.snapshot || state.pending) return false;
-      if (action.action === "answer-choice" && !matches(state.snapshot, action)) {
+      const choiceMutation = action.action === "answer-choice" || action.action === "reclassify-choice";
+      if (
+        choiceMutation &&
+        (!matches(state.snapshot, action) ||
+          (action.action === "reclassify-choice" && state.snapshot.choiceControls?.reclassify !== true))
+      ) {
         state.acknowledgment = {
           action: action.action,
           state: "refused",
@@ -254,19 +265,21 @@ export function createDashboardConnection(
       const effect =
         action.action === "answer-choice"
           ? "Save this answer in project memory"
-          : action.action === "set-auto"
-            ? "current permission handling; admitted work unchanged"
-            : action.action === "edit-jev"
-              ? "use the main Pi session; current values shown below"
-              : action.action === "set-jev"
-                ? "current JEV session; separate paid-call and storage choices"
-                : action.action === "set-work-mode"
-                  ? action.scope === "next-request"
-                    ? "next request only, including its children"
-                    : "future requests in this session; active work unchanged"
-                  : action.action === "set-telemetry"
-                    ? "optional telemetry polling in this Pi session"
-                    : "future children; running children unchanged";
+          : action.action === "reclassify-choice"
+            ? "Remove this separate decision; original note retained, no answer recorded"
+            : action.action === "set-auto"
+              ? "current permission handling; admitted work unchanged"
+              : action.action === "edit-jev"
+                ? "use the main Pi session; current values shown below"
+                : action.action === "set-jev"
+                  ? "current JEV session; separate paid-call and storage choices"
+                  : action.action === "set-work-mode"
+                    ? action.scope === "next-request"
+                      ? "next request only, including its children"
+                      : "future requests in this session; active work unchanged"
+                    : action.action === "set-telemetry"
+                      ? "optional telemetry polling in this Pi session"
+                      : "future children; running children unchanged";
       state.acknowledgment = { action: action.action, state: "pending", effect };
       try {
         const snapshot = await request({
@@ -283,6 +296,11 @@ export function createDashboardConnection(
         });
         if (action.action === "answer-choice" && (snapshot.choiceSaved !== true || !matchesOwner(snapshot, action)))
           throw Error("Bookie did not confirm the answer.");
+        if (
+          action.action === "reclassify-choice" &&
+          (snapshot.choiceReclassified !== true || !matchesOwner(snapshot, action))
+        )
+          throw Error("Bookie did not confirm the correction.");
         if (action.action === "set-work-mode") {
           const expected = action.expectedOwner ?? observedOwner;
           const acknowledged = snapshot.observation;
@@ -296,7 +314,13 @@ export function createDashboardConnection(
           )
             throw Error("The owner did not confirm the work mode in this session.");
         }
-        const { choiceDetail: _detail, choiceSaved: _saved, workModeApplied: _modeApplied, ...observed } = snapshot;
+        const {
+          choiceDetail: _detail,
+          choiceSaved: _saved,
+          choiceReclassified: _corrected,
+          workModeApplied: _modeApplied,
+          ...observed
+        } = snapshot;
         if (!accept(observed)) throw Error("owner acknowledgment is stale; reconcile before another action");
         state.acknowledgment.state =
           action.action === "edit-jev"
@@ -310,7 +334,7 @@ export function createDashboardConnection(
               : "applied";
         return true;
       } catch (error) {
-        if (action.action === "answer-choice" && error instanceof ChoiceDeclined) {
+        if (choiceMutation && error instanceof ChoiceDeclined) {
           if (error.stale) disconnect();
           state.acknowledgment.state = "refused";
           state.error = error.message;
@@ -318,10 +342,9 @@ export function createDashboardConnection(
         }
         disconnect();
         state.acknowledgment.state = "unconfirmed";
-        state.error =
-          action.action === "answer-choice"
-            ? "Save unconfirmed. Check project memory before retrying."
-            : `Control change not confirmed; inspect owner before retrying: ${error instanceof Error ? error.message : String(error)}`;
+        state.error = choiceMutation
+          ? "Save unconfirmed. Check project memory before retrying."
+          : `Control change not confirmed; inspect owner before retrying: ${error instanceof Error ? error.message : String(error)}`;
         return false;
       } finally {
         state.pending = false;

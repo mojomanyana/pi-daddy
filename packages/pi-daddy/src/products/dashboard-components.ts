@@ -101,6 +101,7 @@ export function bookieOpenChoices(options: DashboardScreenOptions): DashboardIte
       key: `source:${source.producer}:${source.generation}:${i.id}`,
       label: i.label,
       status: "open-choice",
+      ...(canAnswer && options.session?.choiceControls?.reclassify === true ? { reclassifyChoice: true as const } : {}),
       ...(canAnswer && validChoiceId(i.id)
         ? {
             choice: {
