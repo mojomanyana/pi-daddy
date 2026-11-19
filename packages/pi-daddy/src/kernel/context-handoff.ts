@@ -95,6 +95,25 @@ export const DEFAULT_CONTEXT_TURNS = 20;
 /** Total budget for everything that crosses, matching the chain handoff so one cap governs both channels. */
 export const CONTEXT_MAX_BYTES = 32 * 1024;
 
+/** Definition ceiling only: describing an available handoff never grants it or bypasses its approval. */
+export function definitionContextContract(capabilities: readonly Capability[]) {
+  const permitted = new Set(capabilities.flatMap((id) => [id, ...(CONTEXT_SUBSUMPTION[id] ?? [])]));
+  const modes = CONTEXT_MODES.filter((mode) => mode === "none" || permitted.has(contextCapability(mode)));
+  return {
+    version: 1 as const,
+    definitionModes: modes,
+    defaultRequest: { mode: "none" as const },
+    guidance:
+      "Context is optional extra parent-session material. For independent review in the same workspace, " +
+      "omit context and let the child inspect the checkout with its own read tools. " +
+      "Keep the task scope, acceptance criteria and exact evidence references; do not omit required evidence. " +
+      "The definition ceiling is not permission: the current parent grant and approval checks still apply.",
+    ...(modes.includes("files")
+      ? { files: { minItems: 1, maxItems: MAX_CONTEXT_FILES, paths: "repository-relative" as const } }
+      : {}),
+  };
+}
+
 /**
  * Validate a model-supplied request, or refuse it.
  *

@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.62.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.62.0` both resolve to this release.
+Source target: **0.62.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.62.1` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -275,8 +275,7 @@ capability. `context:<mode>` names how much of the parent's own session crosses,
 id, so a child can never receive a richer handoff than the definition's ceiling and the parent's grant allow.
 
 ```
-delegate({ agent: "review", task: "Review the diff.",
-           context: { mode: "summary", summary: "we chose flock over mtime; the lease is a helper process" } })
+delegate({ agent: "review", task: "Independently inspect and review the current checkout diff." })
 
 delegate({ agent: "build", task: "Implement it.",
            context: { mode: "files", files: ["src/kernel/resolve.ts"] } })
@@ -297,6 +296,18 @@ The modes are ordered, and each subsumes the weaker ones: a parent holding `cont
 `context:files`. What crosses arrives inside a labelled, nonce-delimited fence marked as data rather than
 instructions, capped at 32 KiB, with anything that did not fit said inside the fence. The capability decision record
 names the mode the child actually received and how much crossed.
+
+`delegate_describe` also returns `contextContract`: the selected definition's permitted modes, the explicit
+`none` default and bounds for file inputs. This describes a ceiling, not a grant. For an independent reviewer
+with read access to the same checkout, omit `context`; use `files` only when it is permitted and actual file
+contents need handing over. A `summary` is not valid for a definition capped at `files`, and must not be
+disguised as task or file content. Nothing automatically rewrites or drops a requested handoff.
+
+A refused context request names the correction. If a new operation was recorded `not-started`, the error also
+explains recovery: a bound workflow recovers its original operation; a standalone caller can make one corrected
+attempt with a new operation ID. Existing operation IDs stay terminal and changed arguments never bypass their
+identity check. If the original record cannot be written or already belongs to another attempt, inspect that
+operation first; the current request's refusal is not proof that earlier work never ran.
 
 `pruned` keeps recent turns plus turns naming the given files. The deterministic selector keeps those candidates
 against the task, keeping a subset. A probe over the operator's sessions measured 0.737 delivered term recall at the

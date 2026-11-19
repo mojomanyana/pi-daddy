@@ -221,6 +221,8 @@ export async function claimDelegationOperation(
     ? new GovernanceRefusal(preview.refusal)
     : Error(preview.reason ?? "Operation request is not authorized");
   const evidenceErrors: unknown[] = [];
+  let recordedNotStarted = false;
+  let existingState: string | undefined;
   try {
     await recordDelegationDecision({ session, plan: preview, ids, agent: spec.agent });
   } catch (error) {
@@ -233,11 +235,33 @@ export async function claimDelegationOperation(
     // Election records identity, not permission. Only this newly elected, unlaunched
     // occurrence may supply no-start proof; a duplicate must never rewrite its owner.
     const claim = await elect();
-    if (!claim.reused) await claim.finish!("not-started", { cleanup: { state: "not-started" } });
+    if (!claim.reused) {
+      await claim.finish!("not-started", { cleanup: { state: "not-started" } });
+      recordedNotStarted = true;
+    } else existingState = claim.operation.state;
   } catch (error) {
     // Keep the typed governance refusal and make missing/conflicting evidence explicit.
     evidenceErrors.push(error);
     failure.message += `; operation evidence unavailable: ${String(error)}`;
+  }
+  if (preview.refusal?.code === "CONTEXT_REQUEST_INVALID") {
+    if (recordedNotStarted) {
+      failure.message +=
+        ` Operation ${JSON.stringify(operationId)} is recorded not-started; its ID remains terminal. ` +
+        (spec.agent && session.definitions.get(spec.agent)?.binding
+          ? "Recover the original operation through its workflow owner, then use the corrected delegation arguments it provides. " +
+            "Do not invent a replacement operation ID or repeat completed work."
+          : "Correct the context arguments and make one new attempt with a new operation_id, keeping this refused record. " +
+            "This is an argument correction, not a retry of executed work; all current permission checks still apply.");
+    } else if (existingState !== undefined) {
+      failure.message +=
+        ` Operation ${JSON.stringify(operationId)} already exists (${existingState}). ` +
+        "Inspect or recover that original operation before any new attempt; this refusal did not replace its record.";
+    } else {
+      failure.message +=
+        "No reliable operation no-start record was returned. Inspect or recover the original operation before any new attempt; " +
+        "this refusal alone does not prove earlier work never started.";
+    }
   }
   if (evidenceErrors.length)
     failure.cause =

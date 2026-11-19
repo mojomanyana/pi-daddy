@@ -16,7 +16,7 @@ test("selected inline locations describe and reach the child separately from the
   await mkdir(directory);
   const path = join(directory, "SKILL.md");
   const bytes =
-    "---\nname: review-local\ndescription: review\nallowed-tools: read\n---\nUse ./reference.md when needed.";
+    "---\nname: review-local\ndescription: review\nallowed-tools: read, context:files\n---\nUse ./reference.md when needed.";
   await writeFile(path, bytes);
   const { definitions } = await selectedDefinitions([
     { source: "skill", name: "skill:review-local", sourceInfo: { path } },
@@ -51,6 +51,19 @@ test("selected inline locations describe and reach the child separately from the
   const described = await tool.execute("describe", { agent: "review-local" });
   assert.deepEqual(described.details.selectedResources, d.selectedResources);
   assert.equal(JSON.parse(described.content[0].text).definitionId, d.definitionId);
+  assert.deepEqual(described.details.contextContract.definitionModes, ["none", "files"]);
+  assert.deepEqual(described.details.contextContract.defaultRequest, { mode: "none" });
+  assert.deepEqual(described.details.contextContract.files, {
+    minItems: 1,
+    maxItems: 16,
+    paths: "repository-relative",
+  });
+  assert.deepEqual(JSON.parse(described.content[0].text).contextContract, described.details.contextContract);
+  assert.deepEqual(
+    described.details.delegationArguments,
+    { agent: "review-local", definitionId: d.definitionId },
+    "additive contract does not rewrite legacy dispatch arguments",
+  );
   assertDefinitionIdentity(session as never, { agent: "review-local", definitionId: d.definitionId });
   assert.throws(
     () => assertDefinitionIdentity(session as never, { agent: "review-local", definitionId: "stale" }),

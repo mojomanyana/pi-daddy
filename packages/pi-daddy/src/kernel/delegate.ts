@@ -34,7 +34,13 @@ import {
 import { DELEGATE_SUBJECT, inheritApprovals, type InheritableApproval } from "./approval.ts";
 import { explainDoubledNamespace, suggestForUnknown, unknownCapabilities, type Catalog } from "./catalog.ts";
 import { GovernanceRefusal, refusal, type RefusalCode, type StructuredRefusal } from "./refusals.ts";
-import { contextCapability, isContextCapability, parseContextRequest, type ContextRequest } from "./context-handoff.ts";
+import {
+  contextCapability,
+  definitionContextContract,
+  isContextCapability,
+  parseContextRequest,
+  type ContextRequest,
+} from "./context-handoff.ts";
 import { digestTask, normaliseCorrelation, type ApprovalBinding, type CorrelationMetadata } from "./correlation.ts";
 import { resolveDelegationApproval } from "./delegation-approval.ts";
 import type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
@@ -243,19 +249,32 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     const wanted = contextCapability(handoff.mode);
     // Subsumed, so declaring the strongest mode permits asking for a weaker one — the same relation the grant has.
     const permitted = new Set(expandSubsumed([...declaredContext]));
-    if (request.agent !== undefined && !permitted.has(wanted))
-      return denied(
-        {
-          ...empty,
-          requested,
-          reason:
-            `context: ${request.agent} may not receive ${wanted} — its allowed-tools ` +
-            (declaredContext.length === 0
-              ? "declares no context: capability, so it receives none"
-              : `permits ${declaredContext.join(", ")}`),
-        },
-        "CONTEXT_REQUEST_INVALID",
-      );
+    if (request.agent !== undefined && !permitted.has(wanted)) {
+      const contract = definitionContextContract(declaredContext);
+      const reason =
+        `context: ${request.agent} may not receive ${wanted} — its allowed-tools ` +
+        (declaredContext.length === 0
+          ? "declares no context: capability, so it receives none"
+          : `permits ${declaredContext.join(", ")}`) +
+        '. Correct the context argument: omit it or use {"mode":"none"} when the child can inspect the workspace. ' +
+        (contract.definitionModes.includes("files")
+          ? 'If file contents are needed, use {"mode":"files","files":[...]} with actual repository-relative paths. '
+          : "") +
+        "Keep the task scope, acceptance criteria and exact evidence references; do not omit required evidence. " +
+        "Do not relabel the rejected summary as task or file content, or widen the definition. " +
+        "This request stopped before child launch; it does not establish the outcome of earlier calls with the same operation_id.";
+      return {
+        ...empty,
+        requested,
+        reason,
+        refusal: refusal("CONTEXT_REQUEST_INVALID", reason, {
+          requestedContextMode: handoff.mode,
+          definitionContextModes: contract.definitionModes.join(","),
+          suggestedContextMode: "none",
+          correction: "correct-context-argument",
+        }),
+      };
+    }
     requested = [...requested, wanted];
   }
 

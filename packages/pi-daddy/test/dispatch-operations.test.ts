@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 import { createCapacityAllocator } from "../src/kernel/capacity.ts";
+import { parseSkillDefinition } from "../src/kernel/definitions.ts";
 import { runOneDelegation } from "../extensions/run-delegation.ts";
 import { registerDelegationTools } from "../extensions/delegation.ts";
 import { claimDelegationOperation } from "../extensions/delegation-operations.ts";
@@ -114,6 +115,7 @@ function refusedWorkspaceHarness(owner: Awaited<ReturnType<typeof createAutoMode
       depth: session.depth,
       maxDepth: session.maxDepth,
       gated: session.gated,
+      definitions: session.definitions,
     }),
   };
   registerDelegationTools({ registerTool: (tool: any) => tools.set(tool.name, tool) } as never, session as never);
@@ -288,6 +290,116 @@ test("unavailable operation recording remains a loud typed refusal, never a no-s
     },
   );
   assert.equal(reservations(), 0);
+});
+
+for (const bound of [false, true]) {
+  test(`context correction records no-start and directs ${bound ? "bound workflow" : "standalone"} recovery without granting more`, async () => {
+    const owner = await createAutoModeAuthority({ enabled: false, source: "default" });
+    try {
+      const { session } = refusedWorkspaceHarness(owner);
+      const definition = parseSkillDefinition(
+        "/skills/review/SKILL.md",
+        "---\nname: review\ndescription: review\nallowed-tools: read, context:files\n---\nReview independently.",
+      )!;
+      definition.definitionId = "a".repeat(64);
+      if (bound) definition.binding = { package: "principal-pi-skills", phase: "review" };
+      session.definitions.set("review", definition);
+      session.ownGrant.push("agent:review", "context:summary");
+      const spec = {
+        operation_id: "review:bad-context",
+        agent: "review",
+        definitionId: definition.definitionId,
+        task: "Review current files",
+        context: { mode: "summary", summary: "private summary" },
+      };
+      const claim = (value: typeof spec) =>
+        claimDelegationOperation(
+          session as unknown as GrantsSession,
+          value,
+          { executionId: "exec:context", parentId: "d0", childId: "d0.0" } as never,
+          { cwd: "/tmp" } as never,
+        );
+      await assert.rejects(claim(spec), (error: any) => {
+        assert.equal(error.code, "CONTEXT_REQUEST_INVALID");
+        assert.match(error.message, /recorded not-started; its ID remains terminal/);
+        assert.match(
+          error.message,
+          bound
+            ? /Recover the original operation through its workflow owner/
+            : /one new attempt with a new operation_id/,
+        );
+        assert.doesNotMatch(error.message, /private summary/);
+        return true;
+      });
+      const before = await owner.operations!.read(spec.operation_id);
+      assert.equal(before?.state, "not-started");
+      await assert.rejects(claim(spec), (error: any) => {
+        assert.match(error.message, /already exists \(not-started\)/);
+        assert.doesNotMatch(error.message, /one new attempt with a new operation_id/);
+        return true;
+      });
+      assert.deepEqual(await owner.operations!.read(spec.operation_id), before);
+      const corrected = { ...spec, context: { mode: "none" } } as typeof spec;
+      await assert.rejects(claim(corrected), /identity conflict/);
+      if (!bound) {
+        const next = await claim({ ...corrected, operation_id: "review:corrected" });
+        assert.equal(next?.reused, false);
+        await next!.finish!("not-started", { cleanup: { state: "not-started" } });
+      }
+      assert.equal(await owner.admit(), false, "correction guidance does not enable Auto");
+    } finally {
+      await owner.close();
+    }
+  });
+}
+
+test("context correction never claims saved no-start when owner or its finish recording fails", async () => {
+  const owner = await createAutoModeAuthority({ enabled: false, source: "default" });
+  const { session } = refusedWorkspaceHarness(owner);
+  const spec = {
+    operation_id: "invalid-context",
+    task: "Read",
+    tools: ["read"],
+    context: { mode: "files", files: [] },
+  };
+  const check = () =>
+    assert.rejects(
+      claimDelegationOperation(
+        session as unknown as GrantsSession,
+        spec,
+        { executionId: "exec:invalid-context", parentId: "d0", childId: "d0.0" } as never,
+        { cwd: "/tmp" } as never,
+      ),
+      (error: any) => {
+        assert.equal(error.code, "CONTEXT_REQUEST_INVALID");
+        assert.match(error.message, /No reliable operation no-start record was returned/);
+        assert.doesNotMatch(error.message, /is recorded not-started|one new attempt with a new operation_id/);
+        return true;
+      },
+    );
+  try {
+    const claim = owner.operations!.claim.bind(owner.operations);
+    owner.operations!.claim = async (...args) => {
+      const actual = await claim(...args);
+      return {
+        ...actual,
+        finish: async (...finishArgs) => {
+          await actual.finish!(...finishArgs);
+          throw Error("artifact recording failed after native settlement");
+        },
+      };
+    };
+    await check();
+    assert.equal(
+      (await owner.operations!.read(spec.operation_id))?.state,
+      "not-started",
+      "native settlement alone cannot make a failed combined record successful",
+    );
+    await owner.close();
+    await check();
+  } finally {
+    await owner.close();
+  }
 });
 
 // A post-claim refresh can fail before any executor exists. Do not turn that proof into unresolved work.
