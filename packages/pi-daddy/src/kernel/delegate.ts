@@ -42,6 +42,7 @@ import { assertCapabilitiesArePropagatable } from "./capabilities.ts";
 export type { Delegation, DelegationContext, DelegationRequest } from "./delegate-types.ts";
 import { ENV_CHILD_DEFINITION, ENV_CHILD_EPISODE, ENV_CHILD_EXECUTION, GOVERNANCE_ENV_KEYS } from "./env-names.ts";
 import { ENV_PROXIED_TOOLS } from "./env-names.ts";
+import { ENV_WORK_MODE, parseWorkMode } from "./work-mode.ts";
 
 export function planDelegation(request: DelegationRequest, ctx: DelegationContext): Delegation {
   const childDepth = ctx.depth + 1;
@@ -371,6 +372,8 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     : undefined;
   if (staged?.refusal)
     return denied({ ...empty, requested, result, reason: staged.refusal }, "CONTEXT_REQUEST_INVALID");
+  const selectedMode = parseWorkMode(ctx.workMode);
+  const workMode = selectedMode?.mode === "ambitious" ? selectedMode : undefined;
   const plan = planSpawn({
     effective: result.effective,
     prompt: request.task,
@@ -380,6 +383,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     skillPaths: ctx.skillPaths,
     contextFiles: ctx.contextFiles,
     systemPrompt,
+    ...(workMode ? { workMode } : {}),
     selectedResourcePrompt: selectedResourcePrompt(spawned?.selectedResources),
     // A fork replaces the session file rather than joining it: pi refuses `--fork` beside `--session`.
     ...(staged?.forkFrom ? { forkFrom: staged.forkFrom } : { sessionFile: ctx.sessionFile }),
@@ -429,6 +433,7 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
     [ENV_DEPTH]: String(childDepth),
     [ENV_MAX_DEPTH]: String(ctx.maxDepth),
   };
+  if (workMode) env[ENV_WORK_MODE] = JSON.stringify(workMode);
   // The child's own share of the subtree budget, and its identity. Both attenuate downward like depth: a
   // child can never be handed more budget than its parent had left, so the total bound holds across
   // process boundaries with no shared state.

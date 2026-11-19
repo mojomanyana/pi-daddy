@@ -35,7 +35,7 @@ test("no PI_GRANTS_ literal survives in shipped code outside the legacy table", 
     });
   }
   assert.deepEqual(offenders, []);
-  for (const key of GOVERNANCE_ENV_KEYS) assert.match(key, /^PI_DADDY_[A-Z_]+$/);
+  for (const key of GOVERNANCE_ENV_KEYS) assert.match(key, /^PI_DADDY_[A-Z0-9_]+$/);
   for (const [legacy, current] of Object.entries(LEGACY_ENV_NAMES)) {
     assert.match(legacy, /^PI_GRANTS_[A-Z_]+$/);
     assert.match(current, /^PI_DADDY_[A-Z_]+$/);

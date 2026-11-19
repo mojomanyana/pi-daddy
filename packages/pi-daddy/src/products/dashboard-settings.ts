@@ -1,5 +1,7 @@
 import type { AutoModeSource } from "../kernel/auto-mode.ts";
 import { sectionHeading } from "./dashboard-layout.ts";
+import { workModeLabel, type WorkModeSnapshot } from "../kernel/work-mode.ts";
+import { availableWorkMode } from "./dashboard-work-mode.ts";
 
 /** Settings are owner observations; rendering never grants consent or changes execution. */
 export const JEV_EDIT_ACTIONS = ["limit", "configure", "hints"] as const;
@@ -7,7 +9,7 @@ export type JevEditAction = (typeof JEV_EDIT_ACTIONS)[number];
 export const isJevEditAction = (value: unknown): value is JevEditAction =>
   JEV_EDIT_ACTIONS.some((key) => value === key);
 export type DashboardSettingKey =
-  JevEditAction | "auto" | "jev" | "wall" | "idle" | "descendants" | "depth" | "perCall" | "telemetry";
+  JevEditAction | "auto" | "jev" | "wall" | "idle" | "descendants" | "depth" | "perCall" | "telemetry" | "work-mode";
 export const DASHBOARD_SETTING_KEYS: DashboardSettingKey[] = [
   "auto",
   "jev",
@@ -36,9 +38,20 @@ export interface DashboardJevState {
   storageRoot?: string;
   error?: string;
 }
-export function visibleSettingKeys(jev?: DashboardJevState, telemetry = false): DashboardSettingKey[] {
+export function visibleSettingKeys(
+  jev?: DashboardJevState,
+  telemetry = false,
+  workMode = false,
+): DashboardSettingKey[] {
   const extra = JEV_EDIT_ACTIONS.filter((key) => jev?.available && jev.controls?.includes(key));
-  return ["auto", "jev", ...extra, ...(telemetry ? ["telemetry" as const] : []), ...DASHBOARD_SETTING_KEYS.slice(2)];
+  return [
+    "auto",
+    ...(workMode ? ["work-mode" as const] : []),
+    "jev",
+    ...extra,
+    ...(telemetry ? ["telemetry" as const] : []),
+    ...DASHBOARD_SETTING_KEYS.slice(2),
+  ];
 }
 export interface DashboardSettingsSnapshot {
   editable: boolean;
@@ -51,6 +64,7 @@ export interface DashboardSettingsSnapshot {
   maxDepth: number;
   perCall: number;
   jev: DashboardJevState;
+  workMode?: WorkModeSnapshot;
   telemetry?: {
     enabled: boolean;
     status: "disabled" | "missing-dependency" | "stopped" | "disconnected" | "stale" | "connected";
@@ -83,6 +97,7 @@ export function dashboardSettingsLines(
   const canConfigure = jev.controls?.includes("configure");
   const providerIndent = canConfigure ? "      " : "    ";
   const telemetry = settings.telemetry;
+  const workMode = availableWorkMode(settings.workMode);
   const gpu = telemetry?.gpuPercent === undefined ? "unavailable" : `${telemetry.gpuPercent}%`;
   const temperature = telemetry?.temperatureC === undefined ? "unavailable" : `${telemetry.temperatureC}°C`;
   const ram =
@@ -113,6 +128,21 @@ export function dashboardSettingsLines(
         ]
       : []),
     "",
+    ...(workMode
+      ? [
+          sectionHeading("WORK MODE", width),
+          row("work-mode", `Session: ${workModeLabel(workMode.selection)}`),
+          ...(workMode.selection.mode === "standard" ? ["    Standard: Current behavior."] : []),
+          `    Active now: ${workMode.active ? workModeLabel(workMode.active) : "Idle"}`,
+          `    Next request: ${workMode.nextRequest ? `${workModeLabel(workMode.nextRequest)} · once` : "session setting"}`,
+          workMode.inherited
+            ? "    Inherited from the parent; read-only."
+            : "    Enter to choose mode, scope and emphases.",
+          "    Session setting resets to Standard after /new.",
+          ...(workMode.note ? [`    ${workMode.note}`] : []),
+          "",
+        ]
+      : []),
     sectionHeading("JEV · optional advice", width),
     row(
       "jev",

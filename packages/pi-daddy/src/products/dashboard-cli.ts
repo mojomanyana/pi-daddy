@@ -28,6 +28,7 @@ import {
 } from "./activity-timeline.ts";
 import { createDashboardDisplayControls } from "./dashboard-display-controls.ts";
 import { dashboardJevNotice, JEV_CONSENT_NOTICE, JEV_EDITOR_NOTICE } from "./dashboard-settings.ts";
+import { openWorkModeEditor, workModeEditAction } from "./dashboard-work-mode.ts";
 import {
   createDashboardConnection,
   dashboardSessionRequest,
@@ -494,6 +495,27 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     );
     if (action === "inspect-choice") void inspectChoice(display.screen, connection).then(redraw);
     if (action === "answer-choice") void saveChoice(display.screen, connection).then(redraw);
+    if (action === "apply-work-mode" && display.screen.workModeEditor) {
+      const editor = display.screen.workModeEditor;
+      const snapshot = connection.state.snapshot;
+      const edit = workModeEditAction(editor, snapshot?.settings?.workMode, snapshot?.observation);
+      if (edit && !connection.state.pending) {
+        editor.busy = true;
+        void connection.change(edit).then((changed) => {
+          editor.busy = false;
+          if (changed) {
+            display.screen.view = "settings";
+            delete display.screen.workModeEditor;
+            display.screen.offset = 0;
+            notice =
+              edit.scope === "next-request"
+                ? "Work mode saved for the next request only."
+                : "Work mode saved for this session; active work unchanged.";
+          } else editor.error = connection.state.error || "Work mode change was not confirmed. Cancel and refresh.";
+          redraw();
+        });
+      }
+    }
     if (action === "quit") {
       stop();
       return;
@@ -504,7 +526,17 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       const settings = connection.state.snapshot?.settings;
       if (!settings?.editable) notice = "Settings can only be changed in the connected owning parent";
       else if (selected === "auto") action = "auto";
-      else if (selected === "wall" || selected === "idle") command = `limit ${selected} `;
+      else if (selected === "work-mode") {
+        const editor = openWorkModeEditor(settings.workMode, connection.state.snapshot?.observation);
+        if (!editor) notice = "Work mode is unavailable or inherited from the parent.";
+        else {
+          display.screen.workModeEditor = editor;
+          display.screen.view = "work-mode";
+          display.screen.offset = 0;
+          display.screen.manualScroll = false;
+          notice = "";
+        }
+      } else if (selected === "wall" || selected === "idle") command = `limit ${selected} `;
       else if (selected === "descendants") notice = "Startup only: set PI_DADDY_FANOUT before restarting Pi";
       else if (selected === "depth") notice = "Startup only: set PI_DADDY_MAX_DEPTH before restarting Pi";
       else if (selected === "perCall") notice = "Children per call is a fixed safety bound";

@@ -6,6 +6,7 @@ import type { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 
 /** The root baseline and latest child publication for one real Pi session owner. */
 export interface ReloadLifecycle {
+  workMode?: import("./work-mode.ts").WorkModeLifecycle;
   operationFinals?: import("./delegation-operations.ts").OperationFinalStore;
   executionSettings?: { nativeSessionId: string; wallMs?: number; idleMs?: number };
   autoMode?: import("./session-auto-mode.ts").SessionAutoLifecycle;
@@ -167,6 +168,7 @@ export function bindReloadLifecycle(
         root: current,
         autoMode: existing.autoMode,
         executionSettings: existing.executionSettings,
+        workMode: existing.workMode,
         activityRootId: existing.activityRootId,
         episodeId: existing.episodeId,
         capacity: existing.capacity,

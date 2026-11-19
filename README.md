@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.60.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.60.0` both resolve to this release.
+Source target: **0.62.0**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.62.0` both resolve to this release.
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
@@ -9,6 +9,54 @@ child process, with an optional append-only, hash-chained governance ledger.
 
 This file is the product description, present tense. If code and this file disagree, fix this file. Agents start at
 `AGENTS.md`, which carries the rules, the decisions still in force, the measured facts and the roadmap.
+
+## Work mode: optional approach guidance
+
+**Standard (current behavior)** is the default. It adds no work-mode prompt to the
+parent or children. **Ambitious** adds concise guidance to choose useful methods,
+challenge assumptions and verify the agreed outcome. It changes no permissions,
+models, tools, execution limits or JEV settings, and starts no separate provider call.
+
+Open **Settings → Work mode → Choose work mode…**. The editor is a draft until
+**Apply work mode**; **Cancel** leaves settings unchanged. Choose:
+
+- **This session:** applies to subsequent requests; replacing it clears a queued
+  next-request override. Resuming the same session restores its saved selection.
+- **Next request only:** applies to the next Pi run and its descendants, including
+  retries and continuations within that run. It is consumed at request start.
+- Optional combined emphases: **Faster delivery**, **Better outcome**, **Deeper
+  proof**, **Broader approaches**. No emphasis selected means balanced guidance;
+  these are useful directions, not required workflow stages.
+
+The Overview keeps Work mode separate from permissions. Settings distinguish
+**active now**, **session default** and **next request only**. Changing a setting
+while work is running leaves that run and its children on their captured mode.
+`/new` starts Standard; it neither erases project memory nor repeats completed work.
+A fork retains its branch's session preference but does not carry a one-shot override.
+
+Without a separate dashboard, use `/work-mode` for the interactive chooser:
+
+```text
+/work-mode standard session
+/work-mode ambitious session depth range
+/work-mode ambitious next speed
+/work-mode status
+```
+
+Principal and other installed runtime skills retain their assigned roles and
+definitions. Read-only work remains read-only. Bookie, Scout and Harness are optional;
+mode guidance requires no particular package, research run, memory write or evaluation.
+A missing optional tool narrows methods and evidence claims rather than stopping
+independent work. A mode does not grant standing monitoring or background work.
+
+Selections are bounded metadata in Pi's native session, not instructions restored
+from project notes. Unsupported or unreadable optional metadata falls back to
+Standard with a settings notice. A failed save leaves the prior selection in force;
+an override whose consumption cannot be recorded is not used.
+
+Local scripted checks establish control behavior and propagation. They do not
+establish that Ambitious improves a model's judgment, delivery quality or speed;
+that requires a separately designed comparison.
 
 ## Reliable workflow handoffs
 

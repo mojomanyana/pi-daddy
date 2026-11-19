@@ -1,4 +1,5 @@
 import { registerProjectMemoryOwner } from "./project-memory-owner.ts";
+import { registerWorkMode } from "./work-mode.ts";
 import { registerDashboardSettings, childExecutionLimits, closeDashboardTelemetry } from "./dashboard-settings.ts";
 import { bindEcosystemVersions } from "./ecosystem-versions.ts";
 import {
@@ -102,6 +103,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   registerChildUsageReport(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
   registerDashboardSettings(pi, session);
+  const beginWorkMode = registerWorkMode(pi, session);
   const projectMemory = registerProjectMemoryOwner(pi, session);
   const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
   const dashboardPaths = defaultDashboardPaths(agentDir());
@@ -164,6 +166,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       try {
         const nativeId = (owner as { getSessionId?: () => string }).getSessionId?.() ?? session.episodeId;
         await initializeSessionAutoMode(session, reload.environment, nativeId);
+        beginWorkMode(ctx, event?.reason ?? "startup", reload.environment);
       } catch (error) {
         session.autoModeFailure = `Daddy Auto mode unavailable: ${String(error)}`;
         throw error;

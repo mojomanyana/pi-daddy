@@ -9,6 +9,8 @@ import { reconcileDelegationCapacity, reserveDelegationCapacity } from "./sessio
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
 import { assertDefinitionIdentity } from "./definition-describe.ts";
 import { replayIfSafe, type AttemptObservation } from "./replay-retry.ts";
+import { capturedWorkMode } from "./work-mode.ts";
+import type { WorkModeSelection } from "../src/kernel/work-mode.ts";
 /**
  * Plan, gate, audit and run ONE governed child — the whole of a delegation except its tool surface.
  *
@@ -276,6 +278,8 @@ async function runOneDelegationImplementation(
    * mistake unspellable.
    */
   options: {
+    /** Captured before the first await and reused unchanged by an automatic retry. */
+    workMode?: WorkModeSelection;
     operationClaim?: OperationClaim;
     /** Trusted observation at the actual executor boundary, not a caller/tool parameter. */
     onExecutorEntry?: () => void;
@@ -423,7 +427,11 @@ async function runOneDelegationImplementation(
     executorRefusal ||= nativeRefusal;
 
     // Parent-run tools are decided by THIS delegation's live tool context: it is what will run them.
-    const planContext = { ...extra, ...session.parentToolContext?.(ctx) };
+    const planContext = {
+      ...extra,
+      ...session.parentToolContext?.(ctx),
+      ...(options.workMode ? { workMode: options.workMode } : {}),
+    };
     let preparedWorkspace: PreparedWorkspace | undefined;
     let approvalOutcome: ApprovalOutcome | undefined;
     let plan: ReturnType<typeof planDelegation>;
@@ -587,8 +595,9 @@ export async function runOneDelegation(
   ...args: Parameters<typeof runOneDelegationImplementation>
 ): Promise<DelegationOutcome> {
   const [session, spec, ids, budget, ctx, signal] = args;
+  const workMode = capturedWorkMode(session);
   const finalScope = operationFinalScope(session);
-  const options = args[6] ?? {};
+  const options = { ...args[6], ...(workMode ? { workMode } : {}) };
   const binding = options.definitionBinding;
   const bindOutcome = (outcome: DelegationOutcome) =>
     binding ? Object.assign(outcome, { definitionBinding: { ...binding } }) : outcome;

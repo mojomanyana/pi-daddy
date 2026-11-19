@@ -16,6 +16,7 @@ import type { GrantsSession } from "./session.ts";
 import { getDashboardControlState, setAutoApproval } from "./session-auto-mode.ts";
 import { saveSessionModelEdits, sessionModelRows } from "./session-model-prompt.ts";
 import { childUsageInSession } from "../src/executors/child-usage.ts";
+import { setWorkMode } from "./work-mode.ts";
 
 export interface DashboardSessionEndpoint {
   socketPath: string;
@@ -117,6 +118,8 @@ interface DashboardWireRequest {
   choiceId?: unknown;
   revision?: unknown;
   answer?: unknown;
+  selection?: unknown;
+  scope?: unknown;
   expectedOwner?: { sessionId?: unknown; cwd?: unknown; generation?: unknown };
 }
 async function respond(
@@ -127,6 +130,11 @@ async function respond(
 ): Promise<Record<string, unknown>> {
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
   const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
+  if (request.action === "set-work-mode") {
+    const allowed = ["token", "action", "expectedOwner", "selection", "scope"];
+    if (Object.keys(request).some((key) => !allowed.includes(key)))
+      return { ok: false, error: "Invalid work mode request" };
+  }
   if (choiceAction) {
     const allowed = ["token", "action", "expectedOwner", "sourceGeneration", "choiceId"];
     if (request.action === "answer-choice") allowed.push("revision", "answer");
@@ -137,6 +145,7 @@ async function respond(
     choiceAction ||
     request.action === "edit-jev" ||
     request.action === "set-telemetry" ||
+    request.action === "set-work-mode" ||
     (request.action !== "get" && request.expectedOwner !== undefined)
   ) {
     const observed = session.dashboardObservations?.(),
@@ -182,6 +191,9 @@ async function respond(
             choiceOutcome: "refused",
             error: "Bookie declined the answer. Refresh and check the choice and answer.",
           };
+  } else if (request.action === "set-work-mode") {
+    checkClient();
+    setWorkMode(session, request.selection, request.scope);
   } else if (request.action === "set-limit") {
     setDashboardLimit(session, request.key, request.seconds);
   } else if (request.action === "edit-jev") {
@@ -229,6 +241,7 @@ async function respond(
     ...(sourceRefreshRequested ? { sourceRefreshRequested: true } : {}),
     ...(choiceDetail ? { choiceDetail } : {}),
     ...(request.action === "answer-choice" ? { choiceSaved: true } : {}),
+    ...(request.action === "set-work-mode" ? { workModeApplied: true } : {}),
     ...controls,
     ...dashboardObservation(session),
     ...(session.activity ? { activity: { ...session.activity } } : {}),
