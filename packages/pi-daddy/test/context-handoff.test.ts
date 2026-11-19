@@ -10,6 +10,7 @@ import {
   MAX_CONTEXT_FILES,
   MAX_CONTEXT_TURNS,
   contextCapability,
+  definitionContextContract,
   fenceContext,
   isContextCapability,
   parseContextRequest,
@@ -252,6 +253,65 @@ test("a definition's allowed-tools is the ceiling on what context it may receive
   // And the parent's own grant still bounds it independently of the declaration.
   const ungranted = planWith("Read, context:fork", ["context:files", "tool:read"], "fork");
   assert.equal(ungranted.ok, false, "a ceiling cannot grant what the parent does not hold");
+});
+
+test("described context modes match planner ceilings and never supply parent permission", () => {
+  // Breaks if describe recommends a mode the planner rejects, or its ceiling is treated as a new grant.
+  for (const ceiling of CONTEXT_MODES) {
+    const contract = definitionContextContract(["tool:read", contextCapability(ceiling)]);
+    assert.deepEqual(contract.defaultRequest, { mode: "none" });
+    for (const mode of CONTEXT_MODES) {
+      const plan = planWith(`Read, context:${ceiling}`, ["context:fork", "tool:read"], mode);
+      assert.equal(plan.ok, contract.definitionModes.includes(mode), `${ceiling} / ${mode}`);
+    }
+  }
+  assert.deepEqual(definitionContextContract(["tool:read"]).definitionModes, ["none"]);
+  assert.deepEqual(
+    definitionContextContract(["context:*"]).definitionModes,
+    ["none"],
+    "wildcards are not invented modes",
+  );
+  const denied = planWith("Read, context:files", ["tool:read"], "files");
+  assert.equal(denied.refusal?.code, "CAPABILITY_ESCALATION");
+});
+
+test("files-only context refusal guides correction without transmitting or rewriting a summary", () => {
+  const secret = "PRIVATE_PARENT_CONTEXT_NOT_TO_DISCLOSE";
+  const request = {
+    agent: "review",
+    task: "Review src/a.ts against acceptance.md",
+    context: { mode: "summary", summary: secret },
+  };
+  let stages = 0;
+  const ctx = {
+    ownGrant: ["agent:review", "tool:read", "context:summary"],
+    depth: 0,
+    maxDepth: 2,
+    gated: [],
+    definitions: new Map([["review", definition("Read, context:files")]]),
+    stageHandoff: () => {
+      stages++;
+      return {};
+    },
+  };
+  const rejected = planDelegation(request, ctx);
+  assert.equal(rejected.refusal?.code, "CONTEXT_REQUEST_INVALID");
+  assert.deepEqual(rejected.refusal?.details, {
+    requestedContextMode: "summary",
+    definitionContextModes: "none,files",
+    suggestedContextMode: "none",
+    correction: "correct-context-argument",
+  });
+  assert.match(rejected.reason!, /omit it or use.*mode.*none/);
+  assert.match(rejected.reason!, /do not omit required evidence/);
+  assert.doesNotMatch(JSON.stringify(rejected), new RegExp(secret));
+  assert.equal(stages, 0);
+  assert.equal(request.context.summary, secret, "caller input is not changed");
+  const corrected = planDelegation({ ...request, context: { mode: "none" } }, ctx);
+  assert.equal(corrected.ok, true);
+  assert.equal(corrected.args.at(-1), ` ${request.task}`, "only the CLI's existing leading-space guard is added");
+  assert.doesNotMatch(JSON.stringify(corrected.args), new RegExp(secret));
+  assert.deepEqual(corrected.effective, ["tool:read"]);
 });
 
 test("a symlink inside the working directory does not escape the confinement", async () => {

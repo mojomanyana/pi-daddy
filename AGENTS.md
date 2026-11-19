@@ -58,6 +58,15 @@ is imported by nothing.
 
 ## Working here
 
+### 2026-11-19 — Context correction is explicit and keeps operation identity
+
+`delegate_describe.contextContract` reports a definition ceiling and a `none` default, not authority. An independent
+same-checkout review normally omits optional parent context. A rejected `summary` cannot be relabelled as files or
+task text to evade a `files` ceiling. Refusals explain how to correct the argument without silently dropping it.
+When the operation layer records a new refused occurrence as `not-started`, its hint distinguishes standalone
+correction from a bound workflow's existing recovery path. A duplicate or failed record write does not acquire
+no-start proof from this call. Election, digests, terminal IDs, permissions and runtime retry limits are unchanged.
+
 ```bash
 cd packages/pi-daddy
 npm test                   # unit tests: no pi, no network, about 40s (it spawns real lock helpers)

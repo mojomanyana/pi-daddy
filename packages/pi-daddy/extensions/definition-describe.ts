@@ -3,6 +3,7 @@ import { publicEvidenceCall } from "./public-evidence.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { ceilingForDefinition, digestDefinition } from "../src/kernel/definitions.ts";
+import { definitionContextContract } from "../src/kernel/context-handoff.ts";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
 import { replaySafeCeiling } from "../src/kernel/replay-safe.ts";
 import { hostModel, liveParentTools } from "./parent-tool-host.ts";
@@ -111,7 +112,7 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
     name: "delegate_describe",
     label: "Describe a governed definition",
     description:
-      "Read the exact selected definition identity and Principal binding before delegation. " +
+      "Read the exact selected definition identity, context ceiling/default and Principal binding before delegation. " +
       "Binds its definitionId to this agent's later delegations in this session. Starts no child and grants nothing.",
     parameters: Type.Object({ agent: Type.String() }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -131,6 +132,7 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
         binding: definition.binding ?? null,
         definitionId: definition.definitionId,
         delegationArguments: { agent: params.agent, definitionId: definition.definitionId },
+        contextContract: definitionContextContract(ceilingForDefinition(definition).capabilities),
         selectedResources: definition.selectedResources ?? null,
         // Declared tools this session would run for the child itself, through its own tool pipeline (2026-11-17),
         // for a child on this session's own provider and model, which is the only kind it runs them for. Like the

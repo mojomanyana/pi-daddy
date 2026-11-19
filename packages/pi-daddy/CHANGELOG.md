@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## 0.62.1 — 2026-11-19
+
+- `delegate_describe` reports the selected definition's context ceiling, the `none` default and file-input bounds. Files-only reviewers no longer have to infer that summary handoffs are unsupported. Context refusals show valid correction options and distinguish a newly recorded unstarted operation from existing or unavailable records; bound workflows retain their own recovery path. No handoff is silently changed, no permission ceiling is widened, and operation identity/replay protection is unchanged.
+
 ## 0.62.0 — 2026-11-19
 
 - Added optional Work mode controls in dashboard Settings and `/work-mode`. Standard keeps current behavior; Ambitious supplies proportionate approach guidance with combinable emphases. Select a session default or one-request override, see active versus next settings separately, and cancel drafts without applying them. Permissions, JEV, models and limits remain independent.
