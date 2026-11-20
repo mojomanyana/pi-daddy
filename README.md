@@ -1,6 +1,68 @@
 # pi-daddy
 
-Source target: **0.62.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.62.1` both resolve to this release.
+Use Pi with the model you have to deliver software you can check. Pi Daddy coordinates the work, Principal helps build and review it, and Bookie remembers the result. Scout and Harness are available when a task needs sources or evaluation. The beta is testing how far these tools can help smaller models deliver reliable engineering work. Quality depends on the model and task.
+
+## Start here
+
+**Try it with a working Pi model on Linux x64.** The full beta install and checkpoint recovery were checked with Pi 1.5.2 and Node 24. Use `pi --version` to see your Pi version. These commands install the tested package versions into the current Pi profile. To keep your usual profile separate, run `export PI_CODING_AGENT_DIR="$HOME/.pi-beta/agent"` in this shell first. Use the same shell to start Pi and sign into your chosen model there if prompted. The [tested release manifest](.github/beta-release.json) lists the pins. To install only pi-daddy, see [Install and first run](#install-and-first-run).
+
+<!-- verified-beta-install:start -->
+```bash
+pi install npm:pi-bookie@0.9.0
+pi install npm:pi-daddy@0.63.0
+pi install npm:principal-pi-skills@4.19.0
+pi install npm:pi-scout-research@0.4.0
+pi install npm:skill-harness@0.37.0
+```
+<!-- verified-beta-install:end -->
+
+**Give Pi one real requirement.** Create and enter an empty folder, run `git init` and `git -c user.name=Beta -c user.email=beta@example.invalid commit --allow-empty -m setup`, then start `pi` there. Use fictional data. Pick the model you want to try, leave JEV off, and keep Standard work mode for this first task. Leave Daddy Auto off. Type `/bookie-task enable` and approve project memory for this workspace. This lets Bookie save and recall the checkpoint while other permission prompts remain manual. A separate dashboard is optional.
+
+> Build a public notice exporter in this folder. I should be able to pipe one JSON object into `node public-notice.cjs`. Print just its `message` on one line, even if the object also contains a staff-only note. A missing message should exit with an error and print no public output. Show me what actually happened when you tried it, then save and read back a short “Public notice” checkpoint with the result. Leave the work local.
+
+**Check the delivery yourself.** From the project folder, run this in a shell. It calls the same command a user would run, with a fresh input and a missing-message case. Both the exit status and the public output must match.
+
+```bash
+node --input-type=module <<'JS'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+
+function run(notice) {
+  const result = spawnSync(process.execPath, ['public-notice.cjs'], {
+    input: JSON.stringify(notice), encoding: 'utf8', timeout: 5000
+  })
+  if (result.error) throw result.error
+  assert.equal(result.signal, null)
+  return result
+}
+
+const valid = run({ message: 'Library opens at ten.', staffNote: 'demo-only' })
+assert.equal(valid.status, 0)
+assert.equal(valid.stdout, 'Library opens at ten.\n')
+const missing = run({ staffNote: 'demo-only' })
+assert.ok(Number.isInteger(missing.status) && missing.status !== 0)
+assert.equal(missing.stdout, '')
+console.log('Passed both public-output checks.')
+JS
+```
+
+**Come back to it.** Type `/new` in the same folder. Type `/bookie-task enable` again and approve recall for the workspace. Ask:
+
+> Recall the Public notice checkpoint. What was delivered and checked, and what remains unverified? Use the saved result and leave the files alone.
+
+Compare the recap with the output you saw. If anything took a rescue prompt, lost the result, or claimed a check that never ran, [tell us where](#early-access).
+
+## Early access
+
+We’re inviting five Pi users to try a real change on their usual model. Our goal is to help smaller models deliver work that holds up against a frontier coding setup. The published install and session recovery have been checked on Pi 1.5.2. We don’t yet have a matched result establishing frontier-level quality.
+
+Choose a small feature, bug fix or piece of research you actually need. Before you start, write down one outcome you can observe and one plausible wrong answer. Give Pi the request in your usual words. Try the finished result through the same interface someone would actually use. Record the first result, any help you gave, and the result after a correction. An honest “couldn’t verify” is useful feedback.
+
+[Send a short beta report](https://github.com/mojomanyana/pi-daddy/issues/new?template=beta-feedback.md). A description and sanitized example are enough. Issues are public. You can leave out logs, private documents and source code.
+
+**How we’ll compare quality.** Give plain Pi and the ecosystem the same smaller model, effort setting, starting files, task and limits. Compare the same deliverables with Claude or another frontier setup as a separate reference. Freeze the acceptance checks before the runs and judge the outputs without setup names where practical. Report missed requirements, incorrect approval, rescue prompts, time and total cost including children when available. Report unavailable measurements as unknown. A pass on the starter example covers that example alone.
+
+## How pi-daddy works
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may

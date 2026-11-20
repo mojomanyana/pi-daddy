@@ -1,6 +1,6 @@
 # pi-daddy
 
-Source target: **0.62.1**. Before installation, verify that `npm view pi-daddy version` and Git tag `v0.62.1` both resolve to this release.
+Coordinate Pi's engineering work and see the evidence behind a result. **[Start here](https://github.com/mojomanyana/pi-daddy#start-here)** for the tested ecosystem install, a first task you can check, and recovery after `/new`. To install pi-daddy on its own, use [Install and first run](#install-and-first-run).
 
 **Capability governance and coordination for [pi](https://github.com/badlogic/pi-mono)'s multi-level agent system.**
 An orchestrator grants each sub-agent a deliberate subset of what it holds and withholds the rest. A sub-agent may
