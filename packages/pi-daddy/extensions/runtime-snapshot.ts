@@ -33,8 +33,11 @@ export function registerRuntimeSnapshot(
       ? bound
       : undefined;
   const initiative = registerInitiativeRuntime(pi, session, currentOwner);
-  const taskDispatch = createTaskDispatchController(pi.events, () =>
-    session.depth === 0 ? currentOwner() : undefined,
+  const taskDispatch = createTaskDispatchController(
+    pi.events,
+    () => (session.depth === 0 ? currentOwner() : undefined),
+    agentDir,
+    () => session.reloadLifecycle.runtimeSettlement,
   );
   session.taskDispatch = taskDispatch;
   session.bindTaskObservation = () => {

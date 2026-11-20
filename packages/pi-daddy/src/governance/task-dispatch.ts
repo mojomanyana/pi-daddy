@@ -58,7 +58,14 @@ export function isDispatchEdit(value: unknown): value is DispatchEdit {
   );
 }
 
-type Attempt = { taskId?: string; owner: DispatchOwner; executionId: string; sessionId: string; cwd: string };
+type Attempt = {
+  beforeLaunch?: import("./runtime-settlement.ts").PrelaunchOwner;
+  taskId?: string;
+  owner: DispatchOwner;
+  executionId: string;
+  sessionId: string;
+  cwd: string;
+};
 type Control =
   | { action: "admit"; attempt: Attempt }
   | { action: "settle"; taskId?: string; owner: DispatchOwner; executionId: string; cleanup: "settled" | "not-started" }
@@ -203,7 +210,7 @@ export class TaskDispatch {
     return [...this.pending.values()];
   }
 
-  private recordAt(seq: number): Control | undefined {
+  private recordAt(seq: number): { at: string; event: Control } | undefined {
     let text: string;
     try {
       text = readBoundedTextSync(join(this.root, seq + ".json"), { maxBytes: 16_384, confinedRoot: this.root }).text;
@@ -217,10 +224,13 @@ export class TaskDispatch {
       record.seq !== seq ||
       record.taskId !== this.taskId ||
       record.projectId !== this.projectId ||
+      typeof record.at !== "string" ||
+      !Number.isFinite(Date.parse(record.at)) ||
+      new Date(record.at).toISOString() !== record.at ||
       !record.event
     )
       throw Error("Task dispatch history is unavailable or incompatible");
-    return record.event as Control;
+    return { at: record.at, event: record.event as Control };
   }
 
   private readable(): boolean {
@@ -236,7 +246,7 @@ export class TaskDispatch {
   private catchUp() {
     if (!this.readable()) return;
     for (;;) {
-      const event = this.recordAt(this.revision + 1);
+      const event = this.recordAt(this.revision + 1)?.event;
       if (!event) return;
       this.apply(event);
       this.revision++;
@@ -262,13 +272,15 @@ export class TaskDispatch {
       state: string;
       label: string;
     }> = [];
+    const provenance: { sequence: number; recordedAt: string }[] = [];
     const present = this.readable();
     if (after && (!present || !this.recordAt(after))) throw Error("Task history cursor is unavailable");
     let next = after;
     while (present && next - after < limit) {
       const seq = next + 1,
-        event = this.recordAt(seq);
-      if (!event) break;
+        record = this.recordAt(seq);
+      if (!record) break;
+      const event = record.event;
       next = seq;
       const origin =
         event.action === "admit" ? event.attempt?.taskId : event.action === "settle" ? event.taskId : undefined;
@@ -318,6 +330,7 @@ export class TaskDispatch {
         default:
           throw Error("Unsupported task receipt");
       }
+      provenance.push({ sequence: seq, recordedAt: record.at });
       events.push({
         version: 1,
         owner: "pi-daddy",
@@ -328,7 +341,7 @@ export class TaskDispatch {
       });
       next = seq;
     }
-    return { after, next, more: present && Boolean(this.recordAt(next + 1)), events };
+    return { after, next, more: present && Boolean(this.recordAt(next + 1)), events, provenance };
   }
 
   private apply(event: Control) {

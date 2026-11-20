@@ -2,7 +2,7 @@
 import { dirname, join } from "node:path";
 import { lstat, stat, realpath } from "node:fs/promises";
 import { TaskDispatch } from "../src/governance/task-dispatch.ts";
-import { readRuntimeExecutionSettlement } from "../src/governance/runtime-settlement.ts";
+import { readRuntimeExecutionSettlement, type PrelaunchOwner } from "../src/governance/runtime-settlement.ts";
 type Host = { cwd: string; sessionId: string };
 
 async function workingCopyId(cwd: string) {
@@ -24,7 +24,13 @@ async function workingCopyId(cwd: string) {
   return `${identity.dev}.${identity.ino}`;
 }
 
-export async function claimTaskWriter(directory: string, target: string, host: Host, executionId: string) {
+export async function claimTaskWriter(
+  directory: string,
+  target: string,
+  host: Host,
+  executionId: string,
+  beforeLaunch?: PrelaunchOwner,
+) {
   const id = await workingCopyId(target);
   const store = new TaskDispatch(directory, "working-copy", id, true);
   for (const previous of store.outstanding()) {
@@ -33,10 +39,11 @@ export async function claimTaskWriter(directory: string, target: string, host: H
       previous.sessionId,
       previous.cwd,
       previous.executionId,
+      previous.beforeLaunch,
     ).catch(() => "unknown" as const);
     if (receipt !== "unknown") store.settle(previous.owner, previous.executionId, receipt);
   }
-  store.admit({ owner: "pi-daddy", executionId, ...host });
+  store.admit({ owner: "pi-daddy", executionId, ...host, ...(beforeLaunch ? { beforeLaunch } : {}) });
   const finish = (cleanup: "settled" | "not-started") => store.settle("pi-daddy", executionId, cleanup);
   try {
     if (id !== (await workingCopyId(target))) throw Error("Working copy changed during admission");

@@ -147,6 +147,9 @@ export interface ChildProgressUpdate {
  * blaming "ledger" (R-99). The failure is reported alongside the outcome instead of replacing it.
  */
 export interface ChildExecutionInput {
+  beforeRuntimeBegin?: (
+    runtime: import("../src/governance/runtime-settlement.ts").RuntimeSettlement | undefined,
+  ) => void;
   operationClaim?: import("../src/kernel/dispatch-operation.ts").OperationClaim;
   /** Composition-only launch observation; no permission or result authority. */
   onExecutorEntry?: () => void;
@@ -179,6 +182,7 @@ export async function executePlannedChild(input: ChildExecutionInput): Promise<D
   try {
     const limits = childExecutionLimits(input.session);
     input = { ...input, cwd: await realpath(input.preparedWorkspace?.workspace.root ?? input.cwd) };
+    input.beforeRuntimeBegin?.(runtime);
     runtime?.begin(input.executionId);
     registered = Boolean(runtime);
     // Registered before the child exists and closed once it has settled, on every path: an unknown or finished

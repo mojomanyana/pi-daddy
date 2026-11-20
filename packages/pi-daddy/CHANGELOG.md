@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- With a supporting Bookie, select a task to see its latest observation and control participating operations. The dashboard offers separate pause, cancel, resume and shared and per-owner attempt allowances. Concurrent writes require separate working copies. Cleanup remains visible until an execution owner confirms it. Existing standalone workflows retain their normal controls.
+- With a supporting Bookie, select a task to see its latest observation and control participating operations. The dashboard offers separate pause, cancel, resume and shared and per-owner attempt allowances. Concurrent writes require separate working copies. A successor can release a crashed writer reservation when the original runtime proves launch never began. Cleanup remains visible until an execution owner confirms it. Existing standalone workflows retain their normal controls.
 
 - Added **Not a separate decision** to the saved-choice menu when the connected Bookie supports explicit corrections. Confirmation retains the original note and records no answer; Decide later keeps the choice open. The action is bound to the current owner, source and exact note revision, shares the answer lock, and reports unconfirmed saves honestly. Older Bookie versions keep their existing controls; no prose-based filtering or automatic correction is added.
 

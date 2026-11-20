@@ -13,6 +13,7 @@ import {
   unlinkSync,
   constants,
   readFileSync,
+  readlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { readBoundedTextSync } from "../kernel/bounded-read-sync.ts";
@@ -54,6 +55,42 @@ function ownerAlive(id: string): boolean {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
+  }
+}
+/** A local owner receipt for reservations made before native begin() is permitted to run. */
+export interface PrelaunchOwner {
+  ownerId: string;
+  ownerScope: string;
+  pidNamespace: string;
+}
+export function pinPrelaunchOwner(runtime: RuntimeSettlement, sessionId: string, cwd: string): PrelaunchOwner {
+  if (runtime.ownerId !== ownerId() || runtime.sessionId !== sessionId || runtime.cwd !== cwd)
+    throw Error("Native execution owner changed before task admission");
+  return { ownerId: runtime.ownerId, ownerScope: runtime.ownerScope, pidNamespace: readlinkSync("/proc/self/ns/pid") };
+}
+function prelaunchOwnerGone(pin: PrelaunchOwner, journal: Journal): boolean {
+  const match = /^([0-9a-f-]{36}):([1-9][0-9]*):([0-9]+)$/.exec(pin.ownerId);
+  if (
+    !match ||
+    pin.ownerScope !== journal.ownerScope ||
+    pin.pidNamespace !== readlinkSync("/proc/self/ns/pid") ||
+    match[1] !== readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim()
+  )
+    return false;
+  // Identical /proc view, boot and birth ticks distinguish PID reuse. An inaccessible process or changed
+  // namespace is not death. If the proc entry vanished, ask the kernel for positive ESRCH evidence too.
+  try {
+    const text = readFileSync("/proc/" + match[2] + "/stat", "utf8");
+    const ticks = text.slice(text.lastIndexOf(")") + 2).split(" ")[19];
+    return /^\d+$/.test(ticks ?? "") && ticks !== match[3];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
+    try {
+      process.kill(Number(match[2]), 0);
+      return false;
+    } catch (probe) {
+      return (probe as NodeJS.ErrnoException).code === "ESRCH";
+    }
   }
 }
 function validate(value: unknown, sessionId: string, cwd: string): Journal {
@@ -276,6 +313,7 @@ export async function readRuntimeExecutionSettlement(
   sessionId: string,
   cwd: string,
   executionId: string,
+  beforeLaunch?: PrelaunchOwner,
 ) {
   const root = join(realpathSync(directory), "pi-daddy", "runtime-settlement");
   if (realpathSync(root) !== root) throw Error("runtime settlement root changed");
@@ -285,10 +323,14 @@ export async function readRuntimeExecutionSettlement(
   const path = join(root, settlementHash([sessionId, cwd]) + ".json");
   const text = readBoundedTextSync(path, { maxBytes: MAX_RECORD, confinedRoot: root }).text;
   const journal = validate(JSON.parse(text), sessionId, cwd);
+  if (beforeLaunch && beforeLaunch.ownerScope !== journal.ownerScope) return "unknown" as const;
   const e = journal.executions.find((item) => item.id === executionId);
-  if (!e || e.problem) return "unknown" as const;
+  if (e?.problem) return "unknown" as const;
   let result: "settled" | "not-started" | "unknown" = "unknown";
-  if (e.state === "not-started" && !e.identity) result = "not-started";
+  if (!e) {
+    // Only a qualified reservation was fenced to this intact append-preserving runtime journal before launch.
+    if (beforeLaunch && prelaunchOwnerGone(beforeLaunch, journal)) result = "not-started";
+  } else if (e.state === "not-started" && !e.identity) result = "not-started";
   else if (e.identity) {
     const receipt = await readCapturedWorkerReceipt(e.identity);
     if (receipt && (!e.receiptSha256 || e.receiptSha256 === settlementHash(receipt))) result = "settled";

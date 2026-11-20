@@ -578,6 +578,7 @@ async function runOneDelegationImplementation(
     if (!options.operationClaim)
       await options.taskObservation?.(ids.executionId, "delegation", "admitted", "Delegation admitted");
     outcome = await executePlannedChild({
+      beforeRuntimeBegin: admitted?.beforeRuntimeBegin,
       capacityReservation: capacity,
       operationClaim: options.operationClaim,
       onExecutorEntry: () => {

@@ -8,7 +8,11 @@ import {
 } from "../src/governance/task-dispatch.ts";
 import { claimTaskWriter } from "./task-worktree-writer.ts";
 import { agentDir } from "../src/kernel/project-paths.ts";
-import { readRuntimeExecutionSettlement } from "../src/governance/runtime-settlement.ts";
+import {
+  readRuntimeExecutionSettlement,
+  pinPrelaunchOwner,
+  type RuntimeSettlement,
+} from "../src/governance/runtime-settlement.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 interface TaskScope {
@@ -20,6 +24,7 @@ interface TaskScope {
 }
 type Host = { cwd: string; sessionId: string };
 export type AdmittedAttempt = {
+  beforeRuntimeBegin?: (runtime: RuntimeSettlement | undefined) => void;
   signal: AbortSignal;
   finish(cleanup: "settled" | "not-started" | "unknown"): void;
 };
@@ -32,6 +37,7 @@ export function createTaskDispatchController(
   bus: ExtensionAPI["events"],
   current: () => Host | undefined,
   directory = agentDir,
+  nativeOwner?: () => RuntimeSettlement | undefined,
 ) {
   let lastBoundHost: Host | undefined;
   let previous: TaskDispatch | undefined;
@@ -94,6 +100,27 @@ export function createTaskDispatchController(
     return { scope: chosen, assertCurrent, host, store: storeFor(chosen) };
   }
 
+  // Recover an interrupted predecessor without replacing its occurrence ID. Missing or ambiguous receipts stay pending.
+  async function reconcilePredecessor(binding: NonNullable<ReturnType<typeof select>>) {
+    const runtime = nativeOwner?.();
+    if (!runtime) return;
+    for (const attempt of binding.store.outstanding()) {
+      if (attempt.owner !== "pi-daddy" || !attempt.beforeLaunch || attempt.beforeLaunch.ownerId === runtime.ownerId)
+        continue;
+      const state = await readRuntimeExecutionSettlement(
+        directory(),
+        attempt.sessionId,
+        attempt.cwd,
+        attempt.executionId,
+        attempt.beforeLaunch,
+      ).catch(() => "unknown" as const);
+      if (state !== "unknown") {
+        await binding.assertCurrent();
+        binding.store.settle(attempt.owner, attempt.executionId, state, attempt.taskId ?? binding.store.taskId);
+      }
+    }
+  }
+
   const controller = {
     /** An inline effect's owner can consult the shared pause state without spending a delegated attempt. */
     captureInline(): (() => Promise<void>) | undefined {
@@ -131,14 +158,25 @@ export function createTaskDispatchController(
       const admit = async (executionId: string, writerFolder?: string): Promise<AdmittedAttempt> => {
         const { host, scope, store } = binding;
         await binding.assertCurrent();
+        const native = owner === "pi-daddy" ? nativeOwner?.() : undefined;
+        if (owner === "pi-daddy" && nativeOwner && !native)
+          throw Error("Native owner is unavailable before task admission");
+        const beforeLaunch = native ? pinPrelaunchOwner(native, host.sessionId, host.cwd) : undefined;
         const writer =
           owner === "pi-daddy" && writerFolder
-            ? await claimTaskWriter(directory(), writerFolder, host, executionId)
+            ? await claimTaskWriter(directory(), writerFolder, host, executionId, beforeLaunch)
             : undefined;
         let reserved = false;
         try {
           await binding.assertCurrent();
-          store.admit({ owner, executionId, taskId: scope.taskId, cwd: host.cwd, sessionId: host.sessionId });
+          store.admit({
+            owner,
+            executionId,
+            taskId: scope.taskId,
+            cwd: host.cwd,
+            sessionId: host.sessionId,
+            ...(beforeLaunch ? { beforeLaunch } : {}),
+          });
           reserved = true;
           await binding.assertCurrent();
         } catch (error) {
@@ -162,6 +200,14 @@ export function createTaskDispatchController(
         timer.unref();
         return {
           signal: controller.signal,
+          ...(native
+            ? {
+                beforeRuntimeBegin(runtime: RuntimeSettlement | undefined) {
+                  if (runtime !== native || runtime !== nativeOwner?.() || current() !== host)
+                    throw Error("Task reservation's native owner changed before executor entry");
+                },
+              }
+            : {}),
           finish(cleanup) {
             clearInterval(timer);
             if (cleanup === "settled" || cleanup === "not-started") {
@@ -177,6 +223,7 @@ export function createTaskDispatchController(
       return Object.assign(admit, {
         assertAvailable: async () => {
           await binding.assertCurrent();
+          await reconcilePredecessor(binding);
           binding.store.assertAvailable(owner);
         },
         reconcile: async (executionId: string, cleanup: "settled" | "not-started") => {
@@ -245,6 +292,7 @@ export function createTaskDispatchController(
             attempt.sessionId,
             attempt.cwd,
             attempt.executionId,
+            attempt.beforeLaunch,
           ).catch(() => "unknown" as const);
           if (state !== "unknown")
             b.store.settle("pi-daddy", attempt.executionId, state, attempt.taskId ?? b.store.taskId);
