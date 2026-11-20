@@ -1,3 +1,4 @@
+import { dashboardRequestTimeout, isDashboardChoiceRequest } from "../src/kernel/dashboard-request.ts";
 import { isDispatchEdit, type DispatchView } from "../src/governance/task-dispatch.ts";
 import type { DashboardChoiceDetail } from "../src/kernel/dashboard-choice.ts";
 import { isJevEditAction } from "../src/products/dashboard-settings.ts";
@@ -51,7 +52,7 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
     let input = "",
       handled = false;
     socket.setEncoding("utf8");
-    socket.setTimeout(2_000, () => socket.destroy());
+    socket.setTimeout(dashboardRequestTimeout(), () => socket.destroy());
     socket.on("error", () => socket.destroy());
     socket.on("data", (chunk) => {
       if (handled) return;
@@ -71,8 +72,8 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
         socket.end(JSON.stringify({ ok: false, error: "Invalid dashboard request" }) + "\n");
         return;
       }
-      const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
-      if (choiceAction && request.token === token) socket.setTimeout(30_000);
+      const choiceAction = isDashboardChoiceRequest(request.action);
+      if (request.token === token) socket.setTimeout(dashboardRequestTimeout(request.action));
       void respond(session, token, request, () => {
         if (socket.destroyed) throw Error("Dashboard disconnected");
       })
@@ -131,8 +132,7 @@ async function respond(
   checkClient: () => void,
 ): Promise<Record<string, unknown>> {
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
-  const choiceAction =
-    request.action === "inspect-choice" || request.action === "answer-choice" || request.action === "reclassify-choice";
+  const choiceAction = isDashboardChoiceRequest(request.action);
   if (request.action === "set-work-mode") {
     const allowed = ["token", "action", "expectedOwner", "selection", "scope"];
     if (Object.keys(request).some((key) => !allowed.includes(key)))

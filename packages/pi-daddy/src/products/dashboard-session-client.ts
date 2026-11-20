@@ -1,3 +1,4 @@
+import { dashboardRequestTimeout, isDashboardChoiceRequest } from "../kernel/dashboard-request.ts";
 import type { DispatchView, DispatchEdit } from "../governance/task-dispatch.ts";
 import {
   validChoiceDetail,
@@ -68,11 +69,8 @@ export async function dashboardSessionRequest(
     const socket = createConnection(socketPath);
     let output = "";
     socket.setEncoding("utf8");
-    const choiceAction =
-      request.action === "inspect-choice" ||
-      request.action === "answer-choice" ||
-      request.action === "reclassify-choice";
-    socket.setTimeout(choiceAction || request.action === "task-dispatch" ? 30_000 : 2_000, () =>
+    const choiceAction = isDashboardChoiceRequest(request.action);
+    socket.setTimeout(dashboardRequestTimeout(request.action), () =>
       socket.destroy(new Error("dashboard session request timed out")),
     );
     socket.once("error", reject);
