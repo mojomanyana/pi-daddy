@@ -95,6 +95,8 @@ Bookie can register a reference afterward; a registration retry never dispatches
 
 Select a task through Bookie to see its title and latest recorded event at the top of Overview and Tasks. Open the row to inspect the reporting tool, event time and dispatch state. Each tool retains its own execution receipts. The task view covers recorded observations. Bookie can recover enrolled admission, control and cleanup facts from the owner journal.
 
+When Bookie supplies progress details, the task preview shows the latest reported step and whether its latest file checkpoint is awaiting publication or saved to private history. Open the row for up to four recent steps and the file coverage. A worker heartbeat can refresh its observation while the last reported step stays visible. The display updates when Bookie publishes or the dashboard refreshes its source.
+
 In task details, press **p** to pause new work, **c** to request cancellation, **u** to resume or **b** to set a budget. Press Enter to apply. Pause lets admitted work settle. Cancel signals participating workers and displays pending cleanup. Resume after cancellation requires confirmed cleanup. These controls apply to task-bound operations participating in the local protocol. The individual tool still determines what it may execute.
 
 Pausing or cancelling also holds new root Pi shell and file-editing calls (including shell commands used only to inspect files). Direct file reads, searches and task history remain available. Already running inline commands and custom tools outside the task protocol have their own lifecycle. Inline calls consume no delegated attempts.

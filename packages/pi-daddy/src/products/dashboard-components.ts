@@ -274,6 +274,15 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
   if (!history || !source || !current(source, options) || source.refresh?.state === "failed") return;
   const last = history.lastObservation;
   const recent = last ? [`Last recorded · ${last.label}`] : [];
+  const progress = history.recentProgress ?? [];
+  const checkpoint = history.lastCheckpoint;
+  const capture = checkpoint
+    ? [
+        checkpoint.state === "published"
+          ? "Checkpoint saved to private history"
+          : "Checkpoint captured · awaiting publication",
+      ]
+    : [];
   const policy = options.session?.taskDispatch;
   const controls = policy?.taskId === history.taskId && policy.counts ? policy : undefined;
   const dispatch = controls
@@ -289,6 +298,18 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
       ]
     : [];
   const details = [
+    ...capture,
+    ...(checkpoint
+      ? [
+          `${checkpoint.files} files · ${checkpoint.missing} missing · ${checkpoint.excluded} excluded · captured ${checkpoint.capturedAt}`,
+        ]
+      : []),
+    ...(progress.length
+      ? [
+          "Recent reported progress",
+          ...progress.map((row) => `${row.label} · ${row.state} · ${row.owner} · ${row.recordedAt}`),
+        ]
+      : []),
     ...dispatch,
     ...(controls?.inherited ? ["Shared with this task’s parent. Select the parent task to change controls."] : []),
     ...(!controls ? ["Task dispatch controls unavailable in this session."] : []),
@@ -305,7 +326,15 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
     label: history.title,
     status: "selected",
     elapsed: "",
-    previewLines: [...dispatch.slice(0, 1), ...(recent.length ? recent : ["No owner observations recorded yet."])],
+    previewLines: [
+      ...dispatch.slice(0, 1),
+      ...(progress.length
+        ? ["Last reported step · " + progress[0]!.label]
+        : recent.length
+          ? recent
+          : ["No owner observations recorded yet."]),
+      ...capture,
+    ],
     briefDetails: details,
     details: [
       ...details,

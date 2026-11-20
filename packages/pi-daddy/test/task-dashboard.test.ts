@@ -21,14 +21,14 @@ test("selected task observations are scoped, explicitly partial, replaced on tas
     () => owner,
     () => now,
   );
-  function register(producer: string, modern: boolean) {
+  function register(producer: string, modern: boolean, progress = false) {
     let receiver: any;
     events.get(DASHBOARD_SOURCE_EVENT)!({
       version: 1,
       ...owner,
       producer,
       producerVersion: "1.0",
-      ...(modern ? { capabilities: { taskHistory: 1 } } : {}),
+      ...(modern ? { capabilities: { taskHistory: 1, ...(progress ? { taskProgress: 1 } : {}) } } : {}),
       reply: (r: any) => (receiver = r),
     });
     return receiver;
@@ -51,6 +51,8 @@ test("selected task observations are scoped, explicitly partial, replaced on tas
   assert.equal(other.publish(update), false);
   const current = register("bookie-memory", true);
   assert.equal(current.capabilities.taskHistory, 1);
+  assert.equal(current.capabilities.taskProgress, undefined);
+  assert.equal(current.publish({ ...update, taskHistory: { ...record, recentProgress: [] } }), false);
   assert.equal(current.publish(update), true);
   const selection = () =>
     currentTaskItem({ session: { observation: sources.snapshot() }, connected: true, now: new Date(now) } as never);
@@ -65,5 +67,38 @@ test("selected task observations are scoped, explicitly partial, replaced on tas
   now += 130000;
   assert.equal(selection(), undefined);
   current.close();
+  assert.equal(selection(), undefined);
+  const richer = register("bookie-memory", true, true);
+  const checkpoint = { state: "captured", capturedAt: new Date(now).toISOString(), files: 1, missing: 0, excluded: 0 };
+  const progress = { ...record, lastCheckpoint: checkpoint, recentProgress: [record.lastObservation] };
+  assert.equal(richer.capabilities.taskProgress, 1);
+  assert.equal(richer.publish({ ...update, taskHistory: progress }), true);
+  assert.match(selection()!.previewLines!.join(" "), /Last reported step · Child settled.*awaiting publication/);
+  assert.equal(
+    richer.publish({
+      ...update,
+      sequence: 2,
+      taskHistory: { ...progress, recentProgress: Array(5).fill(record.lastObservation) },
+    }),
+    false,
+  );
+  assert.equal(
+    richer.publish({
+      ...update,
+      sequence: 2,
+      taskHistory: { ...progress, lastCheckpoint: { ...checkpoint, files: -1 } },
+    }),
+    false,
+  );
+  assert.equal(
+    richer.publish({
+      ...update,
+      sequence: 2,
+      taskHistory: { ...progress, lastCheckpoint: { ...checkpoint, state: "published" } },
+    }),
+    true,
+  );
+  assert.match(selection()!.previewLines!.join(" "), /saved to private history/);
+  richer.close();
   assert.equal(selection(), undefined);
 });
