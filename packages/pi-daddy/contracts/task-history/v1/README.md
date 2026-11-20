@@ -55,3 +55,22 @@ ID. The returned signal carries task cancellation. The owner reports observed
 cleanup as settled, proven unstarted or unknown. Uncertain effects require
 owner reconciliation. The optional native evidence selector identifies a
 receipt within an owner's store. The owner still checks access on every read.
+
+## Reading the dispatch journal
+
+Bookie requests `pi.task-history.v1.replay` with its current session, working
+folder, project, selected task, owner `pi-daddy`, exclusive `after` cursor and
+a bounded page size. A single matching owner synchronously supplies a read
+function. The function checks current access before and after reading. It
+returns `after`, `next`, `more`, `events` and one `provenance` entry per
+returned event. The provenance holds the native journal sequence and
+`recordedAt` in UTC.
+
+Root tasks can govern their children's aggregate allowance. The journal
+filters each page for the selected task. A page with no visible entries can
+advance the cursor over work that belongs to other tasks. The cursor refers
+to the durable owner stream; it is independent of wall-clock order. Bookie
+retains the page and cursor together, retains the original timestamp and
+exposes indexing time separately. A replayed dispatch fact describes
+admission, controls or observed cleanup. The product's execution owner still
+holds the evidence for delivery or acceptance.
