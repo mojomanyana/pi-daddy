@@ -310,6 +310,7 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
     details: [
       ...details,
       `Task: ${history.taskId}`,
+      "In Pi, /bookie-task switch opens other task histories.",
       ...(controls && !controls.inherited
         ? [
             ":task pause stops new task operations. :task cancel also signals participating workers.",

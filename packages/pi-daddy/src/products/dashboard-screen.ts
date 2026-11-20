@@ -467,9 +467,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "r: recent session activity and review counts",
       "Wide terminals preview the selected item. x shows more session information.",
       "x in a review detail: show or hide its source and exact reference",
-      session?.taskDispatch && !disconnected
-        ? ":task pause, :task cancel, :task resume, :task budget [owner] <attempts|off> control registered operations."
-        : "Request cancellation in the owning Pi session.",
+      session?.taskDispatch?.inherited && !disconnected
+        ? "Select the parent task in Bookie to change shared dispatch controls."
+        : session?.taskDispatch && !disconnected
+          ? ":task pause, :task cancel, :task resume, :task budget [owner] <attempts|off> control registered operations."
+          : "Request cancellation in the owning Pi session.",
       "Goals/next steps are owner recommendations, not execution authority.",
       "Reviews apply only to their exact subject; completed is not accepted.",
       "Evidence rows are references; content needs its authorized resolver.",

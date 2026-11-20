@@ -59,10 +59,12 @@ export function createTaskDispatchController(
           if (accepting) response.unavailable = true;
         },
         accept(candidate: TaskScope) {
-          if (accepting && response.scope) response.unavailable = true;
+          if (!accepting) return;
+          if (response.scope) {
+            response.unavailable = true;
+            return;
+          }
           if (
-            accepting &&
-            !response.scope &&
             candidate &&
             typeof candidate.projectId === "string" &&
             typeof candidate.taskId === "string" &&
@@ -71,6 +73,7 @@ export function createTaskDispatchController(
             typeof candidate.assertCurrent === "function"
           )
             response.scope = candidate;
+          else response.unavailable = true;
         },
       });
     } catch {
