@@ -10,7 +10,7 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 ```bash
 pi install npm:pi-bookie@0.9.0
 pi install npm:pi-daddy@0.63.0
-pi install npm:principal-pi-skills@4.19.0
+pi install npm:principal-pi-skills@4.19.1
 pi install npm:pi-scout-research@0.4.0
 pi install npm:skill-harness@0.37.0
 ```
