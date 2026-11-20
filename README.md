@@ -58,6 +58,15 @@ Local scripted checks establish control behavior and propagation. They do not
 establish that Ambitious improves a model's judgment, delivery quality or speed;
 that requires a separately designed comparison.
 
+## Shared task history and controls
+
+Select a task through Bookie to see its title and latest recorded event at the top of Overview and Tasks. Open the row to inspect the reporting tool, event time and dispatch state. Each tool retains its own execution receipts.
+
+In task details, press **p** to pause new work, **c** to request cancellation, **u** to resume or **b** to set a budget. Press Enter to apply. Pause lets admitted work settle. Cancel signals participating workers and displays pending cleanup. Resume after cancellation requires confirmed cleanup. These controls apply to task-bound operations participating in the local protocol. The individual tool still determines what it may execute.
+
+Use `:task budget 12` to share twelve admitted attempts across participating operations, including children and their enrolled research or evaluation calls. Related subtasks inherit the parent’s allowance and pause state. Select the root task to change its shared controls. Each subtask retains its own observation history. Each distinct owner operation consumes one shared attempt. You can also limit an individual owner. For example, `:task budget scout 4` allows four Scout attempts in total for this task. `:task budget pi-daddy off` removes the parent-delegation cap. Counts and controls follow the selected project and task across sessions in this Pi agent directory. Reusing a retained result consumes no attempt. A budget requires an explicit value. External services, token usage and money have separate accounting. Participating Daddy writers share one reservation per working copy. For parallel edits, choose separate registered Git worktrees. Reads and receipt reuse can proceed alongside a writer. If Pi exits during reservation, its successor can release the writer after proving the original process died before native execution began. A recorded launch intent still requires a native cleanup receipt. The original admitted attempt remains in history and retains its budget charge. Other processes can still edit the filesystem.
+
+
 ## Reliable workflow handoffs
 
 Native delegation accepts an optional stable `operation_id`. The session owner admits one
@@ -72,6 +81,8 @@ Principal 4.12.0 introduced automatic operation IDs and exact candidate/report r
 
 The dashboard shows the selected task's last observed tool event and time since that event.
 With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
+
+Select an open choice and press **Enter** to answer or **Decide later**. When Bookie supports corrections, **Not a separate decision** offers a separate confirmation: remove only that item from Open choices, keep the original note, and record no answer. Use it for a progress summary mistakenly presented as another decision. Decide later still leaves the choice open. Older Bookie versions retain their existing answer/view controls; no question is hidden by its wording.
 
 **Memory** and **Research** show what compatible tools can currently access and a short preview of saved topics.
 Select a row and press **Enter** to browse its summaries and gaps; press **x** in details for exact source references.

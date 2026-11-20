@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pi-ecosystem:task-history:observation:v1",
+  "title": "Task history observation",
+  "description": "Display evidence from an optional peer. An observation cannot settle a command or grant authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "owner",
+    "kind",
+    "operationId",
+    "state",
+    "label"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "owner": {
+      "enum": [
+        "pi-daddy",
+        "principal",
+        "scout",
+        "harness"
+      ]
+    },
+    "kind": {
+      "$ref": "#/$defs/token64"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "state": {
+      "$ref": "#/$defs/token64"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "operation",
+            "brief",
+            "evaluation"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "token64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  }
+}

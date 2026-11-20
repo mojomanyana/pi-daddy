@@ -15,7 +15,11 @@ export interface DashboardChoiceTarget {
   expectedOwner: { sessionId: string; cwd: string; generation: string };
 }
 export type DashboardChoiceAction = DashboardChoiceTarget &
-  ({ action: "inspect-choice" } | { action: "answer-choice"; revision: string; answer: DashboardChoiceAnswer });
+  (
+    | { action: "inspect-choice" }
+    | { action: "answer-choice"; revision: string; answer: DashboardChoiceAnswer }
+    | { action: "reclassify-choice"; revision: string }
+  );
 export type DashboardChoiceOutcome = "saved" | "refused" | "unconfirmed";
 export interface DashboardChoiceRegistration {
   version: 1;
@@ -23,6 +27,8 @@ export interface DashboardChoiceRegistration {
   cwd: string;
   sourceGeneration: string;
   renew?(): Promise<void>;
+  /** Explicit user correction only: retain the note, stop offering this record as a separate decision. */
+  reclassify?(id: string, revision: string, assertCurrent: () => void): Promise<DashboardChoiceOutcome>;
   inspect(id: string, assertCurrent: () => void): Promise<DashboardChoiceDetail | undefined>;
   answer(
     id: string,

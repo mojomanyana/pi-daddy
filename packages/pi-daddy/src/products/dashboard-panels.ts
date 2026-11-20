@@ -7,6 +7,7 @@ import { activityStoryItems } from "./dashboard-activity.ts";
 import {
   bookieOpenChoices,
   componentItems,
+  currentTaskItem,
   isComponentObservation,
   publishedEvidenceItem,
   savedEvidenceItem,
@@ -200,7 +201,7 @@ function bookieLabel(item: DashboardContribution, source: DashboardSourceSnapsho
 function rowText(item: DashboardItem, destination: DashboardDestination, selected: boolean): string {
   const label = clean(item.label);
   const marker = selected ? "> " : "  ";
-  if (item.key.startsWith("component:")) return marker + label;
+  if (item.key.startsWith("component:") || item.key.startsWith("selected-task:")) return marker + label;
   if (item.status === "last-observed") return `${marker}Last seen · ${label}`;
   if (item.reviewSummary) return marker + label;
   if (item.key.startsWith("activity:") && item.status === "observed") return marker + label;
@@ -308,7 +309,9 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
           },
         ]
       : [];
+  const selectedTask = currentTaskItem(options);
   const items = [
+    ...(selectedTask ? [selectedTask] : []),
     ...input,
     ...components.filter(needsUserInput),
     ...(ownerTurn && !parentShown
@@ -362,6 +365,7 @@ export function sessionDashboardItems(options: DashboardScreenOptions): Dashboar
 }
 
 const workGroups = [
+  "Current task",
   "Needs your permission",
   "Needs your decision",
   "Needs your input",
@@ -379,6 +383,7 @@ export function needsUserInput(item: DashboardItem): boolean {
   return !item.reviewSummary && ["needs-you", "approval-wait"].includes(item.status);
 }
 function workGroup(item: DashboardItem): string {
+  if (item.key.startsWith("selected-task:")) return "Current task";
   if (item.key.startsWith("component:"))
     return needsUserInput(item) ? "Needs your decision" : item.key === "component:bookie" ? "Memory" : "Research";
   if (item.key.startsWith("activity:")) return "Latest activity";

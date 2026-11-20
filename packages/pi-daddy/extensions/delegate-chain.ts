@@ -140,6 +140,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       // A step that throws stops the chain; the steps that ran are reported through Pi's tool_result hook.
+      const taskAdmission = session.taskDispatch?.capture();
+      const taskObservation = session.bindTaskObservation?.() ?? null;
       const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       const requested = args.steps ?? [];
@@ -176,6 +178,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
         ctx,
         signal,
         bound.bindings[0],
+        taskObservation,
       );
       const capture = publicEvidenceCall(
         session.publicEvidence,
@@ -207,6 +210,7 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       }
       let firstReservation: ReturnType<typeof reserveDelegationCapacity>;
       try {
+        await taskAdmission?.assertAvailable();
         firstReservation = reserveDelegationCapacity(session, executionIds[0]);
       } catch (error) {
         await firstClaim?.finish?.("not-started");
@@ -406,6 +410,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
             ctx,
             signal,
             {
+              taskObservation,
+              taskAdmission,
               ...(index === 0 ? { capacityReservation: firstReservation, operationClaim: firstClaim } : {}),
               definitionBinding: bound.bindings[index],
               resolvedRuntime: runtimeChoices.get(step),

@@ -334,6 +334,9 @@ async function runOneDelegationImplementation(
     askNobody?: boolean;
     /** Epoch ms the child's wall-clock deadline may not pass: the first attempt's, for a retry. */
     deadlineAt?: number;
+    /** Captured before planning. Each real executor attempt consumes its own task reservation. */
+    taskObservation?: ReturnType<NonNullable<GrantsSession["bindTaskObservation"]>> | null;
+    taskAdmission?: import("./task-dispatch-controller.ts").TaskDispatchAdmission;
     /** Composition-only observation of what this attempt spent and recorded; see `replay-retry.ts`. */
     onAttempt?: (facts: AttemptObservation) => void;
   } = {},
@@ -352,7 +355,10 @@ async function runOneDelegationImplementation(
     capacityRefusal = structuredRefusal(error.code, error.message, error.details);
   }
   let executorEntered = false;
+  let admitted: import("./task-dispatch-controller.ts").AdmittedAttempt | undefined;
+  let outcome: DelegationOutcome | undefined;
   try {
+    await options.taskAdmission?.assertAvailable();
     await session.ensureDefinitions?.();
     assertDefinitionIdentity(session, spec, options.definitionBinding?.source);
 
@@ -501,6 +507,16 @@ async function runOneDelegationImplementation(
       plan = { ...plan, ok: false, reason: modelRefusal.message, refusal: modelRefusal };
     }
 
+    if (plan.ok && options.taskAdmission) {
+      try {
+        const access = governedWorkspaceAccess(spec.workspace?.access ?? "read", plan.requested);
+        const writerFolder = access === "write" ? (preparedWorkspace?.workspace.root ?? ctx.cwd) : undefined;
+        admitted = await options.taskAdmission(ids.executionId, writerFolder);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Task dispatch unavailable";
+        plan = { ...plan, ok: false, reason: message, refusal: structuredRefusal("EXECUTOR_UNAVAILABLE", message) };
+      }
+    }
     // The capability decision provisions the child, so this append remains load-bearing and fails closed.
     try {
       await recordDelegationDecision({
@@ -559,11 +575,18 @@ async function runOneDelegationImplementation(
       runtime: resolvedRuntime,
       approvalSpent: Boolean(approvalOutcome?.approved.length || preApproved?.length),
     });
-    executorEntered = true;
-    return await executePlannedChild({
+    if (!options.operationClaim)
+      await options.taskObservation?.(ids.executionId, "delegation", "admitted", "Delegation admitted");
+    outcome = await executePlannedChild({
+      beforeRuntimeBegin: admitted?.beforeRuntimeBegin,
       capacityReservation: capacity,
       operationClaim: options.operationClaim,
-      onExecutorEntry: options.onExecutorEntry,
+      onExecutorEntry: () => {
+        executorEntered = true;
+        if (!options.operationClaim)
+          options.taskObservation?.(ids.executionId, "delegation", "started", "Delegation started");
+        options.onExecutorEntry?.();
+      },
       session,
       plan,
       agent: spec.agent,
@@ -576,12 +599,36 @@ async function runOneDelegationImplementation(
       parentToolHost: ctx,
       preparedWorkspace,
       resolvedRuntime,
-      signal,
+      signal: admitted ? (signal ? AbortSignal.any([signal, admitted.signal]) : admitted.signal) : signal,
       onProgress,
       deadlineAt: options.deadlineAt,
       onDeadline: (deadlineAt) => options.onAttempt?.({ deadlineAt }),
     });
+    return outcome;
   } finally {
+    if (!options.operationClaim && executorEntered) {
+      const settled = outcome?.cleanup?.state === "settled";
+      options.taskObservation?.(
+        ids.executionId,
+        "delegation",
+        settled ? "settled" : "cleanup-unconfirmed",
+        settled ? "Delegation cleanup confirmed" : "Delegation cleanup unconfirmed",
+      );
+    }
+    try {
+      const cleanup = outcome?.cleanup?.state;
+      admitted?.finish(
+        cleanup === "settled" || cleanup === "not-started" ? cleanup : executorEntered ? "unknown" : "not-started",
+      );
+    } catch {
+      if (outcome) {
+        outcome.control = "failed";
+        outcome.reason = [outcome.reason, "Task dispatch settlement unconfirmed; reconcile the recorded attempt"]
+          .filter(Boolean)
+          .join("; ");
+      }
+      // Native output and exceptions keep their meaning if the control journal becomes unavailable.
+    }
     capacity?.finalize(
       executorEntered
         ? { state: "unknown", reason: "execution returned without qualified cleanup" }
@@ -597,11 +644,16 @@ export async function runOneDelegation(
   const [session, spec, ids, budget, ctx, signal] = args;
   const workMode = capturedWorkMode(session);
   const finalScope = operationFinalScope(session);
-  const options = { ...args[6], ...(workMode ? { workMode } : {}) };
+  const taskAdmission = args[6] && "taskAdmission" in args[6] ? args[6].taskAdmission : session.taskDispatch?.capture();
+  const taskObservation =
+    args[6] && "taskObservation" in args[6] ? args[6].taskObservation : session.bindTaskObservation?.();
+  const options = { ...args[6], taskObservation, taskAdmission, ...(workMode ? { workMode } : {}) };
   const binding = options.definitionBinding;
   const bindOutcome = (outcome: DelegationOutcome) =>
     binding ? Object.assign(outcome, { definitionBinding: { ...binding } }) : outcome;
-  const claim = options.operationClaim ?? (await claimDelegationOperation(session, spec, ids, ctx, signal, binding));
+  const claim =
+    options.operationClaim ??
+    (await claimDelegationOperation(session, spec, ids, ctx, signal, binding, taskObservation ?? null));
   if (claim?.reused) {
     options.capacityReservation?.finalize({ state: "not-started", reason: "existing operation reused" });
     return bindOutcome(existingOperationOutcome(claim, session.depth + 1));

@@ -132,6 +132,9 @@ export async function claimDelegationOperation(
   signal?: AbortSignal,
   /** Trusted: bound by the calling tool from its own arguments and the session's describe memory; wording only. */
   definitionBinding?: DefinitionBinding,
+  taskObservation: ReturnType<
+    NonNullable<GrantsSession["bindTaskObservation"]>
+  > | null = session.bindTaskObservation?.(),
 ): Promise<OperationClaim | undefined> {
   const operationScope = session.reloadLifecycle?.operationFinals;
   const operationId = spec.operation_id;
@@ -139,6 +142,7 @@ export async function claimDelegationOperation(
   assertDelegationAuthority(session);
   if (!validOperationId(operationId)) throw Error("Invalid operation_id");
   if (signal?.aborted) throw Error("Operation request aborted");
+  const observe = taskObservation ?? undefined;
   await session.ensureDefinitions?.();
   assertDefinitionIdentity(session, spec, definitionBinding?.source);
   const context = { ...(await session.delegationContext()), ...session.parentToolContext?.(ctx) };
@@ -213,6 +217,7 @@ export async function claimDelegationOperation(
       operationScope,
       { agent, summary },
       legacyRequestDigest,
+      observe,
     );
   };
   if (!denied) return elect();

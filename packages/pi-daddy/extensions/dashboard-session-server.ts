@@ -1,3 +1,5 @@
+import { dashboardRequestTimeout, isDashboardChoiceRequest } from "../src/kernel/dashboard-request.ts";
+import { isDispatchEdit, type DispatchView } from "../src/governance/task-dispatch.ts";
 import type { DashboardChoiceDetail } from "../src/kernel/dashboard-choice.ts";
 import { isJevEditAction } from "../src/products/dashboard-settings.ts";
 import { dashboardObservation } from "./dashboard-observation.ts";
@@ -50,7 +52,7 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
     let input = "",
       handled = false;
     socket.setEncoding("utf8");
-    socket.setTimeout(2_000, () => socket.destroy());
+    socket.setTimeout(dashboardRequestTimeout(), () => socket.destroy());
     socket.on("error", () => socket.destroy());
     socket.on("data", (chunk) => {
       if (handled) return;
@@ -70,8 +72,8 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
         socket.end(JSON.stringify({ ok: false, error: "Invalid dashboard request" }) + "\n");
         return;
       }
-      const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
-      if (choiceAction && request.token === token) socket.setTimeout(30_000);
+      const choiceAction = isDashboardChoiceRequest(request.action);
+      if (request.token === token) socket.setTimeout(dashboardRequestTimeout(request.action));
       void respond(session, token, request, () => {
         if (socket.destroyed) throw Error("Dashboard disconnected");
       })
@@ -108,6 +110,7 @@ interface DashboardWireRequest {
   token?: unknown;
   action?: unknown;
   edits?: unknown;
+  edit?: unknown;
   enabled?: unknown;
   key?: unknown;
   refreshChoices?: unknown;
@@ -129,20 +132,28 @@ async function respond(
   checkClient: () => void,
 ): Promise<Record<string, unknown>> {
   if (request.token !== token) return { ok: false, error: "unauthorised dashboard request" };
-  const choiceAction = request.action === "inspect-choice" || request.action === "answer-choice";
+  const choiceAction = isDashboardChoiceRequest(request.action);
   if (request.action === "set-work-mode") {
     const allowed = ["token", "action", "expectedOwner", "selection", "scope"];
     if (Object.keys(request).some((key) => !allowed.includes(key)))
       return { ok: false, error: "Invalid work mode request" };
   }
+  if (
+    request.action === "task-dispatch" &&
+    (Object.keys(request).some((k) => !["token", "action", "expectedOwner", "edit"].includes(k)) ||
+      !isDispatchEdit(request.edit))
+  )
+    return { ok: false, error: "Invalid task control" };
   if (choiceAction) {
     const allowed = ["token", "action", "expectedOwner", "sourceGeneration", "choiceId"];
     if (request.action === "answer-choice") allowed.push("revision", "answer");
+    if (request.action === "reclassify-choice") allowed.push("revision");
     if (Object.keys(request).some((key) => !allowed.includes(key)))
       return { ok: false, choiceOutcome: "refused", error: "Invalid choice request" };
   }
   if (
     choiceAction ||
+    request.action === "task-dispatch" ||
     request.action === "edit-jev" ||
     request.action === "set-telemetry" ||
     request.action === "set-work-mode" ||
@@ -163,9 +174,22 @@ async function respond(
         error: "Dashboard owner changed before action; refresh and inspect the new session",
       };
   }
+  const visibleTask = () => {
+    const source = session.dashboardObservations?.()?.sources.find((s) => s.producer === "bookie-memory");
+    const age = source && Date.now() - Date.parse(source.observedAt);
+    return source &&
+      source.availability === "observed" &&
+      source.refresh?.state !== "failed" &&
+      age !== undefined &&
+      age >= 0 &&
+      age <= source.staleAfterMs
+      ? source.taskHistory?.taskId
+      : undefined;
+  };
   const lifecycle = session.reloadLifecycle,
     owner = lifecycle.autoMode;
   const displayOwner = session.dashboardObservations?.()?.generation;
+  let changedTask: DispatchView | undefined;
   let jev, choiceDetail: DashboardChoiceDetail | undefined;
   if (request.action === "inspect-choice") {
     choiceDetail = await session.dashboardChoices?.inspect(request.sourceGeneration, request.choiceId, checkClient);
@@ -191,6 +215,30 @@ async function respond(
             choiceOutcome: "refused",
             error: "Bookie declined the answer. Refresh and check the choice and answer.",
           };
+  } else if (request.action === "reclassify-choice") {
+    const outcome = await session.dashboardChoices?.reclassify(
+      request.sourceGeneration,
+      request.choiceId,
+      request.revision,
+      checkClient,
+    );
+    if (outcome !== "saved")
+      return {
+        ok: false,
+        choiceOutcome: outcome === "unconfirmed" ? "unconfirmed" : "refused",
+        error:
+          outcome === "unconfirmed"
+            ? "Bookie could not confirm the correction. Check project memory before retrying."
+            : "Bookie declined the correction. Refresh and reopen the item.",
+      };
+  } else if (request.action === "task-dispatch") {
+    if (!session.taskDispatch || !isDispatchEdit(request.edit))
+      return { ok: false, error: "Task controls unavailable" };
+    const taskId = request.edit.expected.taskId;
+    changedTask = await session.taskDispatch.change(request.edit, () => {
+      checkClient();
+      if (visibleTask() !== taskId) throw Error("Task controls expired. Refresh the selected task.");
+    });
   } else if (request.action === "set-work-mode") {
     checkClient();
     setWorkMode(session, request.selection, request.scope);
@@ -221,6 +269,18 @@ async function respond(
   } else if (request.action !== "get") return { ok: false, error: "unknown dashboard action" };
   const controls = await getDashboardControlState(session);
   const settings = await dashboardSettingsSnapshot(session, jev);
+  const shown = visibleTask();
+  const policy = shown ? await session.taskDispatch?.snapshot(!changedTask).catch(() => undefined) : undefined;
+  const taskDispatch = policy && policy.taskId === shown && visibleTask() === shown ? policy : undefined;
+  if (
+    changedTask &&
+    (!taskDispatch ||
+      taskDispatch.taskId !== changedTask.taskId ||
+      taskDispatch.projectId !== changedTask.projectId ||
+      taskDispatch.selectionRevision !== changedTask.selectionRevision ||
+      taskDispatch.revision !== changedTask.revision)
+  )
+    throw Error("Task changed before acknowledgment. Inspect its current state.");
   if (
     session.reloadLifecycle !== lifecycle ||
     lifecycle.autoMode !== owner ||
@@ -236,11 +296,14 @@ async function respond(
   const choiceControls = session.dashboardChoices?.controls();
   return {
     ok: true,
+    ...(taskDispatch ? { taskDispatch } : {}),
+    ...(changedTask ? { taskDispatchApplied: true } : {}),
     ...(choiceControls ? { choiceControls } : {}),
     ...(choiceRefreshRequested ? { choiceRefreshRequested: true } : {}),
     ...(sourceRefreshRequested ? { sourceRefreshRequested: true } : {}),
     ...(choiceDetail ? { choiceDetail } : {}),
     ...(request.action === "answer-choice" ? { choiceSaved: true } : {}),
+    ...(request.action === "reclassify-choice" ? { choiceReclassified: true } : {}),
     ...(request.action === "set-work-mode" ? { workModeApplied: true } : {}),
     ...controls,
     ...dashboardObservation(session),

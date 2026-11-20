@@ -307,6 +307,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       // Reported through Pi's tool_result hook if this call throws after its child ran (2026-11-17).
+      const taskAdmission = session.taskDispatch?.capture();
+      const taskObservation = session.bindTaskObservation?.() ?? null;
       const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       await session.ensureDefinitions?.();
@@ -319,7 +321,15 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       // `delegate` for up to DEFAULT_TIMEOUT_MS — sixty minutes by default.
       const progress = progressReporter(session, [params.agent ?? "delegate"], onUpdate as never);
       const occurrence = newDelegationOccurrence(session, 0);
-      const operationClaim = await claimDelegationOperation(session, spec, occurrence, ctx, signal, definitionBinding);
+      const operationClaim = await claimDelegationOperation(
+        session,
+        spec,
+        occurrence,
+        ctx,
+        signal,
+        definitionBinding,
+        taskObservation,
+      );
       // Public capture keeps the caller's own request; the bound ID is in details.
       const capture = publicEvidenceCall(
         session.publicEvidence,
@@ -349,6 +359,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         ctx,
         signal,
         {
+          taskObservation,
+          taskAdmission,
           operationClaim,
           definitionBinding,
           onProgress: progress.sink(0),
@@ -418,6 +430,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     parameters: delegateAllParams,
     prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const taskAdmission = session.taskDispatch?.capture();
+      const taskObservation = session.bindTaskObservation?.() ?? null;
       const usageReport = childUsageReport(session, _toolCallId);
       assertDelegationAuthority(session);
       const children = params.children ?? [];
@@ -432,7 +446,15 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       try {
         for (const [index, child] of bound.specs.entries())
           claims.push(
-            await claimDelegationOperation(session, child, occurrences[index], ctx, signal, bound.bindings[index]),
+            await claimDelegationOperation(
+              session,
+              child,
+              occurrences[index],
+              ctx,
+              signal,
+              bound.bindings[index],
+              taskObservation,
+            ),
           );
       } catch (error) {
         await Promise.all(claims.map((claim) => claim?.finish?.("not-started")));
@@ -479,6 +501,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             : reserveDelegationCapacity(session, occurrences[index].executionId, split.perChild);
           enteredDelegation = true;
           return await runOneDelegation(session, child, occurrences[index], split.perChild, ctx, signal, {
+            taskObservation,
+            taskAdmission,
             operationClaim: claims[index],
             definitionBinding: bound.bindings[index],
             capacityReservation,

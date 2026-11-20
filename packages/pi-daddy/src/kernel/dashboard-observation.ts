@@ -47,11 +47,34 @@ export interface DashboardInventory {
   limited: boolean;
   entries: DashboardInventoryEntry[];
 }
+interface DashboardTaskObservation {
+  owner: string;
+  state: string;
+  label: string;
+  recordedAt: string;
+}
+export interface DashboardTaskHistory {
+  taskId: string;
+  title: string;
+  observations: number;
+  lastObservation?: DashboardTaskObservation;
+  /** Additional bounded observations only when taskProgress was negotiated. */
+  recentProgress?: DashboardTaskObservation[];
+  lastCheckpoint?: {
+    state: "captured" | "published";
+    capturedAt: string;
+    files: number;
+    missing: number;
+    excluded: number;
+  };
+}
 export interface DashboardSourceUpdate {
   sequence: number;
   items: DashboardContribution[];
   /** Send only after the registration reply advertises capabilities.inventory === 1. */
   inventory?: DashboardInventory;
+  /** Bookie can withdraw this selection independently of the source lease. */
+  taskHistory?: DashboardTaskHistory;
 }
 export interface DashboardSourceRefresh {
   state: "idle" | "checking" | "failed";
@@ -69,7 +92,7 @@ export type DashboardSourceRegistrationReply =
       version: 1;
       ok: true;
       generation: string;
-      capabilities?: { inventory: 1; refresh: 1 };
+      capabilities?: { inventory: 1; refresh: 1; taskHistory?: 1; taskProgress?: 1 };
       publish(update: DashboardSourceUpdate): boolean;
       close(): void;
     };
@@ -79,6 +102,7 @@ export interface DashboardSourceRegistration {
   cwd: string;
   producer: string;
   producerVersion: string;
+  capabilities?: { taskHistory?: 1; taskProgress?: 1 };
   /** Authorized metadata reads only, with cancellation; no automatic work or model calls. */
   refresh?: DashboardSourceRefreshCallback;
   reply(value: DashboardSourceRegistrationReply): void;
@@ -167,14 +191,55 @@ export function validDashboardInventory(value: unknown): value is DashboardInven
     return false;
   }
 }
+export function validDashboardTaskHistory(value: unknown): value is DashboardTaskHistory {
+  const keys = (data: Record<string, unknown>, allowed: string[]) =>
+    Object.keys(data).every((k) => allowed.includes(k));
+  if (
+    !object(value) ||
+    !keys(value, ["taskId", "title", "observations", "lastObservation", "recentProgress", "lastCheckpoint"]) ||
+    !bounded(value.taskId, 160) ||
+    !bounded(value.title, 160) ||
+    !Number.isSafeInteger(value.observations) ||
+    Number(value.observations) < 0
+  )
+    return false;
+  const instant = (s: unknown) => bounded(s, 32) && Number.isFinite(Date.parse(s)) && new Date(s).toISOString() === s;
+  const observation = (row: unknown) =>
+    object(row) &&
+    keys(row, ["owner", "state", "label", "recordedAt"]) &&
+    ["bookie", "pi-daddy", "principal", "scout", "harness"].includes(String(row.owner)) &&
+    bounded(row.state, 64) &&
+    bounded(row.label, 240) &&
+    instant(row.recordedAt);
+  const { lastObservation, recentProgress, lastCheckpoint } = value;
+  if (lastObservation !== undefined && (!value.observations || !observation(lastObservation))) return false;
+  if (
+    recentProgress !== undefined &&
+    (!Array.isArray(recentProgress) ||
+      recentProgress.length > Math.min(4, Number(value.observations)) ||
+      !recentProgress.every(observation))
+  )
+    return false;
+  return (
+    lastCheckpoint === undefined ||
+    (object(lastCheckpoint) &&
+      keys(lastCheckpoint, ["state", "capturedAt", "files", "missing", "excluded"]) &&
+      (lastCheckpoint.state === "captured" || lastCheckpoint.state === "published") &&
+      instant(lastCheckpoint.capturedAt) &&
+      [lastCheckpoint.files, lastCheckpoint.missing, lastCheckpoint.excluded].every(
+        (n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0,
+      ))
+  );
+}
 export function validDashboardSourceUpdate(value: unknown): value is DashboardSourceUpdate {
   if (
     !object(value) ||
-    Object.keys(value).some((k) => !["sequence", "items", "inventory"].includes(k)) ||
+    Object.keys(value).some((k) => !["sequence", "items", "inventory", "taskHistory"].includes(k)) ||
     !Number.isSafeInteger(value.sequence) ||
     Number(value.sequence) < 0 ||
     !Array.isArray(value.items) ||
     value.items.length > 8 ||
+    (value.taskHistory !== undefined && !validDashboardTaskHistory(value.taskHistory)) ||
     (value.inventory !== undefined && !validDashboardInventory(value.inventory))
   )
     return false;

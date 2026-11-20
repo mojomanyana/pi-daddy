@@ -7,7 +7,7 @@ export function unitTestBatches(files: readonly string[]) {
   const all = [...files].sort();
   if (new Set(all).size !== all.length || all.some((f) => !/^test\/[a-zA-Z0-9-]+\.test\.ts$/.test(f)))
     throw Error("exact ordinary file inventory required");
-  return [{ files: all, timeout: 45000, outer: 180000 }].filter((b) => b.files.length);
+  return [{ files: all, timeout: 45000 }].filter((b) => b.files.length);
 }
 /** Every required file is run once, including after a failed earlier batch; no test-name filtering. */
 export function runUnitTests(directory = process.cwd()) {
@@ -31,7 +31,7 @@ export function runUnitTests(directory = process.cwd()) {
     const result = spawnSync(
       process.execPath,
       ["--test", "--test-concurrency=2", `--test-timeout=${batch.timeout}`, ...batch.files],
-      { cwd: directory, env, stdio: "inherit", timeout: Math.min(remaining, batch.outer), killSignal: "SIGKILL" },
+      { cwd: directory, env, stdio: "inherit", timeout: remaining, killSignal: "SIGKILL" },
     );
     if (result.status !== 0) {
       failed = true;

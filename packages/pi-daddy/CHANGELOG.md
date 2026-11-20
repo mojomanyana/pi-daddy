@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.63.0 — 2026-11-20
+
+- With a supporting Bookie, select a task to see its latest observation and control participating operations. The dashboard offers separate pause, cancel, resume and shared and per-owner attempt allowances. Concurrent writes require separate working copies. A successor can release a crashed writer reservation when the original runtime proves launch never began. Cleanup remains visible until an execution owner confirms it. The task view shows the latest meaningful progress alongside heartbeats, failure and partial results, and whether its latest file checkpoint was captured or published. Older Bookie versions retain their existing dashboard data and standalone workflows keep their normal controls.
+
+- Added **Not a separate decision** to the saved-choice menu when the connected Bookie supports explicit corrections. Confirmation retains the original note and records no answer; Decide later keeps the choice open. The action is bound to the current owner, source and exact note revision, shares the answer lock, and reports unconfirmed saves honestly. Older Bookie versions keep their existing controls; no prose-based filtering or automatic correction is added.
+
 ## 0.62.1 — 2026-11-19
 
 - `delegate_describe` reports the selected definition's context ceiling, the `none` default and file-input bounds. Files-only reviewers no longer have to infer that summary handoffs are unsupported. Context refusals show valid correction options and distinguish a newly recorded unstarted operation from existing or unavailable records; bound workflows retain their own recovery path. No handoff is silently changed, no permission ceiling is widened, and operation identity/replay protection is unchanged.

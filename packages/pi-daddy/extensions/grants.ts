@@ -65,6 +65,7 @@ import { bindReloadLifecycle, expectNewSession } from "./reload-environment.ts";
 import { reconcileActiveDelegationTools } from "./delegation-activation.ts";
 import { resolveExecutor } from "./executor-session.ts";
 import { reportSelectedDefinitions, reportSessionStart, type SessionReportContext } from "./session-report.ts";
+import { taskInlineControl } from "./task-inline-control.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
 import {
@@ -457,6 +458,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
    * so a tool-name check cannot see it. This catches the ordinary case loudly; it is not a boundary.
    */
   pi.on("tool_call", async (event) => {
+    const held = await taskInlineControl(event.toolName, session);
+    if (held) return held;
     if (!session.governed || !SPAWN_TOOLS.has(event.toolName)) return undefined;
 
     const reason = tripwireReason(event.toolName);

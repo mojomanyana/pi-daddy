@@ -1,3 +1,5 @@
+import { createTaskDispatchController } from "./task-dispatch-controller.ts";
+import { bindTaskHistory } from "../contracts/task-history/v1/producer.ts";
 import { registerOperationRecoveryBridge } from "./operation-recovery-bridge.ts";
 import { registerDashboardPrompts } from "./dashboard-ui-prompts.ts";
 import { registerInitiativeRuntime } from "./initiative-runtime.ts";
@@ -26,29 +28,32 @@ export function registerRuntimeSnapshot(
   const generation = {};
   let bindSequence = 0;
   let artifactOwner: ArtifactBridgeOwner | undefined;
-  const initiative = registerInitiativeRuntime(pi, session, () =>
+  const currentOwner = () =>
     bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
       ? bound
-      : undefined,
+      : undefined;
+  const initiative = registerInitiativeRuntime(pi, session, currentOwner);
+  const taskDispatch = createTaskDispatchController(
+    pi.events,
+    () => (session.depth === 0 ? currentOwner() : undefined),
+    agentDir,
+    () => session.reloadLifecycle.runtimeSettlement,
   );
-  const dashboardSources = registerDashboardSources(pi, () =>
-    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
-      ? bound
-      : undefined,
-  );
+  session.taskDispatch = taskDispatch;
+  session.bindTaskObservation = () => {
+    const owner = currentOwner();
+    if (!owner || session.depth !== 0) return;
+    return bindTaskHistory(pi.events, "pi-daddy", {
+      cwd: owner.cwd,
+      sessionManager: { getSessionId: () => owner.sessionId },
+    });
+  };
+  const dashboardSources = registerDashboardSources(pi, currentOwner);
   session.dashboardObservations = () => dashboardSources.snapshot();
   session.dashboardRefreshSources = () => dashboardSources.requestRefresh();
   session.dashboardChoices = dashboardSources.choices;
-  session.dashboardLive = registerDashboardLive(pi, () =>
-    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
-      ? bound
-      : undefined,
-  );
-  const prompts = registerDashboardPrompts(pi, () =>
-    bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
-      ? bound
-      : undefined,
-  );
+  session.dashboardLive = registerDashboardLive(pi, currentOwner);
+  const prompts = registerDashboardPrompts(pi, currentOwner);
   session.dashboardPrompt = prompts.snapshot;
   session.dashboardArtifacts = [];
 
@@ -270,6 +275,7 @@ export function registerRuntimeSnapshot(
     unsubscribeRuntime?.();
     unsubscribeOperations?.();
     unsubscribeHistory?.();
+    taskDispatch.close();
     artifactBridge.close();
     recoveryBridge.close();
     void initiative.close().catch(() => undefined);

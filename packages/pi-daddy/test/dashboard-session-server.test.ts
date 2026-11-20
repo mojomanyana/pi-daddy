@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { ensureDashboardSessionServer } from "../extensions/dashboard-session-server.ts";
 import { initializeSessionAutoMode, closeSessionAutoMode } from "../extensions/session-auto-mode.ts";
 import type { GrantsSession } from "../extensions/session.ts";
@@ -133,6 +134,76 @@ test("Auto transport authenticates owner edits and returns the actual pending qu
     assert.equal((await request({ action: "set-auto", enabled: false })).auto.enabled, false);
     await closeSessionAutoMode(session);
     await assert.rejects(request({ action: "set-auto", enabled: true }), /unavailable/);
+  } finally {
+    await endpoint.close();
+    await closeSessionAutoMode(session);
+  }
+});
+
+test("task controls and choice corrections wait for their authenticated owners past the polling deadline", async () => {
+  const owner = { cwd: "/work", sessionId: "owner", generation: "session-1" };
+  const expected = { projectId: "project", taskId: "task", revision: 0, selectionRevision: 1 };
+  const view = { ...expected, state: "paused", outstanding: 0, admitted: 0, limit: null, counts: {} };
+  let changes = 0,
+    corrections = 0;
+  const session = {
+    episodeId: newEpisodeId(),
+    ownerBound: true,
+    reloadLifecycle: { root: {} },
+    definitions: new Map(),
+    definitionRuntimeSettings: { definitions: new Map(), defaults: {} },
+    definitionRuntimeOverrides: new Map(),
+    dashboardObservations: () => ({
+      ...owner,
+      sources: [
+        {
+          producer: "bookie-memory",
+          observedAt: new Date().toISOString(),
+          staleAfterMs: 120_000,
+          availability: "observed",
+          taskHistory: { taskId: expected.taskId },
+        },
+      ],
+    }),
+    taskDispatch: {
+      snapshot: async () => view,
+      change: async (_edit: unknown, checkClient: () => void) => {
+        await delay(2_300);
+        checkClient();
+        changes++;
+        return view;
+      },
+    },
+    dashboardChoices: {
+      controls: () => undefined,
+      reclassify: async (_source: string, _id: string, _revision: string, checkClient: () => void) => {
+        await delay(2_300);
+        checkClient();
+        corrections++;
+        return "saved";
+      },
+    },
+  } as unknown as GrantsSession;
+  await initializeSessionAutoMode(session, {}, owner.sessionId);
+  const endpoint = await ensureDashboardSessionServer(session);
+  try {
+    const [task, choice] = await Promise.all([
+      dashboardSessionRequest(endpoint.socketPath, endpoint.token, {
+        action: "task-dispatch",
+        expectedOwner: owner,
+        edit: { action: "pause", expected },
+      }),
+      dashboardSessionRequest(endpoint.socketPath, endpoint.token, {
+        action: "reclassify-choice",
+        expectedOwner: owner,
+        sourceGeneration: "source-1",
+        choiceId: "open-choice-one",
+        revision: "sha256:" + "a".repeat(64),
+      }),
+    ]);
+    assert.equal(task.taskDispatchApplied, true);
+    assert.equal(choice.choiceReclassified, true);
+    assert.deepEqual([changes, corrections], [1, 1]);
   } finally {
     await endpoint.close();
     await closeSessionAutoMode(session);

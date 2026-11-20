@@ -42,7 +42,9 @@ export interface DashboardItem {
   observation?: string;
   taskKey?: string;
   timelinePath?: string;
+  dispatchTaskId?: string;
   choice?: DashboardChoiceTarget;
+  reclassifyChoice?: true;
   approval?: boolean;
   skills?: boolean;
   agent?: boolean;
@@ -252,7 +254,7 @@ function sessionLocation(screen: DashboardScreenState, width: number): string {
     versions: "Versions",
     "version-details": "Version details",
     recap: "Session recap",
-    choice: "Answer choice",
+    choice: "Project choice",
     "work-mode": "Work mode",
   };
   const name = destinationNames[destination];
@@ -269,6 +271,8 @@ function sessionKeys(screen: DashboardScreenState, selected: DashboardItem | und
   const view = screen.view;
   const brief = width < 34;
   if (view === "choice") return choiceKeys(screen);
+  if (view === "details" && selected?.dispatchTaskId)
+    return ["p Pause · c Cancel · u Resume · b Budget", "Enter confirms command · Esc back"];
   if (view === "work-mode") return ["↑↓ select · Enter/Space change", "Apply saves · Esc cancels"];
   if (view === "main") {
     if (selected?.choice) return ["↑↓ select · Enter answer", "d details · q close"];
@@ -391,7 +395,9 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       fixed.push(...wrapDashboardLines(["In the current Pi chat, run /grants dashboard."], width));
   } else if (screen.view !== "choice" && (options.notice || options.problem))
     fixed.push(`! ${clean(options.notice || options.problem || "")}`);
-  const ack = options.acknowledgment?.action === "answer-choice" ? undefined : options.acknowledgment;
+  const ack = ["answer-choice", "reclassify-choice"].includes(options.acknowledgment?.action ?? "")
+    ? undefined
+    : options.acknowledgment;
   if (ack?.state === "unconfirmed") {
     const setting =
       (
@@ -402,6 +408,7 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
           set: "model",
           "set-limit": "limit",
           "set-work-mode": "work mode",
+          "task-dispatch": "task control",
         } as Record<string, string>
       )[ack.action] ?? "setting";
     fixed.push(
@@ -460,7 +467,11 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
       "r: recent session activity and review counts",
       "Wide terminals preview the selected item. x shows more session information.",
       "x in a review detail: show or hide its source and exact reference",
-      "No cancellation shortcut: request it in the owning Pi session.",
+      session?.taskDispatch?.inherited && !disconnected
+        ? "Select the parent task in Bookie to change shared dispatch controls."
+        : session?.taskDispatch && !disconnected
+          ? ":task pause, :task cancel, :task resume, :task budget [owner] <attempts|off> control registered operations."
+          : "Request cancellation in the owning Pi session.",
       "Goals/next steps are owner recommendations, not execution authority.",
       "Reviews apply only to their exact subject; completed is not accepted.",
       "Evidence rows are references; content needs its authorized resolver.",

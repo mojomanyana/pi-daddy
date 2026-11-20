@@ -97,7 +97,12 @@ export function registerDashboardChoiceOwner(pi: ExtensionAPI, lookup: () => Sou
     },
     controls() {
       const entry = active();
-      return entry ? { sourceGeneration: entry.source.generation } : undefined;
+      return entry
+        ? {
+            sourceGeneration: entry.source.generation,
+            ...(typeof entry.provider.reclassify === "function" ? { reclassify: true as const } : {}),
+          }
+        : undefined;
     },
     currentDetail(sourceGeneration: unknown, detail: DashboardChoiceDetail) {
       const entry = ready(sourceGeneration, detail.id);
@@ -137,6 +142,33 @@ export function registerDashboardChoiceOwner(pi: ExtensionAPI, lookup: () => Sou
       try {
         assertCurrent();
         const result = await entry.provider.answer(id, revision, answer, assertCurrent);
+        return result === "saved" || result === "refused" ? result : "unconfirmed";
+      } catch {
+        return "unconfirmed";
+      } finally {
+        saving = undefined;
+      }
+    },
+    async reclassify(
+      sourceGeneration: unknown,
+      id: unknown,
+      revision: unknown,
+      checkClient: () => void,
+    ): Promise<DashboardChoiceOutcome> {
+      const entry = ready(sourceGeneration, id);
+      if (
+        !entry ||
+        typeof id !== "string" ||
+        !validChoiceRevision(revision) ||
+        typeof entry.provider.reclassify !== "function" ||
+        saving
+      )
+        return "refused";
+      const assertCurrent = fence(entry, id, row(entry, id)!.label, checkClient);
+      saving = entry;
+      try {
+        assertCurrent();
+        const result = await entry.provider.reclassify(id, revision, assertCurrent);
         return result === "saved" || result === "refused" ? result : "unconfirmed";
       } catch {
         return "unconfirmed";

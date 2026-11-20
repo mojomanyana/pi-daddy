@@ -101,6 +101,7 @@ export function bookieOpenChoices(options: DashboardScreenOptions): DashboardIte
       key: `source:${source.producer}:${source.generation}:${i.id}`,
       label: i.label,
       status: "open-choice",
+      ...(canAnswer && options.session?.choiceControls?.reclassify === true ? { reclassifyChoice: true as const } : {}),
       ...(canAnswer && validChoiceId(i.id)
         ? {
             choice: {
@@ -262,6 +263,89 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
       ...sourceDetails.filter((line) => !isMemory || line !== BOOKIE_LIMIT_MESSAGE),
       ...(pkg?.installedVersion ? [`Installed version: ${pkg.installedVersion}`] : []),
       ...(pkg?.loadedVersion ? [`Running version: ${pkg.loadedVersion}`] : []),
+    ],
+  };
+}
+
+/** Task summaries are visible only while the granting Bookie source is current. */
+export function currentTaskItem(options: DashboardScreenOptions): DashboardItem | undefined {
+  const source = options.session?.observation?.sources.find((s) => s.producer === "bookie-memory");
+  const history = source?.taskHistory;
+  if (!history || !source || !current(source, options) || source.refresh?.state === "failed") return;
+  const last = history.lastObservation;
+  const recent = last ? [`Last recorded · ${last.label}`] : [];
+  const progress = history.recentProgress ?? [];
+  const checkpoint = history.lastCheckpoint;
+  const capture = checkpoint
+    ? [
+        checkpoint.state === "published"
+          ? "Checkpoint saved to private history"
+          : "Checkpoint captured · awaiting publication",
+      ]
+    : [];
+  const policy = options.session?.taskDispatch;
+  const controls = policy?.taskId === history.taskId && policy.counts ? policy : undefined;
+  const dispatch = controls
+    ? [
+        `Task dispatch · ${controls.state} · ${controls.outstanding} awaiting cleanup`,
+        `${controls.admitted} total attempts · ${controls.limit === null ? "no shared cap" : "shared limit " + controls.limit}`,
+        ...Object.entries(controls.counts)
+          .filter(([owner, c]) => owner === "pi-daddy" || c.admitted || c.limit !== null)
+          .map(
+            ([owner, c]) =>
+              `${owner}: ${c.admitted} admitted · ${c.limit === null ? "no attempt cap" : "limit " + c.limit}`,
+          ),
+      ]
+    : [];
+  const details = [
+    ...capture,
+    ...(checkpoint
+      ? [
+          `${checkpoint.files} files · ${checkpoint.missing} missing · ${checkpoint.excluded} excluded · captured ${checkpoint.capturedAt}`,
+        ]
+      : []),
+    ...(progress.length
+      ? [
+          "Recent reported progress",
+          ...progress.map((row) => `${row.label} · ${row.state} · ${row.owner} · ${row.recordedAt}`),
+        ]
+      : []),
+    ...dispatch,
+    ...(controls?.inherited ? ["Shared with this task’s parent. Select the parent task to change controls."] : []),
+    ...(!controls ? ["Task dispatch controls unavailable in this session."] : []),
+    ...(controls?.observedAt ? ["Dispatch state checked " + controls.observedAt] : []),
+    ...recent,
+    ...(last ? [`Reported by ${last.owner} · ${last.recordedAt}`, `Recorded state: ${last.state}`] : []),
+    `${history.observations} recorded observation${history.observations === 1 ? "" : "s"} from connected tools.`,
+    "History coverage is partial. An owner can finish while Bookie is unavailable.",
+    "Open the producing tool’s receipt to verify a delivery.",
+  ];
+  return {
+    ...(controls && !controls.inherited ? { dispatchTaskId: history.taskId } : {}),
+    key: `selected-task:${source.generation}:${history.taskId}`,
+    label: history.title,
+    status: "selected",
+    elapsed: "",
+    previewLines: [
+      ...dispatch.slice(0, 1),
+      ...(progress.length
+        ? ["Last reported step · " + progress[0]!.label]
+        : recent.length
+          ? recent
+          : ["No owner observations recorded yet."]),
+      ...capture,
+    ],
+    briefDetails: details,
+    details: [
+      ...details,
+      `Task: ${history.taskId}`,
+      "In Pi, /bookie-task switch opens other task histories.",
+      ...(controls && !controls.inherited
+        ? [
+            ":task pause stops new task operations. :task cancel also signals participating workers.",
+            ":task resume allows new work. :task budget [task|pi-daddy|scout|harness|jev] <attempts|off> sets an owner cap.",
+          ]
+        : []),
     ],
   };
 }

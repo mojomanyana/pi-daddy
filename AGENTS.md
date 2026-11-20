@@ -207,6 +207,18 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-20 — shared task history and dispatch.** Bookie identifies the active project/task under its current grant. A captured observation publisher carries bounded metadata for display. Daddy owns admission, controls and its durable reservation journal. Each participating execution owner supplies a single-use native attempt ID, acknowledges cleanup and passes on cancellation. A completed receipt can be reused without a new reservation. Scope changes fence new execution and control changes. The shared limit counts each distinct enrolled operation, with optional per-owner limits. Authenticated declared child tasks inherit their root task’s policy and retain scoped replay histories. Shared controls can be edited only from that root. All limits require explicit operator values. Participating Daddy writers reserve the actual working copy across task histories. Registered disjoint worktrees can run concurrently. The default path preserves the original execution folder and uses the same worktree identity for a nested folder. A 2026-11-20 follow-up pins provisional reservations to the native process birth token, PID namespace and durable runtime owner scope. An absent native intent proves no launch only after that pinned process is proved gone in the same boot and the matching stable journal is read again. A pending native intent still needs its own cleanup evidence.
+
+### 2026-11-19 — Correcting a non-decision is separate from answering
+
+The optional `reclassify(id, revision, assertCurrent)` callback on Bookie's v1 choice registration means only
+the explicit user action **Not a separate decision**. Daddy advertises `choiceControls.reclassify: true` only
+when that callback exists; the strict choice-detail DTO is unchanged. Older Daddy ignores the optional callback,
+and new Daddy with an older Bookie offers no correction. The authenticated `reclassify-choice` request carries
+the existing owner/source/choice identity and revision, never answer text. Confirmation explains that the
+original note stays and no answer is recorded. Answer and correction share the owner write lock. Bookie owns
+canonical provenance, persistence and answer/correction exclusion; Daddy does not classify question prose.
+
 ### 2026-11-19 — Optional work mode steers approach without changing execution authority
 
 Standard is the default and an exact guidance no-op. Only explicit operator selection in the

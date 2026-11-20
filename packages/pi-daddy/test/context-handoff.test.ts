@@ -183,8 +183,11 @@ test("a forked child is planned with --fork and never beside --session, which pi
 
 test("staging reads only inside the working directory and says so when it will not", async () => {
   // Breaks by: resolving a model-supplied path without confining it, which turns the fence into a read tool.
-  const cwd = await tempDir("context-staging-");
-  await mkdir(join(cwd, "src"));
+  const fixture = await tempDir("context-staging-");
+  const cwd = join(fixture, "workspace");
+  await mkdir(join(cwd, "src"), { recursive: true });
+  const sibling = join(fixture, "sibling.txt");
+  await writeFile(sibling, "unrelated fixture content");
   await writeFile(join(cwd, "src", "a.ts"), "export const a = 1;\n");
   const stage = createHandoffStager({ cwd, forkRoot: join(cwd, "forks") });
 
@@ -193,8 +196,8 @@ test("staging reads only inside the working directory and says so when it will n
   assert.equal(inside.record?.mode, "files");
   assert.equal(inside.record?.sections, 1);
 
-  const outside = stage({ mode: "files", files: ["../../etc/passwd", "/etc/passwd"] });
-  assert.doesNotMatch(String(outside.contextPrompt), /root:/);
+  const outside = stage({ mode: "files", files: ["../sibling.txt", sibling] });
+  assert.doesNotMatch(String(outside.contextPrompt), /unrelated fixture content/);
   assert.match(String(outside.contextPrompt), /outside this session's working directory/);
 
   const missing = stage({ mode: "files", files: ["src/gone.ts"] });

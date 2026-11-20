@@ -56,6 +56,7 @@ export function registerDashboardSources(
       cwd?: unknown;
       producer?: unknown;
       producerVersion?: unknown;
+      capabilities?: { taskHistory?: unknown; taskProgress?: unknown };
       refresh?: unknown;
       reply?: (value: unknown) => void;
     };
@@ -85,6 +86,8 @@ export function registerDashboardSources(
     }
     const producer = r.producer,
       token = randomUUID();
+    const taskHistoryEnabled = producer === "bookie-memory" && r.capabilities?.taskHistory === 1;
+    const progressEnabled = taskHistoryEnabled && r.capabilities?.taskProgress === 1;
     const snapshot: DashboardSourceSnapshot = {
       producer,
       producerVersion: r.producerVersion,
@@ -102,8 +105,16 @@ export function registerDashboardSources(
       reconcile() === selected && sources.get(producer) === snapshot && snapshot.availability !== "closed";
     const publish = (value: DashboardSourceUpdate) => {
       if (!active() || !validDashboardSourceUpdate(value) || value.sequence <= snapshot.sequence) return false;
+      if (value.taskHistory !== undefined && !taskHistoryEnabled) return false;
+      if (
+        !progressEnabled &&
+        (value.taskHistory?.recentProgress !== undefined || value.taskHistory?.lastCheckpoint !== undefined)
+      )
+        return false;
       snapshot.sequence = value.sequence;
       snapshot.items = structuredClone(value.items);
+      if (value.taskHistory) snapshot.taskHistory = structuredClone(value.taskHistory);
+      else delete snapshot.taskHistory;
       if (value.inventory) snapshot.inventory = structuredClone(value.inventory);
       else delete snapshot.inventory;
       snapshot.observedAt = new Date(now()).toISOString();
@@ -118,14 +129,21 @@ export function registerDashboardSources(
       version: 1,
       ok: true,
       generation: token,
-      capabilities: { inventory: 1, refresh: 1 },
+      capabilities: {
+        inventory: 1,
+        refresh: 1,
+        ...(taskHistoryEnabled ? { taskHistory: 1 } : {}),
+        ...(progressEnabled ? { taskProgress: 1 } : {}),
+      },
       publish(value: DashboardSourceUpdate) {
         const previousInventory = snapshot.inventory;
+        const previousHistory = snapshot.taskHistory;
         if (!publish(value)) return false;
         refreshers
           .get(producer)
           ?.observed(
-            value.inventory !== undefined && JSON.stringify(previousInventory) !== JSON.stringify(value.inventory),
+            (value.inventory !== undefined && JSON.stringify(previousInventory) !== JSON.stringify(value.inventory)) ||
+              JSON.stringify(previousHistory) !== JSON.stringify(value.taskHistory),
           );
         return true;
       },
@@ -134,6 +152,7 @@ export function registerDashboardSources(
           refreshers.get(producer)?.close();
           refreshers.delete(producer);
           delete snapshot.inventory;
+          delete snapshot.taskHistory;
           snapshot.items = snapshot.items.filter((item) => !isBookieChoice(producer, item));
           snapshot.availability = "closed";
           snapshot.observedAt = new Date(now()).toISOString();
