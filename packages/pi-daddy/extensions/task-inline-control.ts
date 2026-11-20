@@ -12,9 +12,10 @@ export async function taskInlineControl(toolName: string, session: InlineSession
   try {
     await session.taskDispatch?.captureInline()?.();
   } catch (error) {
-    const reason = error instanceof Error && error.message === "Task dispatch is stopped. Inspect task controls before resuming."
-      ? "This task is paused or cancelled. Open task controls to resume when ready."
-      : "The selected task could not be verified. Reopen its history before starting new work.";
+    const reason =
+      error instanceof Error && error.message === "Task dispatch is stopped. Inspect task controls before resuming."
+        ? "This task is paused or cancelled. Open task controls to resume when ready."
+        : "The selected task could not be verified. Reopen its history before starting new work.";
     return { block: true, reason };
   }
 }

@@ -94,7 +94,9 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     assert.deepEqual(session.dashboardObservations?.()?.sources, []);
     assert.equal(publisher.publish({ sequence: 1, items: [] }), false);
     assert.equal(listeners.has("pi-daddy:bookie-choice-controls:v1"), true);
-    assert.equal(listeners.size, 8);
+    assert.equal(listeners.has("pi.task-dispatch.v1.bind"), true);
+    assert.equal(listeners.has("pi.task-history.v1.replay"), true);
+    assert.equal(listeners.size, 10);
     for (const set of listeners.values()) assert.equal(set.size, 1, "one active handler per named event after reload");
     const reloaded = await snapshot();
     assert.equal(reloaded.ownerScope, settled.ownerScope);

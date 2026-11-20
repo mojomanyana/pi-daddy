@@ -5,10 +5,15 @@ import { taskInlineControl } from "../extensions/task-inline-control.ts";
 test("task controls hold new root inline work and permit history, inspection and independently governed children", async () => {
   let checks = 0;
   let stopped = true;
-  const session = { depth: 0, taskDispatch: { captureInline: () => async () => {
-    checks++;
-    if (stopped) throw Error("Task dispatch is stopped. Inspect task controls before resuming.");
-  } } };
+  const session = {
+    depth: 0,
+    taskDispatch: {
+      captureInline: () => async () => {
+        checks++;
+        if (stopped) throw Error("Task dispatch is stopped. Inspect task controls before resuming.");
+      },
+    },
+  };
   for (const name of ["write", "edit", "bash", "apply_patch"]) {
     assert.match((await taskInlineControl(name, session))!.reason, /paused or cancelled/);
   }
@@ -24,7 +29,14 @@ test("task controls hold new root inline work and permit history, inspection and
 });
 
 test("unavailable task binding holds work without echoing provider details", async () => {
-  const session = { depth: 0, taskDispatch: { captureInline: () => { throw Error("private detail"); } } };
+  const session = {
+    depth: 0,
+    taskDispatch: {
+      captureInline: () => {
+        throw Error("private detail");
+      },
+    },
+  };
   const result = await taskInlineControl("edit", session);
   assert.equal(result?.block, true);
   assert.match(result!.reason, /selected task/);
