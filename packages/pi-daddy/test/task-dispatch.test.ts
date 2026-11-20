@@ -191,6 +191,18 @@ test("optional task broker distinguishes absent, revoked, stale and admitted sco
   );
   assert.ok(typeof action !== "string");
   assert.equal(action.edit.owner, "task");
+  await controller.change({ ...action.edit, limit: 1 }, () => {});
+  await controller.captureInline()!();
+  const policy = (await controller.snapshot())!;
+  await controller.change(
+    {
+      action: "pause",
+      expected: { projectId: "p", taskId: "second", selectionRevision: 1, revision: policy.revision },
+    },
+    () => {},
+  );
+  await assert.rejects(controller.captureInline()!(), /stopped/);
+
   revoked = true;
   await assert.rejects(readPage(), /revoked/);
   await assert.rejects(bind()({ operationId: "next" }), /unavailable/);
@@ -198,4 +210,33 @@ test("optional task broker distinguishes absent, revoked, stale and admitted sco
     controller.change(action.edit, () => {}),
     /unavailable/,
   );
+});
+
+test("declared tasks consume their root's shared allowance and expose only their original facts in replay", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "daddy-root-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const root = new TaskDispatch(dir, "project", "root");
+  root.change("budget", 1, 0);
+  root.admit({ owner: "harness", taskId: "first-child", executionId: "fixture", sessionId: "session", cwd: dir });
+  root.settle("harness", "fixture", "settled", "first-child");
+  assert.equal(root.snapshot(2, "sibling").inherited, true);
+  assert.throws(
+    () => root.admit({ owner: "pi-daddy", taskId: "sibling", executionId: "other", sessionId: "s", cwd: dir }),
+    /shared.*exhausted/,
+  );
+  const own = root.page(0, 3, "first-child");
+  assert.deepEqual(
+    own.events.map((e) => e.state),
+    ["admitted", "settled"],
+  );
+  assert.equal(own.next, 3);
+  assert.equal(own.more, false);
+  assert.deepEqual(root.page(0, 3, "sibling").events, []);
+  assert.deepEqual(
+    root.page(0, 3).events.map((e) => e.state),
+    ["budget"],
+  );
+  const separate = new TaskDispatch(dir, "project", "independent");
+  separate.admit({ owner: "pi-daddy", executionId: "other", sessionId: "s", cwd: dir });
+  assert.equal(separate.snapshot(1).admitted, 1);
 });

@@ -13,6 +13,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 interface TaskScope {
   projectId: string;
+  budgetRootTaskId?: string;
   taskId: string;
   revision: number;
   assertCurrent(): Promise<void>;
@@ -34,9 +35,13 @@ export function createTaskDispatchController(
 ) {
   let lastBoundHost: Host | undefined;
   let previous: TaskDispatch | undefined;
+  let lastDisplay:
+    | { host: Host; project: string; task: string; root: string; revision: number; checked: number; view: DispatchView }
+    | undefined;
   const storeFor = (scope: TaskScope) => {
-    if (!previous || previous.projectId !== scope.projectId || previous.taskId !== scope.taskId)
-      previous = new TaskDispatch(directory(), scope.projectId, scope.taskId);
+    const rootId = scope.budgetRootTaskId ?? scope.taskId;
+    if (!previous || previous.projectId !== scope.projectId || previous.taskId !== rootId)
+      previous = new TaskDispatch(directory(), scope.projectId, rootId);
     return previous;
   };
 
@@ -61,6 +66,7 @@ export function createTaskDispatchController(
             candidate &&
             typeof candidate.projectId === "string" &&
             typeof candidate.taskId === "string" &&
+            (candidate.budgetRootTaskId === undefined || typeof candidate.budgetRootTaskId === "string") &&
             Number.isSafeInteger(candidate.revision) &&
             typeof candidate.assertCurrent === "function"
           )
@@ -86,6 +92,22 @@ export function createTaskDispatchController(
   }
 
   const controller = {
+    /** An inline effect's owner can consult the shared pause state without spending a delegated attempt. */
+    captureInline(): (() => Promise<void>) | undefined {
+      let binding: ReturnType<typeof select>;
+      try {
+        binding = select();
+      } catch (error) {
+        return async () => {
+          throw error;
+        };
+      }
+      if (!binding) return;
+      return async () => {
+        await binding.assertCurrent();
+        binding.store.assertOpen();
+      };
+    },
     capture(owner: DispatchOwner = "pi-daddy", expectedHost?: Host): TaskDispatchAdmission | undefined {
       if (expectedHost && (current()?.cwd !== expectedHost.cwd || current()?.sessionId !== expectedHost.sessionId))
         return;
@@ -113,12 +135,12 @@ export function createTaskDispatchController(
         let reserved = false;
         try {
           await binding.assertCurrent();
-          store.admit({ owner, executionId, cwd: host.cwd, sessionId: host.sessionId });
+          store.admit({ owner, executionId, taskId: scope.taskId, cwd: host.cwd, sessionId: host.sessionId });
           reserved = true;
           await binding.assertCurrent();
         } catch (error) {
           try {
-            if (reserved) store.settle(owner, executionId, "not-started");
+            if (reserved) store.settle(owner, executionId, "not-started", scope.taskId);
           } finally {
             writer?.("not-started");
           }
@@ -141,7 +163,7 @@ export function createTaskDispatchController(
             clearInterval(timer);
             if (cleanup === "settled" || cleanup === "not-started") {
               try {
-                store.settle(owner, executionId, cleanup);
+                store.settle(owner, executionId, cleanup, scope.taskId);
               } finally {
                 writer?.(cleanup);
               }
@@ -160,15 +182,40 @@ export function createTaskDispatchController(
           const pending = binding.store.outstanding().find((a) => a.owner === owner && a.executionId === executionId);
           if (!pending) return;
           if (pending.cwd !== binding.host.cwd) throw Error("Original execution folder changed");
-          binding.store.settle(owner, executionId, cleanup);
+          binding.store.settle(owner, executionId, cleanup, binding.scope.taskId);
         },
       });
     },
-    async snapshot(): Promise<DispatchView | undefined> {
+    async snapshot(reuseDisplayed = false): Promise<DispatchView | undefined> {
       const binding = select();
       if (!binding) return;
+      const { scope, host, store } = binding;
+      if (
+        reuseDisplayed &&
+        lastDisplay &&
+        lastDisplay.host === host &&
+        lastDisplay.root === store.taskId &&
+        lastDisplay.project === scope.projectId &&
+        lastDisplay.task === scope.taskId &&
+        lastDisplay.revision === scope.revision &&
+        Date.now() >= lastDisplay.checked &&
+        Date.now() - lastDisplay.checked < 1000
+      )
+        return lastDisplay.view;
       await binding.assertCurrent();
-      return binding.store.snapshot(binding.scope.revision);
+      const checked = Date.now(),
+        view = store.snapshot(scope.revision, scope.taskId);
+      view.observedAt = new Date(checked).toISOString();
+      lastDisplay = {
+        host,
+        project: scope.projectId,
+        task: scope.taskId,
+        root: store.taskId,
+        revision: scope.revision,
+        checked,
+        view,
+      };
+      return view;
     },
     async change(edit: DispatchEdit, checkClient: () => void): Promise<DispatchView> {
       const b = select();
@@ -182,6 +229,7 @@ export function createTaskDispatchController(
         !Number.isSafeInteger(expected.revision)
       )
         throw Error("Selected task changed. Inspect the current task before applying this control.");
+      if (b.store.taskId !== b.scope.taskId) throw Error("Select the parent task to change shared dispatch controls.");
       if (!isDispatchEdit(edit)) throw Error("Invalid task control");
       await b.assertCurrent();
       checkClient();
@@ -195,11 +243,13 @@ export function createTaskDispatchController(
             attempt.cwd,
             attempt.executionId,
           ).catch(() => "unknown" as const);
-          if (state !== "unknown") b.store.settle("pi-daddy", attempt.executionId, state);
+          if (state !== "unknown")
+            b.store.settle("pi-daddy", attempt.executionId, state, attempt.taskId ?? b.store.taskId);
         }
       }
       await b.assertCurrent();
       checkClient();
+      lastDisplay = undefined;
       b.store.change(edit.action, edit.limit ?? null, expected.revision, edit.owner);
       return b.store.snapshot(b.scope.revision);
     },
@@ -269,7 +319,7 @@ export function createTaskDispatchController(
       limit = req.limit;
     req.accept(async () => {
       await binding.assertCurrent();
-      const page = binding.store.page(after, limit);
+      const page = binding.store.page(after, limit, binding.scope.taskId);
       await binding.assertCurrent();
       return page;
     });

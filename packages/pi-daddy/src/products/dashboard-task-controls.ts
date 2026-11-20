@@ -9,6 +9,7 @@ export function taskControlRequest(
   const task = target?.taskDispatch,
     owner = target?.observation;
   if (!task || !owner) return "Select a task in Bookie to control its operations.";
+  if (task.inherited) return "Select the parent task to change shared controls.";
   const match = /^task (pause|cancel|resume|budget)(?: (task|pi-daddy|scout|harness|jev))?(?: (off|[0-9]+))?$/.exec(
     text,
   );

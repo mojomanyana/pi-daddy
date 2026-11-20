@@ -18,6 +18,9 @@ export interface DispatchView {
   projectId: string;
   taskId: string;
   selectionRevision: number;
+  /** Only the selected root may change controls shared by its declared child tasks. */
+  inherited?: true;
+  observedAt?: string;
   revision: number;
   state: "open" | "pausing" | "paused" | "cancelling" | "cancelled";
   counts: Record<DispatchOwner, DispatchCounts>;
@@ -55,10 +58,10 @@ export function isDispatchEdit(value: unknown): value is DispatchEdit {
   );
 }
 
-type Attempt = { owner: DispatchOwner; executionId: string; sessionId: string; cwd: string };
+type Attempt = { taskId?: string; owner: DispatchOwner; executionId: string; sessionId: string; cwd: string };
 type Control =
   | { action: "admit"; attempt: Attempt }
-  | { action: "settle"; owner: DispatchOwner; executionId: string; cleanup: "settled" | "not-started" }
+  | { action: "settle"; taskId?: string; owner: DispatchOwner; executionId: string; cleanup: "settled" | "not-started" }
   | { action: "pause" | "cancel" | "resume" }
   | { action: "budget"; owner: DispatchOwner | "task"; limit: number | null };
 const errno = (e: unknown, code: string) => (e as NodeJS.ErrnoException)?.code === code;
@@ -96,7 +99,7 @@ export class TaskDispatch {
     );
   }
 
-  snapshot(selectionRevision: number): DispatchView {
+  snapshot(selectionRevision: number, selectedTaskId = this.taskId): DispatchView {
     this.catchUp();
     const outstanding = this.pending.size;
     const state =
@@ -111,7 +114,8 @@ export class TaskDispatch {
           : "open";
     return {
       projectId: this.projectId,
-      taskId: this.taskId,
+      taskId: selectedTaskId,
+      ...(selectedTaskId !== this.taskId ? { inherited: true as const } : {}),
       selectionRevision,
       revision: this.policyRevision,
       state,
@@ -151,9 +155,13 @@ export class TaskDispatch {
     });
   }
 
-  assertAvailable(owner: DispatchOwner) {
+  assertOpen() {
     this.catchUp();
     if (this.mode !== "open") throw Error("Task dispatch is stopped. Inspect task controls before resuming.");
+  }
+
+  assertAvailable(owner: DispatchOwner) {
+    this.assertOpen();
     if (this.taskLimit !== null && this.admitted.size >= this.taskLimit)
       throw Error("This task's shared attempt allowance is exhausted.");
     const bucket = this.counts[owner];
@@ -162,7 +170,12 @@ export class TaskDispatch {
   }
 
   admit(attempt: Attempt) {
-    if (!validText(attempt.executionId, 256) || !validText(attempt.sessionId, 256) || !validText(attempt.cwd, 4096))
+    if (
+      (attempt.taskId !== undefined && !validText(attempt.taskId, 160)) ||
+      !validText(attempt.executionId, 256) ||
+      !validText(attempt.sessionId, 256) ||
+      !validText(attempt.cwd, 4096)
+    )
       throw Error("Invalid task dispatch identity");
     this.append({ action: "admit", attempt }, () => {
       this.assertAvailable(attempt.owner);
@@ -175,10 +188,14 @@ export class TaskDispatch {
     });
   }
 
-  settle(owner: DispatchOwner, executionId: string, cleanup: "settled" | "not-started") {
-    this.append({ action: "settle", owner, executionId, cleanup }, () =>
-      this.pending.has(attemptKey(owner, executionId)),
-    );
+  settle(owner: DispatchOwner, executionId: string, cleanup: "settled" | "not-started", origin = this.taskId) {
+    const entry: Control = { action: "settle", owner, executionId, cleanup, taskId: origin };
+    this.append(entry, () => {
+      const pending = this.pending.get(attemptKey(owner, executionId));
+      if (!pending) return false;
+      if ((pending.taskId ?? this.taskId) !== origin) throw Error("Native receipt belongs to a different task");
+      return true;
+    });
   }
 
   outstanding(): Attempt[] {
@@ -227,7 +244,7 @@ export class TaskDispatch {
   }
 
   /** Return bounded, metadata-only observations of the journal. There is no dispatch path in replay. */
-  page(after: number, limit: number) {
+  page(after: number, limit: number, selectedTaskId = this.taskId) {
     if (
       !Number.isSafeInteger(after) ||
       after < 0 ||
@@ -248,10 +265,14 @@ export class TaskDispatch {
     const present = this.readable();
     if (after && (!present || !this.recordAt(after))) throw Error("Task history cursor is unavailable");
     let next = after;
-    while (present && events.length < limit) {
+    while (present && next - after < limit) {
       const seq = next + 1,
         event = this.recordAt(seq);
       if (!event) break;
+      next = seq;
+      const origin =
+        event.action === "admit" ? event.attempt?.taskId : event.action === "settle" ? event.taskId : undefined;
+      if ((origin ?? this.taskId) !== selectedTaskId) continue;
       let state: string, label: string, identity: string;
       switch (event.action) {
         case "admit":
@@ -316,6 +337,7 @@ export class TaskDispatch {
         const a = event.attempt;
         if (
           !a ||
+          (a.taskId !== undefined && !validText(a.taskId, 160)) ||
           !validText(a.executionId, 256) ||
           !validText(a.sessionId, 256) ||
           !validText(a.cwd, 4096) ||
@@ -333,6 +355,8 @@ export class TaskDispatch {
         if (
           !["settled", "not-started"].includes(event.cleanup) ||
           !isOwner(event.owner) ||
+          (this.pending.get(attemptKey(event.owner, event.executionId))?.taskId ?? this.taskId) !==
+            (event.taskId ?? this.taskId) ||
           !this.pending.delete(attemptKey(event.owner, event.executionId))
         )
           throw Error("Invalid task dispatch settlement");

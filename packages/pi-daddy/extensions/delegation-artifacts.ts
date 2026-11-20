@@ -133,7 +133,7 @@ export async function claimWithArtifact(
   }
   const state = { store, request: { ...request }, publish: scope.publishArtifact, display };
   owners.set(owned, state);
-  observe?.(request.operationId, "delegation", "admitted", "Delegated work admitted");
+  await observe?.(request.operationId, "delegation", "admitted", "Delegated work admitted");
   const started = owned.started!;
   owned.started = async (cwd, workspaceId) => {
     await initiative?.assertCurrent({ cwd, workspaceId });

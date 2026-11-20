@@ -290,7 +290,9 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
     : [];
   const details = [
     ...dispatch,
+    ...(controls?.inherited ? ["Shared with this task’s parent. Select the parent task to change controls."] : []),
     ...(!controls ? ["Task dispatch controls unavailable in this session."] : []),
+    ...(controls?.observedAt ? ["Dispatch state checked " + controls.observedAt] : []),
     ...recent,
     ...(last ? [`Reported by ${last.owner} · ${last.recordedAt}`, `Recorded state: ${last.state}`] : []),
     `${history.observations} recorded observation${history.observations === 1 ? "" : "s"} from connected tools.`,
@@ -298,7 +300,7 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
     "Open the producing tool’s receipt to verify a delivery.",
   ];
   return {
-    ...(controls ? { dispatchTaskId: history.taskId } : {}),
+    ...(controls && !controls.inherited ? { dispatchTaskId: history.taskId } : {}),
     key: `selected-task:${source.generation}:${history.taskId}`,
     label: history.title,
     status: "selected",
@@ -308,7 +310,7 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
     details: [
       ...details,
       `Task: ${history.taskId}`,
-      ...(controls
+      ...(controls && !controls.inherited
         ? [
             ":task pause stops new task operations. :task cancel also signals participating workers.",
             ":task resume allows new work. :task budget [task|pi-daddy|scout|harness|jev] <attempts|off> sets an owner cap.",

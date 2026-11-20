@@ -34,12 +34,15 @@ export function bindTaskHistory(bus: EventBus | undefined, owner: HistoryOwner, 
   } finally {
     accepting = false;
   }
-  return (operationId: string, kind: string, state: string, label: string, evidence?: TaskObservation["evidence"]): void => {
+  return async (operationId: string, kind: string, state: string, label: string, evidence?: TaskObservation["evidence"]): Promise<void> => {
     if (ambiguous || !publisher) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      // The projection is asynchronous. It cannot alter an execution, its returned
-      // result or its owner evidence when a consumer is unavailable.
-      void Promise.resolve(publisher({ version: 1, owner, kind, operationId, state, label, ...(evidence ? { evidence } : {}) })).catch(() => {});
+      const write = publisher({ version: 1, owner, kind, operationId, state, label, ...(evidence ? { evidence } : {}) });
+      // The owner keeps its native receipt. A slow optional observer cannot
+      // stall the native operation. A late write remains pinned to its origin.
+      if (write) await Promise.race([write, new Promise<void>(resolve => { timer = setTimeout(resolve, 250); })]);
     } catch { /* A consumer may have revoked its binding. */ }
+    finally { if (timer) clearTimeout(timer); }
   };
 }

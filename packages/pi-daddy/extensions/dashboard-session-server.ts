@@ -270,7 +270,7 @@ async function respond(
   const controls = await getDashboardControlState(session);
   const settings = await dashboardSettingsSnapshot(session, jev);
   const shown = visibleTask();
-  const policy = shown ? await session.taskDispatch?.snapshot().catch(() => undefined) : undefined;
+  const policy = shown ? await session.taskDispatch?.snapshot(!changedTask).catch(() => undefined) : undefined;
   const taskDispatch = policy && policy.taskId === shown && visibleTask() === shown ? policy : undefined;
   if (
     changedTask &&
