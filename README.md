@@ -16,7 +16,7 @@ pi install npm:skill-harness@0.37.0
 ```
 <!-- verified-beta-install:end -->
 
-**Give Pi one real requirement.** Create and enter an empty folder, run `git init` and `git -c user.name=Beta -c user.email=beta@example.invalid commit --allow-empty -m setup`, then start `pi` there. Use fictional data. Pick the model you want to try, leave JEV off, and keep Standard work mode for this first task. To try automatic project memory, type `/grants auto on` in a trusted folder. This also auto-approves Daddy permission prompts for this session and its children. You can keep manual permissions and configure [Bookie](https://github.com/mojomanyana/bookie-pi-skills#project-memory-with-pi-daddy-auto) separately. A separate dashboard is optional.
+**Give Pi one real requirement.** Create and enter an empty folder, run `git init` and `git -c user.name=Beta -c user.email=beta@example.invalid commit --allow-empty -m setup`, then start `pi` there. Use fictional data. Pick the model you want to try, leave JEV off, and keep Standard work mode for this first task. Leave Daddy Auto off. Type `/bookie-task enable` and approve project memory for this workspace. This lets Bookie save and recall the checkpoint while other permission prompts remain manual. A separate dashboard is optional.
 
 > Build a public notice exporter in this folder. I should be able to pipe one JSON object into `node public-notice.cjs`. Print just its `message` on one line, even if the object also contains a staff-only note. A missing message should exit with an error and print no public output. Show me what actually happened when you tried it, then save and read back a short “Public notice” checkpoint with the result. Leave the work local.
 
@@ -46,7 +46,7 @@ console.log('Passed both public-output checks.')
 JS
 ```
 
-**Come back to it.** Type `/new` in the same folder. If you used Auto and the new session shows it off, you can enable it again for recall. Ask:
+**Come back to it.** Type `/new` in the same folder. Type `/bookie-task enable` again and approve recall for the workspace. Ask:
 
 > Recall the Public notice checkpoint. What was delivered and checked, and what remains unverified? Use the saved result and leave the files alone.
 
