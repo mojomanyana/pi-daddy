@@ -58,6 +58,15 @@ Local scripted checks establish control behavior and propagation. They do not
 establish that Ambitious improves a model's judgment, delivery quality or speed;
 that requires a separately designed comparison.
 
+## Shared task history and controls
+
+Select a task through Bookie to see its title and latest recorded event at the top of Overview and Tasks. Open the row to inspect the reporting tool, event time and dispatch state. Each tool retains its own execution receipts.
+
+In task details, press **p** to pause new work, **c** to request cancellation, **u** to resume or **b** to set a budget. Press Enter to apply. Pause lets admitted work settle. Cancel signals participating workers and displays pending cleanup. Resume after cancellation requires confirmed cleanup. These controls apply to task-bound operations participating in the local protocol. The individual tool still determines what it may execute.
+
+Use `:task budget 12` to share twelve admitted attempts across participating operations, including children and their enrolled research or evaluation calls. Each distinct owner operation consumes one shared attempt. You can also limit an individual owner. For example, `:task budget scout 4` allows four Scout attempts in total for this task. `:task budget pi-daddy off` removes the parent-delegation cap. Counts and controls follow the selected project and task across sessions in this Pi agent directory. Reusing a retained result consumes no attempt. A budget requires an explicit value. External services, token usage and money have separate accounting. Participating Daddy writers share one reservation per working copy. For parallel edits, choose separate registered Git worktrees. Reads and receipt reuse can proceed alongside a writer. Other processes can still edit the filesystem.
+
+
 ## Reliable workflow handoffs
 
 Native delegation accepts an optional stable `operation_id`. The session owner admits one

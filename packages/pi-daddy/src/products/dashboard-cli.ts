@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { taskControlRequest } from "./dashboard-task-controls.ts";
 import { inspectChoice, saveChoice } from "./dashboard-choice-picker.ts";
 import type { DashboardAcknowledgment } from "./dashboard-session-client.ts";
 import { dashboardFile, dashboardTimeline, dashboardSelectedDetail } from "./dashboard-file-cache.ts";
@@ -446,12 +447,21 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
         drawing = false;
       });
   };
-  const runCommand = async (line: string): Promise<void> => {
+  let commandOwner: DashboardSessionSnapshot | undefined;
+  const runCommand = async (line: string, target: DashboardSessionSnapshot | undefined): Promise<void> => {
     const trimmed = line.trim();
     if (trimmed.startsWith("m ")) {
       notice = (await connection.change({ action: "set", edits: trimmed.slice(2).trim() }))
         ? "Session models updated"
         : connection.state.error || "Session controls unavailable";
+    } else if (trimmed === "task" || trimmed.startsWith("task ")) {
+      const action = taskControlRequest(target, trimmed);
+      notice =
+        typeof action === "string"
+          ? action
+          : (await connection.change(action))
+            ? "Task control saved. See the selected task for execution and cleanup."
+            : connection.state.error || "Task control unavailable";
     } else if (trimmed.startsWith("limit ")) {
       const edit = /^limit (wall|idle) ([0-9]+)$/.exec(trimmed);
       if (!edit) notice = "Use limit wall <seconds> or limit idle <seconds>; 0 restores default";
@@ -478,12 +488,28 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       else if (key.name === "return") {
         const line = command;
         command = undefined;
-        void runCommand(line);
+        void runCommand(line, commandOwner);
       } else if (key.name === "backspace") command = [...command].slice(0, -1).join("");
       else if (text && !key.ctrl && !key.meta && !/[\p{Cc}\p{Cf}]/u.test(text) && command.length < 2048)
         command += text;
       redraw();
       return;
+    }
+    const selectedTask = display.screen.items.find((item) => item.key === display.screen.selectedKey);
+    if (
+      display.screen.view === "details" &&
+      selectedTask?.dispatchTaskId &&
+      !key.ctrl &&
+      !key.meta &&
+      selectedTask.dispatchTaskId === connection.state.snapshot?.taskDispatch?.taskId
+    ) {
+      const shortcut = ({ p: "pause", c: "cancel", u: "resume", b: "budget " } as Record<string, string>)[text ?? ""];
+      if (shortcut) {
+        commandOwner = connection.state.snapshot;
+        command = "task " + shortcut;
+        redraw();
+        return;
+      }
     }
     let action = display.key(
       key.name === "return"
@@ -520,7 +546,10 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
       stop();
       return;
     }
-    if (action === "command") command = "";
+    if (action === "command") {
+      commandOwner = connection.state.snapshot;
+      command = "";
+    }
     if (action === "setting") {
       const selected = display.screen.settingKey ?? "auto";
       const settings = connection.state.snapshot?.settings;
@@ -606,7 +635,7 @@ export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.Pro
     } else {
       input = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
       input.on("line", (line) => {
-        void runCommand(line);
+        void runCommand(line, connection.state.snapshot);
       });
     }
     await new Promise<void>((settle) => {

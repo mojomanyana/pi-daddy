@@ -207,6 +207,8 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-20 — shared task history and dispatch.** Bookie identifies the active project/task under its current grant. A captured observation publisher carries bounded metadata for display. Daddy owns admission, controls and its durable reservation journal. Each participating execution owner supplies a single-use native attempt ID, acknowledges cleanup and passes on cancellation. A completed receipt can be reused without a new reservation. Scope changes fence new execution and control changes. The shared limit counts each distinct enrolled operation, with optional per-owner limits. All limits require explicit operator values. Participating Daddy writers reserve the actual working copy across task histories. Registered disjoint worktrees can run concurrently. The default path preserves the original execution folder and uses the same worktree identity for a nested folder.
+
 ### 2026-11-19 — Correcting a non-decision is separate from answering
 
 The optional `reclassify(id, revision, assertCurrent)` callback on Bookie's v1 choice registration means only

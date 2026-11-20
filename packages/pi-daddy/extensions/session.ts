@@ -147,6 +147,10 @@ export function activityChildEnv(activity: { rootId: string; path: string; taskI
 }
 /** Keep each child's pane after it finishes, for inspection. Off by default: fan-out would flood it. */
 export interface GrantsSession extends NativeSessionHost {
+  taskDispatch?: ReturnType<typeof import("./task-dispatch-controller.ts").createTaskDispatchController>;
+  /** Optional peer callback bound before dispatch. Execution evidence remains with the native owner. */
+  bindTaskObservation?: () =>
+    ReturnType<typeof import("../contracts/task-history/v1/producer.ts").bindTaskHistory> | undefined;
   initiativeOperations?: InitiativeOperationBinding;
   dashboardInitiative?: () => DashboardSourceSnapshot | undefined;
   refreshInitiative?: () => void;

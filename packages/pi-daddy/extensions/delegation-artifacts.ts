@@ -12,6 +12,7 @@ const owners = new WeakMap<
     store: OperationArtifactStore;
     request: OperationRequest;
     reference?: OperationArtifactRef;
+    finalRetained?: boolean;
     display?: Pick<DashboardResultDescription, "agent" | "summary">;
     publish?: OperationFinalStore["publishArtifact"];
   }
@@ -27,6 +28,7 @@ export async function claimWithArtifact(
   display?: Pick<DashboardResultDescription, "agent" | "summary">,
   /** Exact pre-binding digest, for reading a completed ordinary operation only. Never used for election. */
   legacyRequestDigest?: string,
+  observe?: ReturnType<NonNullable<GrantsSession["bindTaskObservation"]>>,
 ): Promise<OperationClaim> {
   if (scope !== session.reloadLifecycle?.operationFinals) throw Error("Operation owner changed before admission");
   const store = scope?.artifacts;
@@ -131,12 +133,14 @@ export async function claimWithArtifact(
   }
   const state = { store, request: { ...request }, publish: scope.publishArtifact, display };
   owners.set(owned, state);
+  observe?.(request.operationId, "delegation", "admitted", "Delegated work admitted");
   const started = owned.started!;
   owned.started = async (cwd, workspaceId) => {
     await initiative?.assertCurrent({ cwd, workspaceId });
     store.started(request, cwd, workspaceId);
     await started(cwd, workspaceId);
     owned.operation = { ...owned.operation, state: "running", cwd, workspaceId };
+    observe?.(request.operationId, "delegation", "running", "Delegated work started");
   };
   const finish = owned.finish!;
   owned.finish = async (status, runtime) => {
@@ -149,6 +153,35 @@ export async function claimWithArtifact(
     };
     if (!owners.get(owned)!.reference) retainOperationArtifact(owned, { operation: owned.operation });
     owned.operation.artifact = owners.get(owned)!.reference;
+    const work = runtime?.work;
+    if (
+      status === "settled" &&
+      work === "succeeded" &&
+      runtime?.control !== "failed" &&
+      owners.get(owned)?.finalRetained
+    ) {
+      observe?.(
+        request.operationId,
+        "delegation",
+        "result-retained",
+        "Delegated work settled with a retained answer",
+        /^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(request.operationId)
+          ? { type: "operation", id: request.operationId }
+          : undefined,
+      );
+    } else if (status === "not-started") {
+      observe?.(request.operationId, "delegation", status, "Delegated work did not start");
+    } else if (status === "uncertain") {
+      observe?.(request.operationId, "delegation", status, "Delegation outcome is uncertain");
+    } else {
+      const failed = work === "failed" || runtime?.control === "failed";
+      observe?.(
+        request.operationId,
+        "delegation",
+        failed ? "failed" : "settled",
+        failed ? "Delegated work failed" : "Delegation settled without confirmed delivery",
+      );
+    }
     if (status === "settled" && owned.operation.artifact) {
       // Artifact retention happens before live settlement. Wake the selected work map only after both.
       try {
@@ -165,6 +198,7 @@ export function retainOperationArtifact(claim: OperationClaim, outcome: Operatio
   if (!owner) return;
   const reference = owner.store.finish(owner.request, outcome);
   owner.reference = reference;
+  owner.finalRetained = outcome.final !== undefined;
   claim.operation.artifact = reference;
   // Pi receives only a small reference, never duplicated full authored content.
   try {

@@ -267,6 +267,57 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   };
 }
 
+/** Task summaries are visible only while the granting Bookie source is current. */
+export function currentTaskItem(options: DashboardScreenOptions): DashboardItem | undefined {
+  const source = options.session?.observation?.sources.find((s) => s.producer === "bookie-memory");
+  const history = source?.taskHistory;
+  if (!history || !source || !current(source, options) || source.refresh?.state === "failed") return;
+  const last = history.lastObservation;
+  const recent = last ? [`Last recorded · ${last.label}`] : [];
+  const policy = options.session?.taskDispatch;
+  const controls = policy?.taskId === history.taskId && policy.counts ? policy : undefined;
+  const dispatch = controls
+    ? [
+        `Task dispatch · ${controls.state} · ${controls.outstanding} awaiting cleanup`,
+        `${controls.admitted} total attempts · ${controls.limit === null ? "no shared cap" : "shared limit " + controls.limit}`,
+        ...Object.entries(controls.counts)
+          .filter(([owner, c]) => owner === "pi-daddy" || c.admitted || c.limit !== null)
+          .map(
+            ([owner, c]) =>
+              `${owner}: ${c.admitted} admitted · ${c.limit === null ? "no attempt cap" : "limit " + c.limit}`,
+          ),
+      ]
+    : [];
+  const details = [
+    ...dispatch,
+    ...(!controls ? ["Task dispatch controls unavailable in this session."] : []),
+    ...recent,
+    ...(last ? [`Reported by ${last.owner} · ${last.recordedAt}`, `Recorded state: ${last.state}`] : []),
+    `${history.observations} recorded observation${history.observations === 1 ? "" : "s"} from connected tools.`,
+    "History coverage is partial. An owner can finish while Bookie is unavailable.",
+    "Open the producing tool’s receipt to verify a delivery.",
+  ];
+  return {
+    ...(controls ? { dispatchTaskId: history.taskId } : {}),
+    key: `selected-task:${source.generation}:${history.taskId}`,
+    label: history.title,
+    status: "selected",
+    elapsed: "",
+    previewLines: [...dispatch.slice(0, 1), ...(recent.length ? recent : ["No owner observations recorded yet."])],
+    briefDetails: details,
+    details: [
+      ...details,
+      `Task: ${history.taskId}`,
+      ...(controls
+        ? [
+            ":task pause stops new task operations. :task cancel also signals participating workers.",
+            ":task resume allows new work. :task budget [task|pi-daddy|scout|harness|jev] <attempts|off> sets an owner cap.",
+          ]
+        : []),
+    ],
+  };
+}
+
 export function componentItems(options: DashboardScreenOptions): DashboardItem[] {
   return (["bookie", "scout-local", "scout-worker"] as const)
     .map((id) => componentItem(id, options))
