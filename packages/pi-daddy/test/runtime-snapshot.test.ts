@@ -28,11 +28,22 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     },
   } as unknown as ExtensionAPI;
   const session = {
+    depth: 1,
     reloadLifecycle: { root: {} },
     executor: { kind: "process" },
     capacity: { reserved: 0 },
   } as unknown as GrantsSession;
   const ctx = { cwd: root, sessionManager: { getSessionId: () => "actual-session" } } as unknown as ExtensionContext;
+  const deliveryOwner = () => {
+    const replies: { assertMayContinue(): Promise<void> }[] = [];
+    pi.events.emit("pi-daddy:delivery-task:v1", {
+      version: 1,
+      sessionId: "actual-session",
+      cwd: root,
+      reply: (receipt: (typeof replies)[number]) => replies.push(receipt),
+    });
+    return replies;
+  };
   const snapshot = (sessionId = "actual-session") =>
     new Promise<any>((resolve) =>
       pi.events.emit(RUNTIME_SNAPSHOT_EVENT, {
@@ -46,7 +57,13 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     );
   try {
     const first = registerRuntimeSnapshot(pi, session);
+    assert.deepEqual(deliveryOwner(), []);
+    // The instance was constructed against the previous owner's published child environment.
+    session.depth = 0;
     await first.bind(ctx);
+    const initialOwners = deliveryOwner();
+    assert.equal(initialOwners.length, 1);
+    await initialOwners[0]!.assertMayContinue();
     const actual = await snapshot();
     assert.equal(actual.state, "idle");
     assert.equal(actual.qualified, true);
@@ -96,8 +113,12 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     assert.equal(listeners.has("pi-daddy:bookie-choice-controls:v1"), true);
     assert.equal(listeners.has("pi.task-dispatch.v1.bind"), true);
     assert.equal(listeners.has("pi.task-history.v1.replay"), true);
-    assert.equal(listeners.size, 10);
+    assert.equal(listeners.size, 11);
     for (const set of listeners.values()) assert.equal(set.size, 1, "one active handler per named event after reload");
+    const newOwners = deliveryOwner();
+    assert.equal(newOwners.length, 1);
+    await assert.rejects(initialOwners[0]!.assertMayContinue(), /delivery session changed/);
+    await newOwners[0]!.assertMayContinue();
     const reloaded = await snapshot();
     assert.equal(reloaded.ownerScope, settled.ownerScope);
     assert.equal(reloaded.evidenceDigest, settled.evidenceDigest);
@@ -107,6 +128,10 @@ test("trusted bridge reports actual owner facts, rejects caller identity and sur
     await replacement.bind({ ...ctx, cwd: join(root, "missing") });
     assert.equal(session.reloadLifecycle.runtimeSettlement, undefined);
     assert.equal((await snapshot()).state, "unknown");
+    session.depth = 1;
+    await replacement.bind(ctx);
+    assert.deepEqual(deliveryOwner(), []);
+    await assert.rejects(newOwners[0]!.assertMayContinue(), /delivery session changed/);
   } finally {
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prior;

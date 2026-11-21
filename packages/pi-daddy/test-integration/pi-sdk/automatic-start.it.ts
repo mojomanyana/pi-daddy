@@ -185,11 +185,12 @@ test("interactive trusted parent offers workspace memory and the connected dashb
   }
 });
 
-test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner", async () => {
+test("Pi /new in the same folder gets a fresh root, dashboard, delivery guard and Bookie owner", async () => {
   const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR", "PI_DADDY_ACTIVITY_TIMELINE", "HERDR_ENV"];
   const saved = new Map(keys.map((key) => [key, process.env[key]]));
   const sessions: GrantsSession[] = [];
   const leases: ProjectMemoryOwner[] = [];
+  const queryDelivery: Array<(sessionId: string) => { assertMayContinue(): Promise<void> }[]> = [];
   let host: AgentSessionRuntime | undefined;
   let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
   try {
@@ -221,6 +222,16 @@ test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner",
                 sessions.push(session);
                 grants(pi, session);
                 pi.events.on(PROJECT_MEMORY_OWNER_EVENT, (value) => leases.push(value as ProjectMemoryOwner));
+                queryDelivery.push((sessionId) => {
+                  const replies: { assertMayContinue(): Promise<void> }[] = [];
+                  pi.events.emit("pi-daddy:delivery-task:v1", {
+                    version: 1,
+                    sessionId,
+                    cwd,
+                    reply: (receipt: (typeof replies)[number]) => replies.push(receipt),
+                  });
+                  return replies;
+                });
               },
             ],
           },
@@ -237,6 +248,9 @@ test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner",
     );
     host.setRebindSession((session) => session.bindExtensions({ mode: "tui", uiContext }));
     await host.session.bindExtensions({ mode: "tui", uiContext });
+    const firstDelivery = queryDelivery[0]!(host.session.sessionManager.getSessionId());
+    assert.equal(firstDelivery.length, 1);
+    await firstDelivery[0]!.assertMayContinue();
     await host.session.prompt("/grants auto on");
     const first = sessions[0]!;
     await host.session.prompt("/work-mode ambitious session depth range");
@@ -247,6 +261,10 @@ test("Pi /new in the same folder gets a fresh root, dashboard and Bookie owner",
     assert.equal((await dashboardSessionRequest(old.socketPath, old.token, { action: "get" })).auto.enabled, true);
 
     assert.deepEqual(await host.newSession(), { cancelled: false });
+    await assert.rejects(firstDelivery[0]!.assertMayContinue(), /delivery session changed/);
+    const freshDelivery = queryDelivery[1]!(host.session.sessionManager.getSessionId());
+    assert.equal(freshDelivery.length, 1, "root reconciliation restores the delivery bridge");
+    await freshDelivery[0]!.assertMayContinue();
     assert.equal(previousLease.isCurrent(), false);
     const fresh = sessions[1]!;
     assert.deepEqual(workModeSnapshot(fresh).selection, { mode: "standard", emphases: [] });

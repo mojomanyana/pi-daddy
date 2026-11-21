@@ -1,5 +1,11 @@
 # Changelog — pi-daddy
 
+## 0.64.0 — 2026-11-21
+
+- Reserving a working copy for a delegated writer now stores only the session ID and folder. A task with a bound live session can dispatch Scout or Build without a circular-object save error.
+
+- The Tasks view shows Principal’s delivery outcome, outstanding item and next action when a compatible Principal reports them. Open the row to see its evidence, reported handoff and recent Pi actions associated with the same turn. With Bookie, the report follows the matching selected task and automatic continuation checks respect its Pause and Cancel controls.
+
 ## 0.63.0 — 2026-11-20
 
 - With a supporting Bookie, select a task to see its latest observation and control participating operations. The dashboard offers separate pause, cancel, resume and shared and per-owner attempt allowances. Concurrent writes require separate working copies. A successor can release a crashed writer reservation when the original runtime proves launch never began. Cleanup remains visible until an execution owner confirms it. The task view shows the latest meaningful progress alongside heartbeats, failure and partial results, and whether its latest file checkpoint was captured or published. Older Bookie versions retain their existing dashboard data and standalone workflows keep their normal controls.

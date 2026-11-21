@@ -356,6 +356,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   });
 
   pi.on("session_shutdown", async (event, ctx) => {
+    runtimeSnapshot.retireDelivery();
     if (
       event.reason === "new" &&
       ctx.mode === "tui" &&

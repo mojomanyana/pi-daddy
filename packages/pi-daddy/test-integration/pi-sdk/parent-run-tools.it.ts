@@ -50,6 +50,15 @@ async function runRoot(env: Record<string, string> = {}) {
   if (process.env.DADDY_TEST_SCOUT_PUBLIC_SKILL)
     await copyFile(process.env.DADDY_TEST_SCOUT_PUBLIC_SKILL, join(skill, "SKILL.md"));
   else await writeFile(join(skill, "SKILL.md"), SCOUT_PUBLIC);
+  const architect = join(root, "skills", "architect");
+  const mixed = env.DADDY_TEST_SELECTED_TASK === "1";
+  if (mixed) {
+    await mkdir(architect);
+    await writeFile(
+      join(architect, "SKILL.md"),
+      "---\nname: architect\ndescription: Review the design.\nallowed-tools: read\n---\nCheck the design.",
+    );
+  }
   const cli =
     process.env.DADDY_TEST_PI_CLI ??
     fileURLToPath(new URL("./cli.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
@@ -75,12 +84,13 @@ async function runRoot(env: Record<string, string> = {}) {
     "--no-skills",
     "--skill",
     skill,
+    ...(mixed ? ["--skill", architect] : []),
     "-e",
     extension,
     "-e",
     grants,
     "--tools",
-    "read,scout_research,delegate,delegate_describe",
+    "read,scout_research,delegate,delegate_describe" + (mixed ? ",delegate_all" : ""),
     "--provider",
     PROVIDER,
     "--model",
@@ -134,6 +144,40 @@ async function runRoot(env: Record<string, string> = {}) {
 
 const textOf = (value: { content?: Array<{ type: string; text?: string }> }) =>
   (value.content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+
+test("a selected task launches Scout and Architect once each under the bound Pi session", async () => {
+  const run = await runRoot({ DADDY_TEST_SELECTED_TASK: "1" });
+  try {
+    const batch = run.events.find((e) => e.type === "tool_execution_end" && e.toolName === "delegate_all");
+    const text = textOf(batch?.result);
+    assert.match(text, /Architect completed\./, text);
+    assert.match(text, /SCOUT FIXTURE ANSWER/, text);
+    assert.equal(run.launched, 2);
+    assert.deepEqual(run.calls, [{ args: CHILD_QUESTION, signal: true }]);
+  } finally {
+    await rm(run.root, { recursive: true, force: true });
+  }
+});
+
+test("correcting a proven unstarted Scout request preserves Architect and reuses the corrected operation", async () => {
+  const run = await runRoot({ DADDY_TEST_SELECTED_TASK: "1", DADDY_TEST_RECOVER_WRITER: "1" });
+  try {
+    assert.equal(run.result.code, 0, run.result.stderr);
+    const end = (id: string) => run.events.find((e) => e.type === "tool_execution_end" && e.toolCallId === id)?.result;
+    const batch = end("mixed-call");
+    assert.match(textOf(batch), /Architect completed\./);
+    assert.equal(batch.details.outcomes[0].operation.state, "not-started");
+    assert.match(batch.details.outcomes[0].reason, /writer already owns this working copy/);
+    assert.equal(batch.details.outcomes[1].operation.runtime.work, "succeeded");
+    assert.match(textOf(end("corrected-2")), /SCOUT FIXTURE ANSWER/);
+    assert.equal(end("corrected-3").details.operation.reused, true);
+    assert.equal(end("corrected-3").details.operation.executionId, end("corrected-2").details.operation.executionId);
+    assert.equal(run.launched, 2);
+    assert.deepEqual(run.calls, [{ args: CHILD_QUESTION, signal: true }]);
+  } finally {
+    await rm(run.root, { recursive: true, force: true });
+  }
+});
 
 test("a real child delegated to scout-public calls scout_research through its root, once, as a nested call", async () => {
   const run = await runRoot();

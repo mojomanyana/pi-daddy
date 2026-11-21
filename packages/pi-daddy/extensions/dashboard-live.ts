@@ -1,14 +1,18 @@
 /** Bounded metadata-only Pi observations work even when optional transcript/diagnostic capture is off. */
 import { dashboardContentEnabled, observedPurpose } from "../src/products/activity-summary.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { DashboardContribution } from "../src/kernel/dashboard-observation.ts";
+import type { DashboardContribution, DashboardLiveActivity } from "../src/kernel/dashboard-observation.ts";
 import type { DashboardSourceOwner } from "./dashboard-sources.ts";
-export function registerDashboardLive(pi: ExtensionAPI, current: () => DashboardSourceOwner | undefined) {
+export function registerDashboardLive(
+  pi: ExtensionAPI,
+  current: () => DashboardSourceOwner | undefined,
+  selectedTaskId?: () => string | undefined,
+) {
   let owner = current(),
     ordinal = 0;
   let turn: DashboardContribution | undefined;
-  const activity: DashboardContribution[] = [];
-  const calls = new Map<string, { token: number; purpose: string; tool: string }>();
+  const activity: DashboardLiveActivity[] = [];
+  const calls = new Map<string, { token: number; purpose: string; tool: string; turnId?: string; taskId?: string }>();
   const reset = () => {
     if (current() !== owner) {
       owner = current();
@@ -59,6 +63,8 @@ export function registerDashboardLive(pi: ExtensionAPI, current: () => Dashboard
         token: ++ordinal,
         purpose: observedPurpose(tool, value.args, dashboardContentEnabled(process.env)),
         tool,
+        turnId: turn?.state === "running" ? turn.id : undefined,
+        taskId: selectedTaskId?.(),
       };
       if (callId) {
         calls.set(callId, call);
@@ -78,7 +84,7 @@ export function registerDashboardLive(pi: ExtensionAPI, current: () => Dashboard
         turn = { ...turn, label: latest?.purpose ?? "Pi is working on your request" };
       }
     }
-    const item: DashboardContribution = {
+    const item: DashboardLiveActivity = {
       id: `event:${++ordinal}`,
       kind: "status",
       label: tool ? `${tool}: ${kind}` : kind,
@@ -88,6 +94,8 @@ export function registerDashboardLive(pi: ExtensionAPI, current: () => Dashboard
         ...(callId && call ? [`Call: ${call.token}`] : []),
         ...(call ? [`Purpose: ${call.purpose}`] : []),
       ],
+      ...(call?.turnId ? { turnId: call.turnId } : {}),
+      ...(call?.taskId ? { taskId: call.taskId } : {}),
     };
     activity.push(item);
     if (activity.length > 32) activity.shift();
@@ -96,8 +104,14 @@ export function registerDashboardLive(pi: ExtensionAPI, current: () => Dashboard
   pi.on?.("agent_end", (event, ctx) => record("agent_end", event, ctx));
   pi.on?.("tool_execution_start", (event, ctx) => record("tool start", event, ctx));
   pi.on?.("tool_execution_end", (event, ctx) => record("tool end", event, ctx));
-  return () => {
+  const snapshot = () => {
     reset();
     return { ...(turn ? { turn: structuredClone(turn) } : {}), activity: structuredClone(activity) };
   };
+  return Object.assign(snapshot, {
+    turnId() {
+      reset();
+      return turn?.state === "running" ? turn.id : undefined;
+    },
+  });
 }

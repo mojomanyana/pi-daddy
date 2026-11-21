@@ -10,6 +10,7 @@ import { isBookieChoice } from "../kernel/dashboard-observation.ts";
 import type { EcosystemVersionRow } from "./ecosystem-versions.ts";
 import { safeDashboardSummary } from "./activity-summary.ts";
 import { inventoryPresentation, observationAge } from "./dashboard-inventory-view.ts";
+import { currentDeliveryItem } from "./dashboard-delivery.ts";
 
 const BOOKIE_LIMIT_MESSAGE = "Only a bounded selection of saved open choices could be displayed.";
 
@@ -271,7 +272,8 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
 export function currentTaskItem(options: DashboardScreenOptions): DashboardItem | undefined {
   const source = options.session?.observation?.sources.find((s) => s.producer === "bookie-memory");
   const history = source?.taskHistory;
-  if (!history || !source || !current(source, options) || source.refresh?.state === "failed") return;
+  if (!history) return currentDeliveryItem(options, current);
+  if (!source || !current(source, options) || source.refresh?.state === "failed") return;
   const last = history.lastObservation;
   const recent = last ? [`Last recorded · ${last.label}`] : [];
   const progress = history.recentProgress ?? [];
@@ -320,7 +322,7 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
     "History coverage is partial. An owner can finish while Bookie is unavailable.",
     "Open the producing tool’s receipt to verify a delivery.",
   ];
-  return {
+  const task: DashboardItem = {
     ...(controls && !controls.inherited ? { dispatchTaskId: history.taskId } : {}),
     key: `selected-task:${source.generation}:${history.taskId}`,
     label: history.title,
@@ -348,6 +350,7 @@ export function currentTaskItem(options: DashboardScreenOptions): DashboardItem 
         : []),
     ],
   };
+  return currentDeliveryItem(options, current, history.taskId, task);
 }
 
 export function componentItems(options: DashboardScreenOptions): DashboardItem[] {

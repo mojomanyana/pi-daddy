@@ -20,6 +20,7 @@ import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { ExtensionAPI, ProviderConfig } from "@earendil-works/pi-coding-agent";
+import { claimTaskWriter } from "../../extensions/task-worktree-writer.ts";
 import { providerConfig, PROVIDER, textStep, toolStep, type Request } from "./scripted-provider.ts";
 
 export const OTHER_MODEL = "contract-fixture-other";
@@ -75,11 +76,14 @@ function withPayload(config: ProviderConfig): ProviderConfig {
 
 export default function (pi: ExtensionAPI) {
   let request = 0;
+  const taskSelected = process.env.DADDY_TEST_SELECTED_TASK === "1";
+  const recoverWriter = process.env.DADDY_TEST_RECOVER_WRITER === "1";
   pi.registerProvider(
     PROVIDER,
     withPayload(
       providerConfig((next) => {
         const index = request++;
+        if (child && process.env.PI_DADDY_DEFINITION === "architect") return textStep("Architect completed.");
         if (child)
           return index === 0
             ? toolStep("scout_research", CHILD_QUESTION, "child-call")
@@ -87,6 +91,21 @@ export default function (pi: ExtensionAPI) {
         if (index === 0) return toolStep("delegate_describe", { agent: "scout-public" }, "describe-call");
         if (index === 1) {
           const described = JSON.parse(lastToolResult(next));
+          if (taskSelected)
+            return toolStep(
+              "delegate_all",
+              {
+                children: [
+                  {
+                    ...described.delegationArguments,
+                    operation_id: "scout-check",
+                    task: "Check the source.",
+                  },
+                  { agent: "architect", operation_id: "architect-check", task: "Check the design." },
+                ],
+              },
+              "mixed-call",
+            );
           const model = process.env.DADDY_PARENT_RUN_CHILD_MODEL;
           return toolStep(
             "delegate",
@@ -98,11 +117,39 @@ export default function (pi: ExtensionAPI) {
             "delegate-call",
           );
         }
+        if (recoverWriter && (index === 2 || index === 3)) {
+          if (index === 2 && !lastToolResult(next).includes('"state":"not-started"'))
+            return textStep("Missing proof that the original child did not start.");
+          return toolStep(
+            "delegate",
+            { agent: "scout-public", task: "Check the source.", operation_id: "scout-corrected" },
+            `corrected-${index}`,
+          );
+        }
         return textStep(`PARENT DONE:\n${lastToolResult(next)}`);
       }),
     ),
   );
   if (child) return;
+  if (recoverWriter) {
+    let release: Awaited<ReturnType<typeof claimTaskWriter>> | undefined;
+    pi.on("session_start", async (_, ctx) => {
+      release = await claimTaskWriter(
+        process.env.PI_CODING_AGENT_DIR!,
+        ctx.cwd,
+        { cwd: ctx.cwd, sessionId: ctx.sessionManager.getSessionId() },
+        "earlier-writer",
+      );
+    });
+    pi.on("tool_execution_end", (event) => {
+      if (event.toolName === "delegate_all") release?.("settled");
+    });
+  }
+  if (taskSelected)
+    pi.events.on("pi.task-history.v1.scope", (value) => {
+      const request = value as { accept(scope: unknown): void };
+      request.accept({ projectId: "library", taskId: "two-desks", revision: 1, assertCurrent: async () => {} });
+    });
   const switched = process.env.DADDY_PARENT_RUN_SWITCHED;
   if (switched)
     pi.on("tool_execution_update", async (event, ctx) => {

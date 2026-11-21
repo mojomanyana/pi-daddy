@@ -35,6 +35,8 @@ export interface DashboardItem {
   updatedAt?: string;
   details: string[];
   briefDetails?: string[];
+  /** Optional narrower summary for the side-by-side task list. */
+  previewDetails?: string[];
   previewLines?: string[];
   browse?: boolean;
   reviewSummary?: boolean;
@@ -681,7 +683,8 @@ export function renderDashboardScreen(options: DashboardScreenOptions): string {
         sectionHeading("Selected item", right),
         clean(selected.label),
         "",
-        ...(selected.briefDetails ?? [friendlyStatus(selected.status), "Press Enter for details."]),
+        ...(selected.previewDetails ??
+          selected.briefDetails ?? [friendlyStatus(selected.status), "Press Enter for details."]),
       ],
       right,
     );

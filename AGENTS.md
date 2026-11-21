@@ -207,6 +207,13 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-21 — Principal’s delivery status is a current task observation.** Principal owns required outcomes,
+evidence and the user handoff. Daddy binds the report to the same owner and matching Bookie selection when
+present. Native tool activity joins by the Pi turn captured at publication. Turn settlement, a reported handoff
+and verified delivery remain distinct. The bounded continuation check reuses the selected task’s inline
+dispatch guard, so Pause and Cancel apply without enrolling a delegated attempt. The check supplies no
+authorization for the operation itself. Missing, withdrawn or replaced reports confer no delivery status.
+
 **2026-11-20 — shared task history and dispatch.** Bookie identifies the active project/task under its current grant. A captured observation publisher carries bounded metadata for display. Daddy owns admission, controls and its durable reservation journal. Each participating execution owner supplies a single-use native attempt ID, acknowledges cleanup and passes on cancellation. A completed receipt can be reused without a new reservation. Scope changes fence new execution and control changes. The shared limit counts each distinct enrolled operation, with optional per-owner limits. Authenticated declared child tasks inherit their root task’s policy and retain scoped replay histories. Shared controls can be edited only from that root. All limits require explicit operator values. Participating Daddy writers reserve the actual working copy across task histories. Registered disjoint worktrees can run concurrently. The default path preserves the original execution folder and uses the same worktree identity for a nested folder. A 2026-11-20 follow-up pins provisional reservations to the native process birth token, PID namespace and durable runtime owner scope. An absent native intent proves no launch only after that pinned process is proved gone in the same boot and the matching stable journal is read again. A pending native intent still needs its own cleanup evidence.
 
 ### 2026-11-19 — Correcting a non-decision is separate from answering

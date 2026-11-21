@@ -158,7 +158,13 @@ export function createDashboardConnection(
         observation: {
           ...previous.observation,
           sources: previous.observation.sources.map(
-            ({ inventory: _inventory, taskHistory: _history, ...source }) => source,
+            ({
+              inventory: _inventory,
+              taskHistory: _history,
+              taskDelivery: _delivery,
+              taskDeliveryTurnId: _turn,
+              ...source
+            }) => source,
           ),
         },
       };

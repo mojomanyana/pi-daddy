@@ -3,6 +3,7 @@ import { registerDashboardChoiceOwner } from "./dashboard-choice-controls.ts";
 import { dashboardSourceRefresh } from "./dashboard-source-refresh.ts";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { DASHBOARD_DELIVERY_PRODUCER } from "../src/kernel/dashboard-delivery.ts";
 import {
   DASHBOARD_SOURCE_EVENT,
   DASHBOARD_SOURCE_LIMIT,
@@ -20,6 +21,7 @@ export function registerDashboardSources(
   pi: ExtensionAPI,
   current: () => DashboardSourceOwner | undefined,
   now: () => number = Date.now,
+  currentTurnId?: () => string | undefined,
 ) {
   const sources = new Map<string, DashboardSourceSnapshot>();
   const refreshers = new Map<string, ReturnType<typeof dashboardSourceRefresh>>();
@@ -56,7 +58,7 @@ export function registerDashboardSources(
       cwd?: unknown;
       producer?: unknown;
       producerVersion?: unknown;
-      capabilities?: { taskHistory?: unknown; taskProgress?: unknown };
+      capabilities?: { taskHistory?: unknown; taskProgress?: unknown; taskDelivery?: unknown };
       refresh?: unknown;
       reply?: (value: unknown) => void;
     };
@@ -88,6 +90,7 @@ export function registerDashboardSources(
       token = randomUUID();
     const taskHistoryEnabled = producer === "bookie-memory" && r.capabilities?.taskHistory === 1;
     const progressEnabled = taskHistoryEnabled && r.capabilities?.taskProgress === 1;
+    const deliveryEnabled = producer === DASHBOARD_DELIVERY_PRODUCER && r.capabilities?.taskDelivery === 1;
     const snapshot: DashboardSourceSnapshot = {
       producer,
       producerVersion: r.producerVersion,
@@ -106,6 +109,14 @@ export function registerDashboardSources(
     const publish = (value: DashboardSourceUpdate) => {
       if (!active() || !validDashboardSourceUpdate(value) || value.sequence <= snapshot.sequence) return false;
       if (value.taskHistory !== undefined && !taskHistoryEnabled) return false;
+      const delivery = value.taskDelivery;
+      if (delivery && !deliveryEnabled) return false;
+      if (
+        delivery &&
+        snapshot.taskDelivery?.deliveryId === delivery.deliveryId &&
+        delivery.revision < snapshot.taskDelivery.revision
+      )
+        return false;
       if (
         !progressEnabled &&
         (value.taskHistory?.recentProgress !== undefined || value.taskHistory?.lastCheckpoint !== undefined)
@@ -115,6 +126,15 @@ export function registerDashboardSources(
       snapshot.items = structuredClone(value.items);
       if (value.taskHistory) snapshot.taskHistory = structuredClone(value.taskHistory);
       else delete snapshot.taskHistory;
+      if (delivery) {
+        const previous = snapshot.taskDelivery;
+        const sameDelivery = previous?.deliveryId === delivery.deliveryId && previous.taskId === delivery.taskId;
+        snapshot.taskDeliveryTurnId = currentTurnId?.() ?? (sameDelivery ? snapshot.taskDeliveryTurnId : undefined);
+        snapshot.taskDelivery = structuredClone(delivery);
+      } else {
+        delete snapshot.taskDelivery;
+        delete snapshot.taskDeliveryTurnId;
+      }
       if (value.inventory) snapshot.inventory = structuredClone(value.inventory);
       else delete snapshot.inventory;
       snapshot.observedAt = new Date(now()).toISOString();
@@ -134,6 +154,7 @@ export function registerDashboardSources(
         refresh: 1,
         ...(taskHistoryEnabled ? { taskHistory: 1 } : {}),
         ...(progressEnabled ? { taskProgress: 1 } : {}),
+        ...(deliveryEnabled ? { taskDelivery: 1 } : {}),
       },
       publish(value: DashboardSourceUpdate) {
         const previousInventory = snapshot.inventory;
@@ -153,6 +174,8 @@ export function registerDashboardSources(
           refreshers.delete(producer);
           delete snapshot.inventory;
           delete snapshot.taskHistory;
+          delete snapshot.taskDelivery;
+          delete snapshot.taskDeliveryTurnId;
           snapshot.items = snapshot.items.filter((item) => !isBookieChoice(producer, item));
           snapshot.availability = "closed";
           snapshot.observedAt = new Date(now()).toISOString();
@@ -162,6 +185,13 @@ export function registerDashboardSources(
   });
   return {
     choices,
+    selectedTaskId() {
+      if (!reconcile()) return;
+      const source = sources.get("bookie-memory");
+      if (!source || source.availability !== "observed" || source.refresh?.state === "failed") return;
+      const age = now() - Date.parse(source.observedAt);
+      return age >= 0 && age <= source.staleAfterMs ? source.taskHistory?.taskId : undefined;
+    },
     requestRefresh() {
       if (!reconcile()) return false;
       let requested = false;
