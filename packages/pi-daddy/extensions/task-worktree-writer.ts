@@ -43,7 +43,14 @@ export async function claimTaskWriter(
     ).catch(() => "unknown" as const);
     if (receipt !== "unknown") store.settle(previous.owner, previous.executionId, receipt);
   }
-  store.admit({ owner: "pi-daddy", executionId, ...host, ...(beforeLaunch ? { beforeLaunch } : {}) });
+  // The bound session also owns live runtime state. Only its identity belongs in the writer journal.
+  store.admit({
+    owner: "pi-daddy",
+    executionId,
+    sessionId: host.sessionId,
+    cwd: host.cwd,
+    ...(beforeLaunch ? { beforeLaunch } : {}),
+  });
   const finish = (cleanup: "settled" | "not-started") => store.settle("pi-daddy", executionId, cleanup);
   try {
     if (id !== (await workingCopyId(target))) throw Error("Working copy changed during admission");
