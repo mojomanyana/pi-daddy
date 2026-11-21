@@ -1,6 +1,8 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 0.64.0 — 2026-11-21
+
+- Reserving a working copy for a delegated writer now stores only the session ID and folder. A task with a bound live session can dispatch Scout or Build without a circular-object save error.
 
 - The Tasks view shows Principal’s delivery outcome, outstanding item and next action when a compatible Principal reports them. Open the row to see its evidence, reported handoff and recent Pi actions associated with the same turn. With Bookie, the report follows the matching selected task and automatic continuation checks respect its Pause and Cancel controls.
 
