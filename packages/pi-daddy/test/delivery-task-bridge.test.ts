@@ -45,7 +45,12 @@ async function fixture(depth = 0) {
     () => host,
     () => directory,
   );
-  const close = registerDeliveryTaskBridge(bus, () => host, depth, controller);
+  const close = registerDeliveryTaskBridge(
+    bus,
+    () => host,
+    () => depth === 0,
+    controller,
+  );
   return {
     close,
     directory,

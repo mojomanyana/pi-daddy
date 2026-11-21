@@ -24,19 +24,22 @@ export function registerRuntimeSnapshot(
   session: GrantsSession,
 ): {
   bind(ctx: ExtensionContext): Promise<void>;
+  retireDelivery(): void;
 } {
   let bound: { sessionId: string; cwd: string; lifecycle: object } | undefined, problem: string | undefined;
   const generation = {};
   let bindSequence = 0;
+  let ending = false;
   let artifactOwner: ArtifactBridgeOwner | undefined;
   const currentOwner = () =>
     bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
       ? bound
       : undefined;
   const initiative = registerInitiativeRuntime(pi, session, currentOwner);
+  const isRoot = () => session.depth === 0;
   const taskDispatch = createTaskDispatchController(
     pi.events,
-    () => (session.depth === 0 ? currentOwner() : undefined),
+    () => (isRoot() ? currentOwner() : undefined),
     agentDir,
     () => session.reloadLifecycle.runtimeSettlement,
   );
@@ -49,7 +52,7 @@ export function registerRuntimeSnapshot(
       sessionManager: { getSessionId: () => owner.sessionId },
     });
   };
-  const stopDelivery = registerDeliveryTaskBridge(pi.events, currentOwner, session.depth, taskDispatch);
+  const stopDelivery = registerDeliveryTaskBridge(pi.events, currentOwner, () => !ending && isRoot(), taskDispatch);
   const dashboardLive = registerDashboardLive(pi, currentOwner, () => dashboardSources.selectedTaskId());
   const dashboardSources = registerDashboardSources(pi, currentOwner, Date.now, dashboardLive.turnId);
   session.dashboardObservations = () => dashboardSources.snapshot();
@@ -287,7 +290,11 @@ export function registerRuntimeSnapshot(
     prompts.close();
   };
   return {
+    retireDelivery() {
+      ending = true;
+    },
     async bind(ctx) {
+      ending = false;
       prompts.reset();
       const sequence = ++bindSequence,
         lifecycle = session.reloadLifecycle;

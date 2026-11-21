@@ -8,11 +8,12 @@ const EVENT = "pi-daddy:delivery-task:v1";
 export function registerDeliveryTaskBridge(
   bus: ExtensionAPI["events"],
   current: () => DashboardSourceOwner | undefined,
-  depth: number,
+  isRoot: () => boolean,
   dispatch: Pick<ReturnType<typeof createTaskDispatchController>, "captureDelivery">,
 ) {
-  if (depth !== 0) return;
   return bus?.on?.(EVENT, (raw: unknown) => {
+    // Pi can recreate this extension while the process still publishes the previous owner's child depth.
+    if (!isRoot()) return;
     const req = raw as { version?: unknown; sessionId?: unknown; cwd?: unknown; reply?: (value: unknown) => void };
     if (
       req?.version !== 1 ||
@@ -31,10 +32,10 @@ export function registerDeliveryTaskBridge(
         cwd: req.cwd,
         taskId: binding?.taskId,
         async assertMayContinue() {
-          if (!matches || current() !== owner || !binding)
+          if (!isRoot() || !matches || current() !== owner || !binding)
             throw Error("The delivery session changed or is unavailable.");
           await binding.assertMayContinue();
-          if (current() !== owner) throw Error("The delivery session changed.");
+          if (!isRoot() || current() !== owner) throw Error("The delivery session changed.");
         },
       });
     } catch {
