@@ -1,4 +1,5 @@
 import { createTaskDispatchController } from "./task-dispatch-controller.ts";
+import { registerDeliveryTaskBridge } from "./delivery-task-bridge.ts";
 import { bindTaskHistory } from "../contracts/task-history/v1/producer.ts";
 import { registerOperationRecoveryBridge } from "./operation-recovery-bridge.ts";
 import { registerDashboardPrompts } from "./dashboard-ui-prompts.ts";
@@ -48,11 +49,13 @@ export function registerRuntimeSnapshot(
       sessionManager: { getSessionId: () => owner.sessionId },
     });
   };
-  const dashboardSources = registerDashboardSources(pi, currentOwner);
+  const stopDelivery = registerDeliveryTaskBridge(pi.events, currentOwner, session.depth, taskDispatch);
+  const dashboardLive = registerDashboardLive(pi, currentOwner, () => dashboardSources.selectedTaskId());
+  const dashboardSources = registerDashboardSources(pi, currentOwner, Date.now, dashboardLive.turnId);
   session.dashboardObservations = () => dashboardSources.snapshot();
   session.dashboardRefreshSources = () => dashboardSources.requestRefresh();
   session.dashboardChoices = dashboardSources.choices;
-  session.dashboardLive = registerDashboardLive(pi, currentOwner);
+  session.dashboardLive = dashboardLive;
   const prompts = registerDashboardPrompts(pi, currentOwner);
   session.dashboardPrompt = prompts.snapshot;
   session.dashboardArtifacts = [];
@@ -276,6 +279,7 @@ export function registerRuntimeSnapshot(
     unsubscribeOperations?.();
     unsubscribeHistory?.();
     taskDispatch.close();
+    stopDelivery?.();
     artifactBridge.close();
     recoveryBridge.close();
     void initiative.close().catch(() => undefined);

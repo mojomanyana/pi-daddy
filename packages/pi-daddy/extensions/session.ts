@@ -1,5 +1,9 @@
 import type { InitiativeOperationBinding } from "./initiative-runtime.ts";
-import type { DashboardSourceSnapshot, DashboardContribution } from "../src/kernel/dashboard-observation.ts";
+import type {
+  DashboardSourceSnapshot,
+  DashboardContribution,
+  DashboardLiveActivity,
+} from "../src/kernel/dashboard-observation.ts";
 import type { DashboardSavedEvidence } from "../src/kernel/dashboard-observation.ts";
 import type { DashboardOwnerObservation } from "../src/kernel/dashboard-observation.ts";
 import type { EcosystemVersions } from "../src/products/ecosystem-versions.ts";
@@ -156,7 +160,7 @@ export interface GrantsSession extends NativeSessionHost {
   refreshInitiative?: () => void;
   ecosystemVersions?: () => EcosystemVersions;
   dashboardPrompt?: () => import("../src/kernel/dashboard-observation.ts").DashboardInputPrompt | undefined;
-  dashboardLive?: () => { turn?: DashboardContribution; activity: DashboardContribution[] };
+  dashboardLive?: () => { turn?: DashboardContribution; activity: DashboardLiveActivity[] };
   dashboardArtifacts?: DashboardSavedEvidence[];
   dashboardChoices?: ReturnType<typeof import("./dashboard-choice-controls.ts").registerDashboardChoiceOwner>;
   dashboardObservations?: () => Omit<DashboardOwnerObservation, "version" | "resources" | "capture"> | undefined;

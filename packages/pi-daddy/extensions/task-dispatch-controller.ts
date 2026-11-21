@@ -122,6 +122,37 @@ export function createTaskDispatchController(
   }
 
   const controller = {
+    /** Capture the current inline scope without enrolling a new execution or spending an attempt. */
+    captureDelivery(): { taskId?: string; assertMayContinue(): Promise<void> } {
+      const host = current();
+      try {
+        const binding = select();
+        return {
+          taskId: binding?.scope.taskId,
+          async assertMayContinue() {
+            if (!host || current() !== host) throw Error("The delivery session changed.");
+            const selected = select();
+            if (
+              selected?.scope.projectId !== binding?.scope.projectId ||
+              selected?.scope.taskId !== binding?.scope.taskId ||
+              selected?.store.taskId !== binding?.store.taskId ||
+              selected?.scope.revision !== binding?.scope.revision
+            )
+              throw Error("The selected delivery task changed.");
+            if (binding) {
+              await binding.assertCurrent();
+              binding.store.assertOpen();
+            }
+          },
+        };
+      } catch (error) {
+        return {
+          async assertMayContinue() {
+            throw error;
+          },
+        };
+      }
+    },
     /** An inline effect's owner can consult the shared pause state without spending a delegated attempt. */
     captureInline(): (() => Promise<void>) | undefined {
       let binding: ReturnType<typeof select>;

@@ -1,4 +1,6 @@
 /** Terminal-only producer observations. None of these fields confer authority or become tool input. */
+import { validDashboardTaskDelivery, type DashboardTaskDelivery } from "./dashboard-delivery.ts";
+
 export const DASHBOARD_SOURCE_EVENT = "pi-daddy:dashboard-source:v1";
 export const DASHBOARD_SOURCE_LIMIT = 8;
 export const DASHBOARD_SOURCE_BYTES = 4096;
@@ -24,6 +26,12 @@ export interface DashboardContribution {
   details?: string[];
   /** Display identity only. The terminal never dereferences or executes it. */
   reference?: string;
+}
+
+/** Native tool calls keep their original turn and selected task through completion. */
+export interface DashboardLiveActivity extends DashboardContribution {
+  turnId?: string;
+  taskId?: string;
 }
 /** Saved choices are project memory. Their display permission ends when Bookie closes its source. */
 export const isBookieChoice = (producer: string, item: DashboardContribution) =>
@@ -75,6 +83,8 @@ export interface DashboardSourceUpdate {
   inventory?: DashboardInventory;
   /** Bookie can withdraw this selection independently of the source lease. */
   taskHistory?: DashboardTaskHistory;
+  /** Send only after the registration reply advertises capabilities.taskDelivery === 1. */
+  taskDelivery?: DashboardTaskDelivery;
 }
 export interface DashboardSourceRefresh {
   state: "idle" | "checking" | "failed";
@@ -92,7 +102,7 @@ export type DashboardSourceRegistrationReply =
       version: 1;
       ok: true;
       generation: string;
-      capabilities?: { inventory: 1; refresh: 1; taskHistory?: 1; taskProgress?: 1 };
+      capabilities?: { inventory: 1; refresh: 1; taskHistory?: 1; taskProgress?: 1; taskDelivery?: 1 };
       publish(update: DashboardSourceUpdate): boolean;
       close(): void;
     };
@@ -102,7 +112,7 @@ export interface DashboardSourceRegistration {
   cwd: string;
   producer: string;
   producerVersion: string;
-  capabilities?: { taskHistory?: 1; taskProgress?: 1 };
+  capabilities?: { taskHistory?: 1; taskProgress?: 1; taskDelivery?: 1 };
   /** Authorized metadata reads only, with cancellation; no automatic work or model calls. */
   refresh?: DashboardSourceRefreshCallback;
   reply(value: DashboardSourceRegistrationReply): void;
@@ -115,6 +125,8 @@ export interface DashboardSourceSnapshot extends DashboardSourceUpdate {
   staleAfterMs: number;
   availability: "observed" | "closed";
   refresh?: DashboardSourceRefresh;
+  /** Captured by Daddy when Principal published, from Daddy's native turn observation. */
+  taskDeliveryTurnId?: string;
 }
 /** Session-local display metadata from the same elected child that published the reference. */
 export interface DashboardResultDescription {
@@ -146,7 +158,7 @@ export interface DashboardOwnerObservation {
   logicalOwnerId?: string;
   inputPrompt?: DashboardInputPrompt;
   turn?: DashboardContribution;
-  activity?: DashboardContribution[];
+  activity?: DashboardLiveActivity[];
   artifacts?: DashboardSavedEvidence[];
   resources: { scope: "owner-process"; sampledAt: string; rssBytes: number; hostHealth: "unknown" };
   capture: { transcripts: boolean; diagnostics: boolean };
@@ -234,12 +246,13 @@ export function validDashboardTaskHistory(value: unknown): value is DashboardTas
 export function validDashboardSourceUpdate(value: unknown): value is DashboardSourceUpdate {
   if (
     !object(value) ||
-    Object.keys(value).some((k) => !["sequence", "items", "inventory", "taskHistory"].includes(k)) ||
+    Object.keys(value).some((k) => !["sequence", "items", "inventory", "taskHistory", "taskDelivery"].includes(k)) ||
     !Number.isSafeInteger(value.sequence) ||
     Number(value.sequence) < 0 ||
     !Array.isArray(value.items) ||
     value.items.length > 8 ||
     (value.taskHistory !== undefined && !validDashboardTaskHistory(value.taskHistory)) ||
+    (value.taskDelivery !== undefined && !validDashboardTaskDelivery(value.taskDelivery)) ||
     (value.inventory !== undefined && !validDashboardInventory(value.inventory))
   )
     return false;
@@ -271,7 +284,11 @@ export function validDashboardSourceUpdate(value: unknown): value is DashboardSo
     ids.add(row.id);
   }
   try {
-    if (Buffer.byteLength(JSON.stringify({ sequence: value.sequence, items: value.items })) > DASHBOARD_SOURCE_BYTES)
+    if (
+      Buffer.byteLength(
+        JSON.stringify({ sequence: value.sequence, items: value.items, taskDelivery: value.taskDelivery }),
+      ) > DASHBOARD_SOURCE_BYTES
+    )
       return false;
   } catch {
     return false;
