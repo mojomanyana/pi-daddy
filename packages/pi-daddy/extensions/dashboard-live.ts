@@ -111,7 +111,7 @@ export function registerDashboardLive(
   return Object.assign(snapshot, {
     turnId() {
       reset();
-      return turn?.id;
+      return turn?.state === "running" ? turn.id : undefined;
     },
   });
 }

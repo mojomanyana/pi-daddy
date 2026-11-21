@@ -127,8 +127,10 @@ export function registerDashboardSources(
       if (value.taskHistory) snapshot.taskHistory = structuredClone(value.taskHistory);
       else delete snapshot.taskHistory;
       if (delivery) {
+        const previous = snapshot.taskDelivery;
+        const sameDelivery = previous?.deliveryId === delivery.deliveryId && previous.taskId === delivery.taskId;
+        snapshot.taskDeliveryTurnId = currentTurnId?.() ?? (sameDelivery ? snapshot.taskDeliveryTurnId : undefined);
         snapshot.taskDelivery = structuredClone(delivery);
-        snapshot.taskDeliveryTurnId = currentTurnId?.();
       } else {
         delete snapshot.taskDelivery;
         delete snapshot.taskDeliveryTurnId;

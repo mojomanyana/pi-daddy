@@ -158,6 +158,38 @@ test("a current report exposes the gap and next action while keeping evidence in
   assert.doesNotMatch(renderDashboardScreen(f.options()), /Summary file missing/);
 });
 
+test("an idle resume preserves only the matching delivery's actions until new work starts", () => {
+  const f = fixture();
+  const producer = f.register("principal-delivery", { taskDelivery: 1 });
+  let sequence = 0;
+  const publish = (taskDelivery: DashboardTaskDelivery) =>
+    assert.equal(producer.publish({ sequence: ++sequence, items: [], taskDelivery }), true);
+  const details = () => currentTaskItem(f.options())!.briefDetails!.join("\n");
+  const tool = (name: string) => {
+    f.emit("tool_execution_start", { toolName: name, toolCallId: name });
+    f.emit("tool_execution_end", { toolName: name, toolCallId: name, isError: false });
+  };
+  f.emit("agent_start");
+  publish(open);
+  tool("write");
+  f.emit("agent_end");
+  f.emit("agent_start");
+  tool("edit");
+  f.emit("agent_end");
+  publish(open);
+  assert.match(details(), /Write a file · finished/);
+  assert.doesNotMatch(details(), /Edit a file/);
+  publish({ ...open, deliveryId: "different" });
+  assert.doesNotMatch(details(), /Write a file|Edit a file/);
+  f.emit("agent_start");
+  publish(open);
+  tool("read");
+  f.emit("agent_end");
+  publish({ ...open, state: "verified", handoff: "assistant", revision: 3 });
+  assert.match(details(), /Read a project file · finished/);
+  assert.doesNotMatch(details(), /Write a file|Edit a file/);
+});
+
 test("a selected task never inherits another task’s report and optional peers remain compatible", () => {
   const f = fixture();
   const bookie = f.register("bookie-memory", { taskHistory: 1 });
