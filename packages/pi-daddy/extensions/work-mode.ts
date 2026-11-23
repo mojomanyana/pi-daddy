@@ -1,6 +1,8 @@
 /** Session-owned optional guidance. Selection is operator input, never a model tool or memory inference. */
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -206,18 +208,68 @@ export function capturedWorkMode(session: GrantsSession): WorkModeSelection | un
   return selected?.mode === "ambitious" ? clone(selected) : undefined;
 }
 
+async function collectReviewDiff(cwd: string): Promise<string> {
+  const parts: string[] = [];
+  let diff = "";
+  try {
+    const out = await execFileAsync("git", ["diff", "--no-color", "HEAD"], {
+      cwd,
+      timeout: 5000,
+      maxBuffer: 256 * 1024,
+    });
+    diff = out.stdout.trim();
+  } catch {
+    // Unborn HEAD (fresh git init with 0 commits): fall back to staged diff.
+    try {
+      const out = await execFileAsync("git", ["diff", "--no-color", "--cached"], {
+        cwd,
+        timeout: 5000,
+        maxBuffer: 256 * 1024,
+      });
+      diff = out.stdout.trim();
+    } catch {
+      diff = "";
+    }
+  }
+  if (diff) parts.push(diff);
+
+  // Include untracked non-ignored files so greenfield deliverables are also reviewed.
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-files", "--others", "--exclude-standard"],
+      { cwd, timeout: 5000, maxBuffer: 64 * 1024 },
+    );
+    const untracked = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, 12);
+    let extraBytes = 0;
+    for (const rel of untracked) {
+      if (extraBytes >= 12_000) break;
+      try {
+        const full = join(cwd, rel);
+        const info = await stat(full);
+        if (!info.isFile() || info.size === 0 || info.size > 32 * 1024) continue;
+        const raw = await readFile(full, "utf8");
+        if (raw.includes("\0")) continue;
+        const snippet = raw.slice(0, Math.min(raw.length, 12_000 - extraBytes));
+        extraBytes += snippet.length;
+        parts.push(`--- /dev/null\n+++ b/${rel}\n${snippet}`);
+      } catch {
+        /* Skip unreadable untracked file. */
+      }
+    }
+  } catch {
+    /* Non-git workspace or git unavailable. */
+  }
+  return parts.join("\n\n").trim();
+}
+
 async function runColdDiffReview(
   ctx: ExtensionContext,
   originalPrompt: string,
   signal?: AbortSignal,
 ): Promise<{ pass: boolean; feedback?: string }> {
   try {
-    const { stdout: diff } = await execFileAsync("git", ["diff", "--no-color", "HEAD"], {
-      cwd: ctx.cwd,
-      timeout: 5000,
-      maxBuffer: 256 * 1024,
-    });
-    const trimmed = diff.trim();
+    const trimmed = await collectReviewDiff(ctx.cwd);
     if (!trimmed) return { pass: true };
     const registry = (ctx as any).modelRegistry;
     let model = (ctx as any).model;
@@ -231,23 +283,29 @@ async function runColdDiffReview(
       }
     }
     if (!model || typeof registry?.streamSimple !== "function") return { pass: true };
-    const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
+    const clippedDiff =
+      trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
     const reviewPrompt = [
-      "You are an independent, cold senior engineer reviewing ONLY this git diff against the user's original requirements.",
-      "Check EVERY explicit requirement: correctness, concurrency/race conditions, boundary/edge cases, memory/resource cleanup, and API compatibility.",
-      "If EVERY requirement is solidly satisfied in the diff, reply with EXACTLY: VERDICT: PASS",
-      "Otherwise, reply with: VERDICT: FAIL followed by a concise bullet list of ONLY concrete, verified [BLOCKER] defects (file, exact flaw, minimal fix). Do NOT invent style nitpicks.",
+      "You are an independent, cold senior engineer reviewing ONLY this git diff against",
+      "the user's original requirements. Check EVERY explicit requirement: correctness,",
+      "concurrency/race conditions, boundary/edge cases, memory/resource cleanup, and API",
+      "compatibility. If EVERY requirement is solidly satisfied, reply EXACTLY:",
+      "VERDICT: PASS",
+      "Otherwise reply: VERDICT: FAIL followed by a concise bullet list of ONLY concrete,",
+      "verified [BLOCKER] defects (file, exact flaw, minimal fix). No style nitpicks.",
       "",
       "=== ORIGINAL REQUEST ===",
       originalPrompt.slice(0, 4000),
       "",
-      "=== GIT DIFF ===",
+      "=== GIT DIFF & NEW FILES ===",
       clippedDiff,
     ].join("\n");
     const stream = registry.streamSimple(
       model,
       {
-        messages: [{ role: "user", content: [{ type: "text", text: reviewPrompt }], timestamp: Date.now() }],
+        messages: [
+          { role: "user", content: [{ type: "text", text: reviewPrompt }], timestamp: Date.now() },
+        ],
       },
       { signal, reasoning: "medium" },
     );
@@ -273,10 +331,22 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     if (savedThinking !== undefined && typeof (pi as any).setThinkingLevel === "function") {
       try {
         (pi as any).setThinkingLevel(savedThinking);
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
     savedThinking = undefined;
   };
+
+  const resetLifecycle = () => {
+    restoreThinking();
+    lastPrompt = "";
+    coldReviewRanForTurn = false;
+  };
+
+  for (const ev of ["session_start", "session_switch", "session_fork", "session_shutdown"]) {
+    (pi as any).on(ev, resetLifecycle);
+  }
 
   pi.on("before_agent_start", (event) => {
     coldReviewRanForTurn = false;
@@ -286,16 +356,22 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     const guidance = workModeGuidance(selected, "parent");
     if (!guidance) return;
 
-    // Mechanical lever 1: for explicit `speed` (without depth/altitude), lower thinking to "low" for faster turns.
-    // Never force-bump parent thinking upward for depth/altitude (it slows trivial read/bash turns 3-4x);
-    // spend deeper reasoning on the 1-shot cold diff-only review in agent_before_settle instead.
-    if (selected?.mode === "ambitious" && typeof (pi as any).getThinkingLevel === "function" && typeof (pi as any).setThinkingLevel === "function") {
-      const cur = (pi as any).getThinkingLevel();
-      const hasDepthOrAlt = selected.emphases.includes("depth") || selected.emphases.includes("altitude");
+    // Mechanical lever 1: for explicit `speed` (without depth/altitude), lower thinking to "low".
+    // Never force-bump parent thinking upward; spend deeper reasoning on the 1-shot cold review.
+    const getThinking = (pi as any).getThinkingLevel;
+    const setThinking = (pi as any).setThinkingLevel;
+    if (selected?.mode === "ambitious" && typeof getThinking === "function" && typeof setThinking === "function") {
+      const cur = getThinking();
+      const hasDepthOrAlt =
+        selected.emphases.includes("depth") || selected.emphases.includes("altitude");
       const hasSpeedOnly = selected.emphases.includes("speed") && !hasDepthOrAlt;
-      if (hasSpeedOnly && (cur === "medium" || cur === "high" || cur === "xhigh" || cur === "max")) {
+      if (hasSpeedOnly && ["medium", "high", "xhigh", "max"].includes(cur)) {
         savedThinking = cur;
-        try { (pi as any).setThinkingLevel("low"); } catch { savedThinking = undefined; }
+        try {
+          setThinking("low");
+        } catch {
+          savedThinking = undefined;
+        }
       }
     }
 
@@ -308,7 +384,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     }
   });
 
-  // Mechanical lever 2: automatic 1-shot cold diff-only review before settle when Ambitious depth is active.
+  // Mechanical lever 2: automatic 1-shot cold diff review before settle when Ambitious depth is on.
   (pi as any).on("agent_before_settle", async (event: any, ctx: ExtensionContext) => {
     if (coldReviewRanForTurn) return;
     const active = capturedWorkMode(session);
@@ -318,15 +394,17 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     coldReviewRanForTurn = true;
     const verdict = await runColdDiffReview(ctx, lastPrompt, (ctx as any)?.signal);
     if (verdict.pass || !verdict.feedback) return;
+    const content = [
+      "Independent cold diff review found concrete blocker(s) against the user's requirements:",
+      "",
+      verdict.feedback,
+      "",
+      "Fix these verified issues, re-run tests to prove they pass, then provide your final reply.",
+    ].join("\n");
     return {
       entries: [
         ...(Array.isArray(event?.entries) ? event.entries : []),
-        {
-          type: "custom_message",
-          customType: "pi-daddy-cold-review",
-          content: `Independent cold diff review found concrete blocker(s) against the user's requirements:\n\n${verdict.feedback}\n\nFix these verified issues, re-run tests to prove they pass, then provide your final response.`,
-          display: false,
-        },
+        { type: "custom_message", customType: "pi-daddy-cold-review", content, display: false },
       ],
       continue: true,
     };

@@ -1,10 +1,8 @@
 /** Owner-bound dashboard settings. No provider call, global env edit, or permission inference. */
-import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
-import type { DashboardJevState, DashboardSettingsSnapshot } from "../src/products/dashboard-settings.ts";
+import type { DashboardJevState, DashboardSettingsSnapshot, JevEditAction } from "../src/products/dashboard-settings.ts";
 import { telemetrySnapshot, setTelemetryEnabled, closeTelemetry } from "./dashboard-telemetry.ts";
-import { isJevEditAction, type JevEditAction } from "../src/products/dashboard-settings.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { workModeSnapshot } from "./work-mode.ts";
 import {
@@ -14,16 +12,13 @@ import {
   idleTimeoutFromEnv,
 } from "../src/kernel/run-child.ts";
 
-const bridges = new WeakMap<GrantsSession, Pick<ExtensionAPI, "events">>();
 const unavailable = (error?: string): DashboardJevState => ({
   available: false,
   enabled: false,
   pending: false,
   ...(error ? { error } : {}),
 });
-export function registerDashboardSettings(pi: Pick<ExtensionAPI, "events">, session: GrantsSession): void {
-  bridges.set(session, pi);
-}
+export function registerDashboardSettings(_pi: Pick<ExtensionAPI, "events">, _session: GrantsSession): void {}
 function owner(session: GrantsSession, edit = false) {
   const current = session.reloadLifecycle?.autoMode;
   if (!session.ownerBound || !current || current.reader !== session.autoMode)
@@ -60,16 +55,6 @@ export function setDashboardLimit(session: GrantsSession, key: unknown, seconds:
   const ms = key === "wall" ? timeoutFromEnv(String(seconds)) : idleTimeoutFromEnv(String(seconds));
   session.reloadLifecycle.executionSettings = { ...settings, [key === "wall" ? "wallMs" : "idleMs"]: ms };
 }
-const safeText = (value: unknown) => (typeof value === "string" ? value.slice(0, 120) : undefined);
-// Route identifiers are data, never terminal control sequences or free-form provider labels.
-const safeIdentifier = (value: unknown) =>
-  typeof value === "string" && /^[A-Za-z0-9@~][A-Za-z0-9._:/@~+-]{0,255}$/.test(value) ? value : undefined;
-const safeStorageRoot = (value: unknown) =>
-  typeof value === "string" && value.startsWith("/") && !/[\p{Cc}\p{Cf}]/u.test(value)
-    ? value.length > 120
-      ? `${value.slice(0, 117)}...`
-      : value
-    : undefined;
 export async function dashboardJev(
   _session: GrantsSession,
   action: "status" | "enable" | "disable" | JevEditAction,
