@@ -1,7 +1,11 @@
 /** Owner-bound dashboard settings. No provider call, global env edit, or permission inference. */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
-import type { DashboardJevState, DashboardSettingsSnapshot, JevEditAction } from "../src/products/dashboard-settings.ts";
+import type {
+  DashboardJevState,
+  DashboardSettingsSnapshot,
+  JevEditAction,
+} from "../src/products/dashboard-settings.ts";
 import { telemetrySnapshot, setTelemetryEnabled, closeTelemetry } from "./dashboard-telemetry.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { workModeSnapshot } from "./work-mode.ts";

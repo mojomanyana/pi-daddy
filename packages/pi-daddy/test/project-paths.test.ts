@@ -55,11 +55,7 @@ test("no shipped module outside project-paths.ts spells a pi-daddy .pi path", as
 test("every project path lives under <cwd>/.pi/pi-daddy and every user path under <agent>/pi-daddy", () => {
   const cwd = "/work/proj";
   const env = { PI_CODING_AGENT_DIR: "/home/u/.pi/agent" };
-  const projectFns = [
-    paths.projectSettingsPath,
-    paths.projectGitignorePath,
-    paths.projectLedgerPath,
-  ];
+  const projectFns = [paths.projectSettingsPath, paths.projectGitignorePath, paths.projectLedgerPath];
   const seen = new Set<string>();
   for (const fn of projectFns) {
     const p = fn(cwd);

@@ -42,7 +42,12 @@ export const projectSettingsPath = (cwd: string) => join(projectStateDir(cwd), P
 export const projectGitignorePath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.gitignore);
 export const projectLedgerPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.ledger);
 export const activityTimelinePath = (cwd: string, env?: NodeJS.ProcessEnv) =>
-  join(userStateDir(env), USER_DIRS.activity, projectFileName(resolve(cwd)).replace(/\.json$/, ""), PROJECT_FILES.activityTimeline);
+  join(
+    userStateDir(env),
+    USER_DIRS.activity,
+    projectFileName(resolve(cwd)).replace(/\.json$/, ""),
+    PROJECT_FILES.activityTimeline,
+  );
 
 /** The `.gitignore` init writes inside the project state directory: settings is committable, nothing else is. */
 export const PROJECT_GITIGNORE_CONTENT = `# Written by pi-daddy init. Only settings.json is meant to be committed; the rest is private runtime state.

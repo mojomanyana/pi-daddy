@@ -31,8 +31,8 @@ test("delegate is active and secondary delegation tools are registered deferred 
     assert.ok(tools.has(name), `${name} must be registered provisionally`);
   }
   assert.ok(activeTools.has("delegate"), "delegate must be active for an authorised owner");
-  assert.equal((tools.get("delegate_all") as { exposure?: string }).exposure, "deferred");
-  assert.equal((tools.get("delegate_chain") as { exposure?: string }).exposure, "deferred");
+  assert.equal((tools.get("delegate_all") as { defaultActive?: boolean }).defaultActive, false);
+  assert.equal((tools.get("delegate_chain") as { defaultActive?: boolean }).defaultActive, false);
 
   const leaf = await harness({ [ENV_GRANT]: "tool:read" });
   assert.ok(!leaf.activeTools.has("delegate"), "S-5: withholding tool:delegate must make a session a leaf");

@@ -201,5 +201,3 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
     await closeSessionAutoMode(session);
   }
 });
-
-

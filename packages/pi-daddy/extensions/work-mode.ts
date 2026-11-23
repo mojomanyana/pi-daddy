@@ -235,12 +235,16 @@ async function collectReviewDiff(cwd: string): Promise<string> {
 
   // Include untracked non-ignored files so greenfield deliverables are also reviewed.
   try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["ls-files", "--others", "--exclude-standard"],
-      { cwd, timeout: 5000, maxBuffer: 64 * 1024 },
-    );
-    const untracked = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, 12);
+    const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], {
+      cwd,
+      timeout: 5000,
+      maxBuffer: 64 * 1024,
+    });
+    const untracked = stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 12);
     let extraBytes = 0;
     for (const rel of untracked) {
       if (extraBytes >= 12_000) break;
@@ -283,8 +287,7 @@ async function runColdDiffReview(
       }
     }
     if (!model || typeof registry?.streamSimple !== "function") return { pass: true };
-    const clippedDiff =
-      trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
+    const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
     const reviewPrompt = [
       "You are an independent, cold senior engineer reviewing ONLY this git diff against",
       "the user's original requirements. Check EVERY explicit requirement: correctness,",
@@ -303,9 +306,7 @@ async function runColdDiffReview(
     const stream = registry.streamSimple(
       model,
       {
-        messages: [
-          { role: "user", content: [{ type: "text", text: reviewPrompt }], timestamp: Date.now() },
-        ],
+        messages: [{ role: "user", content: [{ type: "text", text: reviewPrompt }], timestamp: Date.now() }],
       },
       { signal, reasoning: "medium" },
     );
@@ -362,8 +363,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     const setThinking = (pi as any).setThinkingLevel;
     if (selected?.mode === "ambitious" && typeof getThinking === "function" && typeof setThinking === "function") {
       const cur = getThinking();
-      const hasDepthOrAlt =
-        selected.emphases.includes("depth") || selected.emphases.includes("altitude");
+      const hasDepthOrAlt = selected.emphases.includes("depth") || selected.emphases.includes("altitude");
       const hasSpeedOnly = selected.emphases.includes("speed") && !hasDepthOrAlt;
       if (hasSpeedOnly && ["medium", "high", "xhigh", "max"].includes(cur)) {
         savedThinking = cur;
