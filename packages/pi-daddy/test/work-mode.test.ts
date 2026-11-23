@@ -214,7 +214,7 @@ test("parent guidance is per run and explicit Standard restores the original unm
       systemPromptOptions: { promptGuidelines: [] as string[], sections: {} as Record<string, string> },
     };
     assert.equal(f.hooks.get("before_agent_start")!(event), undefined);
-    assert.match(event.systemPromptOptions.sections.work_mode, /^Working style: Ambitious/);
+    assert.match(event.systemPromptOptions.sections["pi-daddy-work-mode"], /^Working style: Ambitious/);
     setWorkMode(f.session, standardWorkMode(), "session");
     assert.deepEqual(capturedWorkMode(f.session), ambitious, "active children keep their assigned mode");
     f.hooks.get("agent_settled")!();

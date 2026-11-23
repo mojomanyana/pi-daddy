@@ -378,9 +378,9 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     // Inject into structured XML section (preserves Pi 1.6 prompt-diff prefix caching).
     const opts = event.systemPromptOptions as any;
     if (opts.forceSystemPrompt !== undefined) {
-      opts.forceSystemPrompt += `\n\n<work_mode>\n${guidance}\n</work_mode>`;
+      opts.forceSystemPrompt += `\n\n<pi-daddy-work-mode>\n${guidance}\n</pi-daddy-work-mode>`;
     } else {
-      opts.sections = { ...(opts.sections ?? {}), work_mode: guidance };
+      opts.sections = { ...(opts.sections ?? {}), "pi-daddy-work-mode": guidance };
     }
   });
 
