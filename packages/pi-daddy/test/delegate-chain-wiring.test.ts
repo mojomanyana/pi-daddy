@@ -25,14 +25,17 @@ import { chainStepSpec } from "../src/kernel/chain.ts";
 after(cleanupTempDirs);
 afterEach(restoreEnv);
 
-test("delegate_chain is activated beside the other two only when the session may delegate", async () => {
+test("delegate is active and secondary delegation tools are registered deferred only when authorised", async () => {
   const { tools, activeTools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
     assert.ok(tools.has(name), `${name} must be registered provisionally`);
-    assert.ok(activeTools.has(name), `${name} must be active for an authorised owner`);
   }
+  assert.ok(activeTools.has("delegate"), "delegate must be active for an authorised owner");
+  assert.equal((tools.get("delegate_all") as { exposure?: string }).exposure, "deferred");
+  assert.equal((tools.get("delegate_chain") as { exposure?: string }).exposure, "deferred");
 
   const leaf = await harness({ [ENV_GRANT]: "tool:read" });
+  assert.ok(!leaf.activeTools.has("delegate"), "S-5: withholding tool:delegate must make a session a leaf");
   assert.ok(!leaf.activeTools.has("delegate_chain"), "S-5: withholding tool:delegate must make a session a leaf");
 });
 

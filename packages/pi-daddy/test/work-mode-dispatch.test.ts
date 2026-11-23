@@ -113,7 +113,7 @@ else process.stdout.write("read complete");
     assert.equal(retried.length, 2);
     for (const launch of retried) {
       assert.deepEqual(JSON.parse(launch.mode!), ambitious);
-      assert.equal(launch.prompts.filter((prompt) => prompt.includes("<pi-daddy-work-mode>")).length, 1);
+      assert.equal(launch.prompts.filter((prompt) => prompt.includes("Working style: Ambitious")).length, 1);
     }
     process.env[ENV_WORK_MODE] = JSON.stringify(ambitious);
     const next = await call("next ordinary read");
@@ -121,7 +121,7 @@ else process.stdout.write("read complete");
     const ordinary = (await launches()).at(-1)!;
     assert.equal(ordinary.mode, undefined, "Standard does not inherit ambient or prior-child mode");
     assert.equal(
-      ordinary.prompts.some((prompt) => prompt.includes("<pi-daddy-work-mode>")),
+      ordinary.prompts.some((prompt) => prompt.includes("Working style: Ambitious")),
       false,
     );
     finishWorkModeRequest(session);

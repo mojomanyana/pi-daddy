@@ -110,10 +110,10 @@ test("selections accept bounded combinations and never accept arbitrary instruct
   ])
     assert.equal(parseWorkMode(value), undefined);
   const child = workModeGuidance(ambitious, "child")!;
-  assert.match(child, /review remains review and read-only investigation remains read-only/);
-  assert.match(child, /No mandatory delegation, research, evaluation or memory calls/);
-  assert.match(child, /Missing optional evidence narrows claims/);
-  assert.match(child, /changes no permissions, tools, models, limits or JEV settings/);
+  assert.match(child, /^Working style: Ambitious/);
+  assert.match(child, /Stay strictly within your assigned role and tool ceiling/);
+  assert.match(child, /Deeper proof:/);
+  assert.doesNotMatch(child, /JEV/i);
   assert.doesNotMatch(child, /Faster delivery:|Broader approaches:/);
 });
 
@@ -209,9 +209,12 @@ test("parent guidance is per run and explicit Standard restores the original unm
   const f = await fixture();
   try {
     setWorkMode(f.session, ambitious, "session");
-    const event = { systemPrompt: "base", systemPromptOptions: { promptGuidelines: [] as string[] } };
+    const event = {
+      systemPrompt: "base",
+      systemPromptOptions: { promptGuidelines: [] as string[], sections: {} as Record<string, string> },
+    };
     assert.equal(f.hooks.get("before_agent_start")!(event), undefined);
-    assert.match(event.systemPromptOptions.promptGuidelines[0], /^<pi-daddy-work-mode>/);
+    assert.match(event.systemPromptOptions.sections.work_mode, /^Working style: Ambitious/);
     setWorkMode(f.session, standardWorkMode(), "session");
     assert.deepEqual(capturedWorkMode(f.session), ambitious, "active children keep their assigned mode");
     f.hooks.get("agent_settled")!();

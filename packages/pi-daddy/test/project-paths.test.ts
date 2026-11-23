@@ -59,7 +59,6 @@ test("every project path lives under <cwd>/.pi/pi-daddy and every user path unde
     paths.projectSettingsPath,
     paths.projectGitignorePath,
     paths.projectLedgerPath,
-    paths.activityTimelinePath,
   ];
   const seen = new Set<string>();
   for (const fn of projectFns) {
@@ -68,6 +67,10 @@ test("every project path lives under <cwd>/.pi/pi-daddy and every user path unde
     assert.ok(!seen.has(p), `two helpers share ${p}`);
     seen.add(p);
   }
+  assert.ok(
+    paths.activityTimelinePath(cwd, env).startsWith("/home/u/.pi/agent/pi-daddy/activity/"),
+    paths.activityTimelinePath(cwd, env),
+  );
   assert.equal(paths.grantStorePath(cwd, env), `/home/u/.pi/agent/pi-daddy/grants/${paths.projectFileName(cwd)}`);
   assert.equal(paths.approvalsPath(cwd, env), `/home/u/.pi/agent/pi-daddy/approvals/${paths.projectFileName(cwd)}`);
   assert.equal(paths.workspaceLeasesDir(env), "/home/u/.pi/agent/pi-daddy/workspace-leases");

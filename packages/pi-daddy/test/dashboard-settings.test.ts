@@ -88,8 +88,8 @@ test("authenticated Settings transport uses the owner and leaves capacity reserv
     assert.equal(changed.settings?.reserved, 4);
     assert.equal(changed.settings?.perCall, 8);
     assert.equal(session.capacity.available, 4);
-    assert.equal(changed.settings?.jev.available, false, "absence is not consent or a false ready state");
-    await assert.rejects(request({ action: "set-jev", enabled: true }), /bridge unavailable/);
+    assert.equal(changed.settings?.jev.available, false, "JEV support is removed");
+    await assert.rejects(request({ action: "set-jev", enabled: true }), /removed/);
   } finally {
     await endpoint.close();
     await closeSessionAutoMode(session);
@@ -130,75 +130,13 @@ test("Settings names telemetry lifecycle states and never implies unsupported li
   }
 });
 
-test("JEV switch asks the native consent owner and exposes pending/readiness without sending consent or credentials", async () => {
+test("JEV settings bridge stays removed and disabled", async () => {
   const session = await fixture();
-  const events = new EventEmitter();
-  const requests: Record<string, unknown>[] = [];
-  let route: Record<string, unknown> = {
-    selectedProvider: "typesafe",
-    selectedModel: "jev-latest",
-    transport: "pi-classifier",
-    storageRoot: "/home/operator/.skill-harness",
-  };
-  events.on("skill-harness:jev-control-v1", (request) => {
-    requests.push(request);
-    request.reply({
-      version: 1,
-      requestId: request.requestId,
-      sessionId: request.sessionId,
-      pending: request.action === "enable",
-      status: {
-        enabled: false,
-        mode: "disabled",
-        storage: null,
-        remaining: 0,
-        availability: "disabled",
-        providerReadiness: "missing-key",
-        ...route,
-      },
-    });
-  });
-  registerDashboardSettings({ events } as unknown as ExtensionAPI, session);
   try {
-    const response = await dashboardJev(session, "enable");
-    assert.equal(response.pending, true);
-    assert.equal(response.enabled, false, "an enable request is not consent");
-    assert.equal(response.providerReadiness, "missing-key");
-    assert.equal(response.selectedProvider, "typesafe");
-    assert.equal(response.selectedModel, "jev-latest");
-    assert.equal(response.transport, "pi-classifier");
-    assert.equal(response.storageRoot, "/home/operator/.skill-harness");
-    route = { selectedProvider: "\u001b[31munsafe", selectedModel: "model\nforged row", transport: "x".repeat(257) };
-    const invalidRoute = await dashboardJev(session, "status");
-    assert.equal(invalidRoute.selectedProvider, undefined);
-    assert.equal(invalidRoute.selectedModel, undefined);
-    assert.equal(invalidRoute.transport, undefined);
-    assert.equal(invalidRoute.storageRoot, undefined);
-    route = { selectedModel: "@cf/typesafe/jev", storageRoot: "/data/" + "long".repeat(40) };
-    assert.equal((await dashboardJev(session, "status")).selectedModel, "@cf/typesafe/jev");
-    assert.match((await dashboardJev(session, "status")).storageRoot!, /^\/data\/.+\.\.\.$/);
-    route = { selectedProvider: "openrouter", selectedModel: "~typesafe/jev-latest" };
-    assert.equal((await dashboardJev(session, "status")).selectedModel, "~typesafe/jev-latest");
-    route = { storageRoot: "/data/\u001b[31munsafe" };
-    assert.equal((await dashboardJev(session, "status")).storageRoot, undefined);
-    route = {};
-    const legacy = await dashboardJev(session, "status");
-    assert.equal(legacy.available, true, "an older Harness without route fields remains connected");
-    assert.equal(legacy.selectedModel, undefined);
-    assert.deepEqual(Object.keys(requests[0]).sort(), ["action", "reply", "requestId", "sessionId", "version"]);
-    assert.equal(requests[0].sessionId, "settings-native-session");
-    assert.equal((await session.autoMode!.read()).enabled, false);
-    events.removeAllListeners();
-    events.on("skill-harness:jev-control-v1", (request) =>
-      request.reply({
-        version: 1,
-        requestId: request.requestId,
-        sessionId: "wrong-session",
-        pending: false,
-        status: { enabled: true },
-      }),
-    );
-    await assert.rejects(dashboardJev(session, "enable"), /not acknowledged/);
+    const status = await dashboardJev(session, "status");
+    assert.equal(status.available, false);
+    assert.equal(status.enabled, false);
+    await assert.rejects(dashboardJev(session, "enable"), /removed/);
   } finally {
     await closeSessionAutoMode(session);
   }
@@ -264,154 +202,4 @@ test("Settings navigation fits narrow panes and distinguishes pending consent, e
   }
 });
 
-test("owner replacement during an awaited settings read refuses a mixed-session acknowledgment", async () => {
-  const session = await fixture(),
-    endpoint = await ensureDashboardSessionServer(session);
-  const events = new EventEmitter();
-  let observed!: () => void;
-  const started = new Promise<void>((resolve) => {
-    observed = resolve;
-  });
-  let answer: any;
-  events.on("skill-harness:jev-control-v1", (request) => {
-    answer = request;
-    observed();
-  });
-  registerDashboardSettings({ events } as unknown as ExtensionAPI, session);
-  try {
-    const pending = dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
-    const refusal = assert.rejects(pending, /owner changed/);
-    await started;
-    await initializeSessionAutoMode(session, {}, "replacement-owner");
-    answer.reply({
-      version: 1,
-      requestId: answer.requestId,
-      sessionId: answer.sessionId,
-      pending: false,
-      status: { enabled: false },
-    });
-    await refusal;
-  } finally {
-    await endpoint.close();
-    await closeSessionAutoMode(session);
-  }
-});
 
-test("Settings shows editable JEV controls only when advertised; entering a control opens an owner dialog without authorizing spending", async () => {
-  const session = await fixture();
-  const endpoint = await ensureDashboardSessionServer(session);
-  const events = new EventEmitter();
-  const expectedOwner = { sessionId: "settings-native-session", cwd: "/workspace", generation: "fixture-generation" };
-  session.dashboardObservations = () => ({
-    ...expectedOwner,
-    sequence: 1,
-    observedAt: new Date().toISOString(),
-    sources: [],
-  });
-  const actions: string[] = [];
-  let modern = true;
-  events.on("skill-harness:jev-control-v1", (request) => {
-    actions.push(request.action);
-    // A control requests the native UI; amounts, prompt text and consent must never cross this socket.
-    assert.deepEqual(Object.keys(request).sort(), ["action", "reply", "requestId", "sessionId", "version"]);
-    request.reply({
-      version: 1,
-      requestId: request.requestId,
-      sessionId: request.sessionId,
-      pending: request.action !== "status",
-      status: {
-        enabled: true,
-        mode: "workflow",
-        remaining: 299,
-        storageRoot: "/home/operator/private/skill-harness-data",
-        ...(modern
-          ? { limit: 300, used: 1, hintsEnabled: false, controls: ["limit", "hints", "configure", "unknown"] }
-          : {}),
-      },
-    });
-  });
-  registerDashboardSettings({ events } as unknown as ExtensionAPI, session);
-  try {
-    const request = (a: Parameters<typeof dashboardSessionRequest>[2]) =>
-      dashboardSessionRequest(endpoint.socketPath, endpoint.token, a);
-    const snapshot = await request({ action: "get" });
-    const display = createDashboardDisplayControls(false, true);
-    display.key("s");
-    const draw = (s = snapshot) =>
-      renderDashboardScreen({ width: 48, height: 24, screen: display.screen, items: [], session: s });
-    const grouped = renderDashboardScreen({
-      width: 80,
-      height: 48,
-      screen: display.screen,
-      items: [],
-      session: snapshot,
-    });
-    assert.match(grouped, /^PERMISSIONS .*\n> Permission Auto:/m);
-    assert.match(grouped, /Startup default: OFF/);
-    const withAutoSource = (source: "session" | "environment") =>
-      renderDashboardScreen({
-        width: 80,
-        height: 48,
-        screen: display.screen,
-        items: [],
-        session: { ...snapshot, auto: { ...snapshot.auto, source } },
-      });
-    assert.match(withAutoSource("session"), /Session choice; \/new uses the startup setting/);
-    assert.match(withAutoSource("environment"), /From the startup environment/);
-    assert.match(grouped, /^JEV · optional advice .*\n  JEV: ON/m);
-    assert.match(grouped, /^    Call limit: 300 per session\n      1 used · 299 available now/m);
-    assert.match(grouped, /^    Choose JEV model and storage…\n      Provider status:/m);
-    assert.match(grouped, /^    Tool hints: OFF\n      Suggestions only · above 90% confidence/m);
-    assert.match(grouped, /^CHILD TIMEOUTS .*\n  Child wall:.*\n  Child idle:/m);
-    assert.match(grouped, /^  Maximum depth: \d+/m);
-    assert.match(grouped, /^CAPTURE .*\n  Transcripts:.*\n  Diagnostics:/m);
-    const sidePane = renderDashboardScreen({
-      width: 36,
-      height: 65,
-      screen: display.screen,
-      items: [],
-      session: snapshot,
-    });
-    const wrappedPath = sidePane.match(/^      Data:\n((?:      \S+\n){2,})/m)?.[1];
-    assert.equal(wrappedPath?.replace(/\s/g, ""), snapshot.settings!.jev.storageRoot);
-    for (const opt of ["limit", "configure", "hints"] as const) {
-      while (display.screen.settingKey !== opt) {
-        const previous = display.screen.settingKey;
-        display.key("down");
-        assert.notEqual(display.screen.settingKey, previous);
-      }
-      const narrow = renderDashboardScreen({
-        width: 36,
-        height: 16,
-        screen: display.screen,
-        items: [],
-        session: snapshot,
-      });
-      assert.match(narrow, /^>   (?:Call limit|Choose JEV model|Tool hints)/m);
-      if (opt === "hints")
-        assert.match(narrow, /^>   Tool hints: OFF\n      Suggestions only · above 90%\n      confidence/m);
-      if (opt === "limit") assert.match(narrow, /^>   Call limit: 300 per session\n      1 used · 299 available/m);
-      assert.ok(narrow.split("\n").every((line) => cellWidth(line) <= 36));
-      assert.equal(display.key("return"), "setting");
-      const opened = await request({ action: "edit-jev", option: opt, expectedOwner });
-      assert.equal(opened.settings?.jev.pending, true);
-    }
-    await assert.rejects(
-      request({ action: "edit-jev", option: "not-a-setting" as any, expectedOwner }),
-      /Unknown JEV setting/,
-    );
-    await assert.rejects(request({ action: "edit-jev", option: "limit" }), /owner changed before action/);
-    await assert.rejects(
-      request({ action: "edit-jev", option: "limit", expectedOwner: { ...expectedOwner, generation: "retired" } }),
-      /owner changed before action/,
-    );
-    assert.deepEqual(actions, ["status", "limit", "configure", "hints"]);
-    modern = false;
-    const legacy = await request({ action: "get" });
-    assert.doesNotMatch(draw(legacy), /Call limit:|Choose JEV|Tool hints:/);
-    assert.equal(display.screen.settingKey, "jev");
-  } finally {
-    await endpoint.close();
-    await closeSessionAutoMode(session);
-  }
-});

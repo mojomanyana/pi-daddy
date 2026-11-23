@@ -247,35 +247,23 @@ test("tool hooks retain names and actual cwd without arguments, outputs or infer
   assert.doesNotMatch(text, /private-argument|private-result/);
 });
 
-test("first awaited session start excludes only owned runtime before product observation", async () => {
+test("first awaited session start writes activity under agent dir and keeps project git clean", async () => {
   const cwd = await tempDir("activity-git-startup-");
   const git = (...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
   git("init", "-q");
   const app = fixture();
   registerActivityTimeline(app.api as never, {});
   await app.hooks.get("session_start")!({}, ctx(cwd));
-  const before = git("ls-files", "--others", "--exclude-standard", "-z");
-  assert.match(before, /pi-daddy[/\\]\.gitignore/u, "startup must settle its own new file before the first snapshot");
+  assert.equal(git("ls-files", "--others", "--exclude-standard", "-z"), "");
   await app.hooks.get("before_agent_start")!({ prompt: "public fixture", systemPromptOptions: {} }, ctx(cwd));
   await app.hooks.get("context")!({}, ctx(cwd));
   app.hooks.get("message_end")!({ message: { role: "assistant", content: "public result" } });
   await app.hooks.get("agent_settled")!({}, ctx(cwd));
-  assert.equal(git("ls-files", "--others", "--exclude-standard", "-z"), before);
+  assert.equal(git("ls-files", "--others", "--exclude-standard", "-z"), "");
   assert.match(await readFile(defaultActivityTimelinePath(cwd), "utf8"), /task_finished/u);
-  const state = (await import("../src/kernel/project-paths.ts")).projectStateDir(cwd);
-  await writeFile(join(state, "settings.json"), "{}\n");
-  await writeFile(join(state, "user-notes.txt"), "reviewable\n");
-  const visible = git("ls-files", "--others", "--exclude-standard", "-z");
-  assert.match(visible, /settings\.json/u);
-  assert.match(visible, /user-notes\.txt/u);
-  const ignore = await readFile(join(state, ".gitignore"), "utf8");
-  await app.hooks.get("session_start")!({}, ctx(cwd));
-  assert.equal(await readFile(join(state, ".gitignore"), "utf8"), ignore);
-  for (const name of ["activity.jsonl", "activity.jsonl.lock", "content/probe", "grants.jsonl", "grants.jsonl.lock"])
-    git("check-ignore", "-q", "--", join(state, name));
 });
 
-test("custom existing ignore rules are not rewritten to enable activity", async () => {
+test("custom existing ignore rules in project dir are never modified by activity startup", async () => {
   const cwd = await tempDir("activity-git-existing-policy-");
   execFileSync("git", ["-C", cwd, "init", "-q"]);
   const { projectStateDir } = await import("../src/kernel/project-paths.ts");
@@ -283,14 +271,8 @@ test("custom existing ignore rules are not rewritten to enable activity", async 
   await mkdir(state, { recursive: true });
   const original = "# User-authored policy\n/user-cache/\n!settings.json\n";
   await writeFile(join(state, ".gitignore"), original);
-  const app = fixture(),
-    notices: string[] = [];
+  const app = fixture();
   registerActivityTimeline(app.api as never, {});
-  const context = { ...ctx(cwd), ui: { notify: (message: string) => notices.push(message) } };
-  await app.hooks.get("session_start")!({}, context);
-  assert.match(notices.join("\n"), /observation unavailable.*existing Git policy/u);
+  await app.hooks.get("session_start")!({}, ctx(cwd));
   assert.equal(await readFile(join(state, ".gitignore"), "utf8"), original);
-  await app.hooks.get("before_agent_start")!({ prompt: "no retained body", systemPromptOptions: {} }, context);
-  await app.hooks.get("context")!({}, context);
-  await assert.rejects(readFile(defaultActivityTimelinePath(cwd), "utf8"), { code: "ENOENT" });
 });
