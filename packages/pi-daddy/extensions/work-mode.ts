@@ -1,6 +1,10 @@
 /** Session-owned optional guidance. Selection is operator input, never a model tool or memory inference. */
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+
+const execFileAsync = promisify(execFile);
 import type { GrantsSession } from "./session.ts";
 import {
   ENV_WORK_MODE,
@@ -202,23 +206,136 @@ export function capturedWorkMode(session: GrantsSession): WorkModeSelection | un
   return selected?.mode === "ambitious" ? clone(selected) : undefined;
 }
 
+async function runColdDiffReview(
+  ctx: ExtensionContext,
+  originalPrompt: string,
+  signal?: AbortSignal,
+): Promise<{ pass: boolean; feedback?: string }> {
+  try {
+    const { stdout: diff } = await execFileAsync("git", ["diff", "--no-color", "HEAD"], {
+      cwd: ctx.cwd,
+      timeout: 5000,
+      maxBuffer: 256 * 1024,
+    });
+    const trimmed = diff.trim();
+    if (!trimmed) return { pass: true };
+    const registry = (ctx as any).modelRegistry;
+    let model = (ctx as any).model;
+    const strongSpec = process.env.PI_ECO_MODEL_STRONG;
+    if (strongSpec && typeof registry?.find === "function") {
+      const sep = strongSpec.includes("/") ? "/" : ":";
+      const idx = strongSpec.indexOf(sep);
+      if (idx > 0) {
+        const found = registry.find(strongSpec.slice(0, idx), strongSpec.slice(idx + 1));
+        if (found) model = found;
+      }
+    }
+    if (!model || typeof registry?.streamSimple !== "function") return { pass: true };
+    const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
+    const reviewPrompt = [
+      "You are an independent, cold senior engineer reviewing ONLY this git diff against the user's original requirements.",
+      "Check EVERY explicit requirement: correctness, concurrency/race conditions, boundary/edge cases, memory/resource cleanup, and API compatibility.",
+      "If EVERY requirement is solidly satisfied in the diff, reply with EXACTLY: VERDICT: PASS",
+      "Otherwise, reply with: VERDICT: FAIL followed by a concise bullet list of ONLY concrete, verified [BLOCKER] defects (file, exact flaw, minimal fix). Do NOT invent style nitpicks.",
+      "",
+      "=== ORIGINAL REQUEST ===",
+      originalPrompt.slice(0, 4000),
+      "",
+      "=== GIT DIFF ===",
+      clippedDiff,
+    ].join("\n");
+    const stream = registry.streamSimple(
+      model,
+      {
+        messages: [{ role: "user", content: [{ type: "text", text: reviewPrompt }], timestamp: Date.now() }],
+      },
+      { signal, reasoning: "medium" },
+    );
+    const message = await stream.result();
+    const text = (message?.content ?? [])
+      .filter((c: any) => c?.type === "text" && typeof c.text === "string")
+      .map((c: any) => c.text)
+      .join("\n")
+      .trim();
+    if (!text || /^VERDICT:\s*PASS\b/im.test(text)) return { pass: true };
+    return { pass: false, feedback: text.slice(0, 2500) };
+  } catch {
+    return { pass: true };
+  }
+}
+
 export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
+  let savedThinking: string | undefined;
+  let lastPrompt = "";
+  let coldReviewRanForTurn = false;
+
+  const restoreThinking = () => {
+    if (savedThinking !== undefined && typeof (pi as any).setThinkingLevel === "function") {
+      try {
+        (pi as any).setThinkingLevel(savedThinking);
+      } catch { /* best-effort */ }
+    }
+    savedThinking = undefined;
+  };
+
   pi.on("before_agent_start", (event) => {
-    // Native retry/compaction continues the same agent run without this hook. A new hook is a new request,
-    // including after preparation failed before agent_settled could be emitted.
+    coldReviewRanForTurn = false;
+    lastPrompt = typeof (event as any).prompt === "string" ? (event as any).prompt : "";
     const selected = beginWorkModeRequest(session, true);
-    // Child launch already appended the role-preserving guidance; only maintain its descendant snapshot here.
     if (current(session)?.inherited) return;
     const guidance = workModeGuidance(selected, "parent");
     if (!guidance) return;
-    // Keep Pi's structured prompt live: a full-prompt return would freeze out later extensions'
-    // guidelines and native tool-loadout updates. Respect an explicit earlier override if present.
-    if (event.systemPromptOptions.forceSystemPrompt !== undefined)
-      event.systemPromptOptions.forceSystemPrompt += `\n\n${guidance}`;
-    else event.systemPromptOptions.promptGuidelines.push(guidance);
+
+    // Mechanical lever 1: for explicit `speed` (without depth/altitude), lower thinking to "low" for faster turns.
+    // Never force-bump parent thinking upward for depth/altitude (it slows trivial read/bash turns 3-4x);
+    // spend deeper reasoning on the 1-shot cold diff-only review in agent_before_settle instead.
+    if (selected?.mode === "ambitious" && typeof (pi as any).getThinkingLevel === "function" && typeof (pi as any).setThinkingLevel === "function") {
+      const cur = (pi as any).getThinkingLevel();
+      const hasDepthOrAlt = selected.emphases.includes("depth") || selected.emphases.includes("altitude");
+      const hasSpeedOnly = selected.emphases.includes("speed") && !hasDepthOrAlt;
+      if (hasSpeedOnly && (cur === "medium" || cur === "high" || cur === "xhigh" || cur === "max")) {
+        savedThinking = cur;
+        try { (pi as any).setThinkingLevel("low"); } catch { savedThinking = undefined; }
+      }
+    }
+
+    // Inject into structured XML section (preserves Pi 1.6 prompt-diff prefix caching).
+    const opts = event.systemPromptOptions as any;
+    if (opts.forceSystemPrompt !== undefined) {
+      opts.forceSystemPrompt += `\n\n<work_mode>\n${guidance}\n</work_mode>`;
+    } else {
+      opts.sections = { ...(opts.sections ?? {}), work_mode: guidance };
+    }
   });
-  // agent_end may precede a retry/compaction. Only a settled run consumes the active capture.
-  pi.on("agent_settled", () => finishWorkModeRequest(session));
+
+  // Mechanical lever 2: automatic 1-shot cold diff-only review before settle when Ambitious depth is active.
+  (pi as any).on("agent_before_settle", async (event: any, ctx: ExtensionContext) => {
+    if (coldReviewRanForTurn) return;
+    const active = capturedWorkMode(session);
+    if (!active || active.mode !== "ambitious") return;
+    const wantsDepth = active.emphases.length === 0 || active.emphases.includes("depth");
+    if (!wantsDepth || !lastPrompt) return;
+    coldReviewRanForTurn = true;
+    const verdict = await runColdDiffReview(ctx, lastPrompt, (ctx as any)?.signal);
+    if (verdict.pass || !verdict.feedback) return;
+    return {
+      entries: [
+        ...(Array.isArray(event?.entries) ? event.entries : []),
+        {
+          type: "custom_message",
+          customType: "pi-daddy-cold-review",
+          content: `Independent cold diff review found concrete blocker(s) against the user's requirements:\n\n${verdict.feedback}\n\nFix these verified issues, re-run tests to prove they pass, then provide your final response.`,
+          display: false,
+        },
+      ],
+      continue: true,
+    };
+  });
+
+  pi.on("agent_settled", () => {
+    restoreThinking();
+    finishWorkModeRequest(session);
+  });
   pi.on("session_tree", (_event, ctx) => initializeWorkMode(pi, session, ctx, "tree"));
   registerWorkModeCommand(pi, session);
   return (ctx: ModeContext, reason: string, environment: NodeJS.ProcessEnv) =>

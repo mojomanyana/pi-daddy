@@ -420,6 +420,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
   pi.registerTool({
     name: "delegate_all",
     label: "Delegate to several sub-agents (governed, parallel)",
+    exposure: "deferred" as const,
+    defaultActive: false,
     description:
       "Run several sub-agents CONCURRENTLY and return all their results. Each child is governed exactly " +
       "as with `delegate`: it holds only what you grant it, and you cannot grant what you do not hold. " +

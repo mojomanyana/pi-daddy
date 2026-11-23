@@ -111,6 +111,8 @@ export function registerDefinitionDescribe(pi: ExtensionAPI, session: GrantsSess
   pi.registerTool({
     name: "delegate_describe",
     label: "Describe a governed definition",
+    exposure: "deferred" as const,
+    defaultActive: false,
     description:
       "Read the exact selected definition identity, context ceiling/default and Principal binding before delegation. " +
       "Binds its definitionId to this agent's later delegations in this session. Starts no child and grants nothing.",

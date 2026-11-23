@@ -41,7 +41,8 @@ export const PROJECT_FILES = Object.freeze({
 export const projectSettingsPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.settings);
 export const projectGitignorePath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.gitignore);
 export const projectLedgerPath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.ledger);
-export const activityTimelinePath = (cwd: string) => join(projectStateDir(cwd), PROJECT_FILES.activityTimeline);
+export const activityTimelinePath = (cwd: string, env?: NodeJS.ProcessEnv) =>
+  join(userStateDir(env), USER_DIRS.activity, projectFileName(resolve(cwd)).replace(/\.json$/, ""), PROJECT_FILES.activityTimeline);
 
 /** The `.gitignore` init writes inside the project state directory: settings is committable, nothing else is. */
 export const PROJECT_GITIGNORE_CONTENT = `# Written by pi-daddy init. Only settings.json is meant to be committed; the rest is private runtime state.
@@ -81,6 +82,7 @@ export const USER_DIRS = Object.freeze({
   workspaceLeases: "workspace-leases",
   /** ADR-0042 follow-up: which registry ids this operator has accepted. Keyed by REGISTRY, not by project. */
   workspaces: "workspaces",
+  activity: "activity",
 });
 
 /**

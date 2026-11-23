@@ -143,6 +143,8 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     pi.registerTool({
       name: "activity_lifecycle",
       label: "Activity lifecycle",
+      exposure: "deferred" as const,
+      defaultActive: false,
       description:
         "Declare a runtime skill active, finished, or superseded for the local activity timeline. This is not compliance evidence.",
       parameters: Type.Object({

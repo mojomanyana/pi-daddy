@@ -129,6 +129,8 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
   pi.registerTool({
     name: "delegate_chain",
     label: "Delegate a chain of sub-agents (governed, sequential)",
+    exposure: "deferred" as const,
+    defaultActive: false,
     description:
       "Run sub-agents ONE AFTER ANOTHER, each receiving the previous one's output. Use this when a step needs " +
       "what an earlier step produced — a decision feeding a design feeding an implementation. Use `delegate_all` " +

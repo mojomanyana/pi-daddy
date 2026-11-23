@@ -75,11 +75,5 @@
     "@types/node": "^22.0.0",
     "typebox": "^1.1.38",
     "typescript": "^5.7.0"
-  },
-  "os": [
-    "linux"
-  ],
-  "cpu": [
-    "x64"
-  ]
+  }
 }

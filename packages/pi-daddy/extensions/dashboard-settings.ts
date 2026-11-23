@@ -71,95 +71,11 @@ const safeStorageRoot = (value: unknown) =>
       : value
     : undefined;
 export async function dashboardJev(
-  session: GrantsSession,
+  _session: GrantsSession,
   action: "status" | "enable" | "disable" | JevEditAction,
 ): Promise<DashboardJevState> {
-  const current = owner(session, action !== "status");
-  const pi = bridges.get(session);
-  if (!pi?.events?.emit) {
-    if (action !== "status") throw new Error("JEV bridge unavailable; load skill-harness in the owner Pi session");
-    return unavailable();
-  }
-  const requestId = randomUUID();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => (action === "status" ? resolve(unavailable()) : reject(new Error("JEV control was not acknowledged"))),
-      200,
-    );
-    const reply = (input: unknown) => {
-      const value = input as {
-        version?: number;
-        requestId?: string;
-        sessionId?: string;
-        pending?: boolean;
-        error?: string;
-        status?: {
-          enabled?: boolean;
-          mode?: string;
-          storage?: string | null;
-          remaining?: number;
-          used?: number;
-          limit?: number;
-          hintsEnabled?: boolean;
-          controls?: unknown;
-          availability?: string;
-          providerReadiness?: string;
-          selectedProvider?: string | null;
-          selectedModel?: string | null;
-          transport?: string | null;
-          storageRoot?: string | null;
-        };
-      };
-      if (!value || value.version !== 1 || value.requestId !== requestId || value.sessionId !== current.nativeSessionId)
-        return;
-      clearTimeout(timer);
-      if (session.reloadLifecycle.autoMode !== current || session.autoMode !== current.reader) {
-        reject(new Error("JEV settings owner changed"));
-        return;
-      }
-      if (!value.status || typeof value.status.enabled !== "boolean") {
-        if (action !== "status") reject(new Error("JEV owner could not apply the request"));
-        else resolve(unavailable("JEV owner is not bound to this session"));
-        return;
-      }
-      if (value.error && isJevEditAction(action)) {
-        reject(new Error("JEV settings request declined. Check the main Pi session."));
-        return;
-      }
-      const count = (n: unknown) => (typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : undefined);
-      resolve({
-        available: true,
-        controls: Array.isArray(value.status.controls) ? value.status.controls.filter(isJevEditAction) : undefined,
-        used: count(value.status.used),
-        limit: count(value.status.limit),
-        hintsEnabled: typeof value.status.hintsEnabled === "boolean" ? value.status.hintsEnabled : undefined,
-        enabled: value.status.enabled,
-        pending: value.pending === true,
-        mode: safeText(value.status.mode),
-        storage: value.status.storage === null ? null : safeText(value.status.storage),
-        remaining: Number.isSafeInteger(value.status.remaining) ? value.status.remaining : undefined,
-        availability: safeText(value.status.availability),
-        providerReadiness: safeText(value.status.providerReadiness),
-        selectedProvider: safeIdentifier(value.status.selectedProvider),
-        selectedModel: safeIdentifier(value.status.selectedModel),
-        transport: safeIdentifier(value.status.transport),
-        storageRoot: safeStorageRoot(value.status.storageRoot),
-        ...(value.error ? { error: "JEV request declined or unavailable; inspect the owner Pi session." } : {}),
-      });
-    };
-    try {
-      pi.events.emit("skill-harness:jev-control-v1", {
-        version: 1,
-        requestId,
-        sessionId: current.nativeSessionId,
-        action,
-        reply,
-      });
-    } catch {
-      clearTimeout(timer);
-      reject(new Error("JEV control bridge failed"));
-    }
-  });
+  if (action !== "status") throw new Error("JEV support has been removed from this ecosystem");
+  return unavailable();
 }
 export async function dashboardSettingsSnapshot(
   session: GrantsSession,

@@ -1,7 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
 
-const DELEGATION_TOOL_NAMES = ["delegate", "delegate_all", "delegate_chain", "delegate_describe"];
+// Keep only `delegate` active by default; secondary delegation tools remain deferred
+// (discoverable via Pi's native `tool_search` and `codemode`) to keep Turn-1 schemas lean.
+const DELEGATION_TOOL_NAMES = ["delegate"];
 
 function setDelegationActive(pi: ExtensionAPI, enabled: boolean): void {
   const surface = pi as ExtensionAPI & { getActiveTools?: () => string[]; setActiveTools?: (names: string[]) => void };
