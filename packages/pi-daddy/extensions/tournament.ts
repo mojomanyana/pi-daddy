@@ -8,15 +8,12 @@
  * Both register with `defaultActive: false` (0 Turn-1 schema bytes in Standard mode) and are
  * auto-activated for Ambitious `range` / `altitude` runs in `extensions/work-mode.ts`.
  */
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { runWorktreeTournament, type CandidateRunResult } from "../src/executors/worktree-tournament.ts";
 import { resolveTierModel, runInProcessReadOnly, type StreamRegistry } from "../src/executors/inprocess-readonly.ts";
 import type { GrantsSession } from "./session.ts";
-
-const execFileAsync = promisify(execFile);
 
 const DEFAULT_APPROACHES = [
   "Clean minimal implementation focused on strict correctness and zero over-engineering.",
@@ -24,7 +21,7 @@ const DEFAULT_APPROACHES = [
   "Alternative architecture prioritizing simplicity, clear invariants, and thorough tests.",
 ];
 
-async function runPiCandidate(input: {
+function runPiCandidate(input: {
   task: string;
   approach: string;
   worktree: string;
@@ -38,26 +35,64 @@ async function runPiCandidate(input: {
     `Design emphasis for this candidate: ${input.approach}`,
     "Implement the changes directly in this workspace, run tests to verify, and summarize concisely.",
   ].join("\n");
-  const args = ["-p", "--no-session", "--no-extensions", "--thinking", input.thinking];
+  const args = [
+    "-p",
+    "--no-session",
+    "--no-extensions",
+    "--no-skills",
+    "--no-mcp",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    input.thinking,
+  ];
   if (input.model) args.push("--model", input.model);
   args.push(prompt);
-  try {
-    const { stdout } = await execFileAsync("pi", args, {
+  return new Promise((resolve) => {
+    const child = spawn("pi", args, {
       cwd: input.worktree,
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024,
-      signal: input.signal,
+      stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PI_DADDY_HERDR: "0", PI_DADDY_ACTIVITY_TIMELINE: "off" },
     });
-    return { ok: true, summary: stdout.trim().slice(-1500) };
-  } catch (error) {
-    const err = error as { message?: string; stderr?: string };
-    return {
-      ok: false,
-      summary: "",
-      error: (err.stderr || err.message || "candidate failed").slice(0, 400),
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (res: { ok: boolean; summary: string; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      input.signal?.removeEventListener("abort", onAbort);
+      resolve(res);
     };
-  }
+    const onAbort = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        /* ignore */
+      }
+      finish({ ok: false, summary: "", error: "candidate aborted" });
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        /* ignore */
+      }
+      finish({ ok: false, summary: "", error: "candidate timed out after 120s" });
+    }, 120_000);
+    input.signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout?.on("data", (d) => {
+      if (stdout.length < 256 * 1024) stdout += String(d);
+    });
+    child.stderr?.on("data", (d) => {
+      if (stderr.length < 64 * 1024) stderr += String(d);
+    });
+    child.once("error", (err) => finish({ ok: false, summary: "", error: err.message.slice(0, 400) }));
+    child.once("close", (code) => {
+      if (code === 0) finish({ ok: true, summary: stdout.trim().slice(-1500) });
+      else finish({ ok: false, summary: "", error: (stderr || stdout || `exit ${code}`).trim().slice(0, 400) });
+    });
+  });
 }
 
 async function judgePassingCandidates(
