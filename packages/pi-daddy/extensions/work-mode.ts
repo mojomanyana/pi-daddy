@@ -325,6 +325,7 @@ async function runColdDiffReview(
 
 export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   let savedThinking: string | undefined;
+  let savedTools: string[] | undefined;
   let lastPrompt = "";
   let coldReviewRanForTurn = false;
 
@@ -339,8 +340,20 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     savedThinking = undefined;
   };
 
+  const restoreTools = () => {
+    if (savedTools !== undefined && typeof (pi as any).setActiveTools === "function") {
+      try {
+        (pi as any).setActiveTools(savedTools);
+      } catch {
+        /* best-effort */
+      }
+    }
+    savedTools = undefined;
+  };
+
   const resetLifecycle = () => {
     restoreThinking();
+    restoreTools();
     lastPrompt = "";
     coldReviewRanForTurn = false;
   };
@@ -371,6 +384,27 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
           setThinking("low");
         } catch {
           savedThinking = undefined;
+        }
+      }
+    }
+
+    // Mechanical lever 1b: auto-activate Phase-2 tools for Ambitious range/altitude only.
+    const getTools = (pi as any).getActiveTools;
+    const setTools = (pi as any).setActiveTools;
+    if (selected?.mode === "ambitious" && typeof getTools === "function" && typeof setTools === "function") {
+      const extras: string[] = [];
+      if (selected.emphases.includes("range") && session.mayDelegate) extras.push("delegate_tournament");
+      if (selected.emphases.includes("altitude")) extras.push("quick_review");
+      if (extras.length > 0) {
+        const currentTools: string[] = getTools();
+        const missing = extras.filter((t) => !currentTools.includes(t));
+        if (missing.length > 0) {
+          savedTools = [...currentTools];
+          try {
+            setTools([...currentTools, ...missing]);
+          } catch {
+            savedTools = undefined;
+          }
         }
       }
     }
@@ -412,6 +446,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
 
   pi.on("agent_settled", () => {
     restoreThinking();
+    restoreTools();
     finishWorkModeRequest(session);
   });
   pi.on("session_tree", (_event, ctx) => initializeWorkMode(pi, session, ctx, "tree"));

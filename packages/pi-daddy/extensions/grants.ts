@@ -1,5 +1,6 @@
 import { registerProjectMemoryOwner } from "./project-memory-owner.ts";
 import { registerWorkMode } from "./work-mode.ts";
+import { registerTournamentTools } from "./tournament.ts";
 import { registerDashboardSettings, childExecutionLimits, closeDashboardTelemetry } from "./dashboard-settings.ts";
 import { bindEcosystemVersions } from "./ecosystem-versions.ts";
 import {
@@ -102,6 +103,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   registerActivityTimeline(pi, session);
   // Once per instance, unlike the delegation tools, which session_start registers again (2026-11-17).
   registerChildUsageReport(pi, session);
+  registerTournamentTools(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
   registerDashboardSettings(pi, session);
   const beginWorkMode = registerWorkMode(pi, session);
