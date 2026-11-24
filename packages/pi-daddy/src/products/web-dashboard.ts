@@ -1,9 +1,8 @@
 /**
- * Standalone Side-Panel Steering & Configuration Dashboard (Layer 3: products).
+ * Standalone Multi-Tab Side-Panel Server (Layer 3: products).
  *
- * Works across ANY terminal (iTerm2, Ghostty, WezTerm, Kitty, Windows Terminal, VS Code, tmux)
- * on macOS, Linux, and Windows with zero Herdr dependency. Binds strictly to 127.0.0.1 on an
- * ephemeral port with per-session 32-hex auth token and streams live updates via SSE (/events).
+ * Powers BOTH the 5-tab interactive Terminal Side Panel (`pi-daddy panel`) AND the Browser UI
+ * (`/dashboard open`) across macOS, Linux, and Windows with zero Herdr dependency.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -12,6 +11,22 @@ import type { WorkModeSelection, WorkModeSnapshot } from "../kernel/work-mode.ts
 export interface WebDashboardEvent {
   readonly at: string;
   readonly kind: string;
+  readonly detail: string;
+}
+
+export interface WebDashboardUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheHitPct: number;
+  readonly costUsd: number;
+  readonly turns: number;
+}
+
+export interface WebDashboardTask {
+  readonly at: string;
+  readonly kind: string;
+  readonly status: string;
   readonly detail: string;
 }
 
@@ -33,6 +48,10 @@ export interface WebDashboardState {
   readonly modelTiers: WebDashboardModelTiers;
   readonly workMode: WorkModeSnapshot;
   readonly busy: boolean;
+  readonly usage: WebDashboardUsage;
+  readonly tasks: readonly WebDashboardTask[];
+  readonly memoryLines: readonly string[];
+  readonly researchLines: readonly string[];
   readonly recentEvents: readonly WebDashboardEvent[];
 }
 
@@ -56,6 +75,7 @@ export interface StartWebDashboardOptions {
   readonly onSteer?: (message: string, deliverAs: "steer" | "followUp") => Promise<void> | void;
   readonly onAutoModeChange?: (enabled: boolean) => Promise<void> | void;
   readonly onConfigChange?: (patch: WebDashboardConfigUpdate) => Promise<void> | void;
+  readonly onEscalate?: (reason?: string) => Promise<void> | void;
 }
 
 function tokenMatches(supplied: string | null, expected: string): boolean {
@@ -90,7 +110,7 @@ function renderHtml(token: string): string {
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Pi Daddy · Side Panel</title>
 <style>
-  :root { color-scheme: dark; --bg:#0d1117; --card:#161b22; --bd:#30363d; --fg:#e6edf3; --mut:#8b949e; --acc:#58a6ff; --ok:#3fb950; --warn:#d29922; }
+  :root { color-scheme: dark; --bg:#0d1117; --card:#161b22; --bd:#30363d; --fg:#e6edf3; --mut:#8b949e; --acc:#58a6ff; --ok:#3fb950; }
   * { box-sizing:border-box; }
   body { margin:0; font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:var(--bg); color:var(--fg); padding:12px; }
   .wrap { display:flex; flex-direction:column; gap:10px; max-width:960px; margin:0 auto; }
@@ -109,7 +129,7 @@ function renderHtml(token: string): string {
   .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px; }
   label.chk { display:inline-flex; align-items:center; gap:4px; font-size:12px; cursor:pointer; margin-right:8px; }
   label.chk input { width:auto; }
-  #feed { max-height:240px; overflow:auto; font-size:11.5px; }
+  #feed { max-height:220px; overflow:auto; font-size:11.5px; }
   .ev { padding:3px 0; border-bottom:1px solid #21262d; }
   .ts { color:var(--mut); margin-right:6px; }
   .msg { color:var(--mut); font-size:11px; margin-top:5px; min-height:14px; }
@@ -119,19 +139,19 @@ function renderHtml(token: string): string {
 <div class="wrap">
   <div class="hdr">
     <h1>Pi Daddy · Side Panel</h1>
+    <span id="usage" class="pill">$0.000 · 0 tok</span>
     <span id="status" class="pill">connecting…</span>
   </div>
-
   <div class="card">
-    <h2>Live Steering</h2>
-    <textarea id="steer-text" rows="2" placeholder="Steer active run or queue follow-up instruction…"></textarea>
+    <h2>Live Steering & Escalation</h2>
+    <textarea id="steer-text" rows="2" placeholder="Steer active run or queue follow-up…"></textarea>
     <div class="bar">
       <button class="primary" onclick="sendSteer('steer')">Steer Now</button>
       <button onclick="sendSteer('followUp')">Queue Follow-up</button>
+      <button onclick="escalate()">Escalate to Strong</button>
       <span id="steer-msg" class="msg"></span>
     </div>
   </div>
-
   <div class="grid2">
     <div class="card">
       <h2>Work Mode & Permissions</h2>
@@ -149,7 +169,6 @@ function renderHtml(token: string): string {
       </div>
       <div id="wm-msg" class="msg"></div>
     </div>
-
     <div class="card">
       <h2>Runtime Configuration</h2>
       <div class="row">Model: <strong id="model">-</strong> · <span id="platform">-</span></div>
@@ -160,29 +179,25 @@ function renderHtml(token: string): string {
           <option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
         </select>
       </div>
-      <div class="row" style="margin-top:6px">
-        <input id="m-fast" placeholder="PI_ECO_MODEL_FAST (e.g. fireworks/.../glm-5p3-flash)" />
-      </div>
-      <div class="row">
-        <input id="m-work" placeholder="PI_ECO_MODEL_WORK (parallel worktree candidates)" />
-      </div>
-      <div class="row">
-        <input id="m-strong" placeholder="PI_ECO_MODEL_STRONG (cold diff review & judge)" />
-      </div>
+      <div class="row" style="margin-top:6px"><input id="m-fast" placeholder="models.fast" /></div>
+      <div class="row"><input id="m-work" placeholder="models.work" /></div>
+      <div class="row"><input id="m-strong" placeholder="models.strong" /></div>
       <div class="bar">
         <button onclick="saveTiers()">Save Model Tiers</button>
         <span id="cfg-msg" class="msg"></span>
       </div>
     </div>
   </div>
-
+  <div class="grid2">
+    <div class="card"><h2>Memory (Bookie)</h2><div id="mem" class="row">-</div></div>
+    <div class="card"><h2>Research (Scout)</h2><div id="res" class="row">-</div></div>
+  </div>
   <div class="card">
     <h2>Tools & Workspace</h2>
     <div class="row" style="color:var(--mut);font-size:11px" id="cwd">-</div>
     <div id="tools" class="bar"></div>
     <div id="opt-tools" class="bar"></div>
   </div>
-
   <div class="card">
     <h2>Live Activity Feed</h2>
     <div id="feed">Waiting for events…</div>
@@ -202,6 +217,9 @@ function render(s) {
   const st = document.getElementById('status');
   st.textContent = s.busy ? 'running' : 'idle';
   st.className = 'pill ' + (s.busy ? 'on' : '');
+  const u = s.usage || { inputTokens:0, outputTokens:0, cacheReadTokens:0, cacheHitPct:0, costUsd:0 };
+  const tot = Math.round((u.inputTokens + u.outputTokens + u.cacheReadTokens) / 1000);
+  document.getElementById('usage').textContent = '$' + (u.costUsd || 0).toFixed(4) + ' · ' + tot + 'K tok · ' + (u.cacheHitPct || 0) + '% cache';
   document.getElementById('model').textContent = s.model;
   document.getElementById('platform').textContent = s.platform;
   document.getElementById('cwd').textContent = s.cwd;
@@ -220,6 +238,9 @@ function render(s) {
     const el = document.getElementById(id);
     if (document.activeElement !== el) el.value = val || '';
   }
+  const esc = v => String(v || '').replace(/</g, '&lt;');
+  document.getElementById('mem').innerHTML = (s.memoryLines || []).length ? s.memoryLines.map(x => '<div class="ev">' + esc(x) + '</div>').join('') : 'No Bookie observations yet.';
+  document.getElementById('res').innerHTML = (s.researchLines || []).length ? s.researchLines.map(x => '<div class="ev">' + esc(x) + '</div>').join('') : 'No Scout observations yet.';
   const active = new Set(s.activeTools || []);
   document.getElementById('tools').innerHTML = (s.activeTools || []).map(x => '<span class="pill on">' + x + '</span>').join('');
   document.getElementById('opt-tools').innerHTML = (s.optionalTools || []).map(name => {
@@ -229,9 +250,7 @@ function render(s) {
   const feed = document.getElementById('feed');
   const rows = (s.recentEvents || []).slice().reverse();
   feed.innerHTML = rows.length
-    ? rows.map(e => '<div class="ev"><span class="ts">' + e.at.slice(11,19)
-        + '</span><strong>' + e.kind + '</strong> '
-        + String(e.detail || '').replace(/</g,'&lt;') + '</div>').join('')
+    ? rows.map(e => '<div class="ev"><span class="ts">' + e.at.slice(11,19) + '</span><strong>' + e.kind + '</strong> ' + esc(e.detail) + '</div>').join('')
     : 'No activity yet.';
 }
 async function sendSteer(deliverAs) {
@@ -240,8 +259,12 @@ async function sendSteer(deliverAs) {
   const text = box.value.trim();
   if (!text) return;
   const r = await post('/api/steer', { message: text, deliverAs });
-  if (r.ok) { box.value = ''; msg.textContent = deliverAs === 'steer' ? 'Steered.' : 'Queued follow-up.'; }
+  if (r.ok) { box.value = ''; msg.textContent = deliverAs === 'steer' ? 'Steered.' : 'Queued.'; }
   else msg.textContent = r.data.error || 'Failed';
+}
+async function escalate() {
+  const r = await post('/api/escalate', { reason: 'operator-requested' });
+  document.getElementById('steer-msg').textContent = r.ok ? 'Escalation requested.' : (r.data.error || 'Failed');
 }
 async function applyMode(mode) {
   const emphases = mode === 'ambitious' ? [...document.querySelectorAll('.emp:checked')].map(e => e.value) : [];
@@ -266,9 +289,7 @@ async function saveTiers() {
   });
   document.getElementById('cfg-msg').textContent = r.ok ? 'Model tiers saved.' : (r.data.error || 'Failed');
 }
-async function toggleTool(name, enabled) {
-  await post('/api/config', { toggleTool: { name, enabled } });
-}
+async function toggleTool(name, enabled) { await post('/api/config', { toggleTool: { name, enabled } }); }
 const es = new EventSource('/events?token=' + encodeURIComponent(TOKEN));
 es.onmessage = (ev) => { try { render(JSON.parse(ev.data)); } catch {} };
 </script>
@@ -347,6 +368,10 @@ export async function startWebDashboard(options: StartWebDashboardOptions): Prom
           } else if (parsed.pathname === "/api/config") {
             if (!options.onConfigChange) throw new Error("Config editing unavailable");
             await options.onConfigChange(data as WebDashboardConfigUpdate);
+          } else if (parsed.pathname === "/api/escalate") {
+            if (!options.onEscalate) throw new Error("Escalation unavailable");
+            const reason = typeof data.reason === "string" ? data.reason.slice(0, 200) : undefined;
+            await options.onEscalate(reason);
           } else {
             jsonReply(res, 404, { error: "Not found" });
             return;

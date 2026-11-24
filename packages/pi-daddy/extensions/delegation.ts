@@ -349,7 +349,10 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
           tools: params.tools,
           model: params.model,
           thinking: params.thinking,
-          context: params.context,
+          context:
+            params.context?.mode === "files" && (!params.context.files || params.context.files.length === 0)
+              ? { mode: "none" as const }
+              : params.context,
           correlation: params.correlation,
           workspace: params.workspace,
         },

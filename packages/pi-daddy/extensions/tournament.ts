@@ -15,6 +15,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { runWorktreeTournament, type CandidateRunResult } from "../src/executors/worktree-tournament.ts";
 import { resolveTierModel, runInProcessReadOnly, type StreamRegistry } from "../src/executors/inprocess-readonly.ts";
+import { resolveEcosystemModelTier } from "../src/kernel/ecosystem-config.ts";
 import type { GrantsSession } from "./session.ts";
 
 const DEFAULT_APPROACHES = [
@@ -206,8 +207,8 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
       const approaches = params.approaches ?? DEFAULT_APPROACHES.slice(0, count);
       const ctxModel = (ctx as unknown as { model?: { provider?: string; id?: string } }).model;
       const workerModel =
-        process.env.PI_ECO_MODEL_WORK?.trim() ||
-        process.env.PI_ECO_MODEL_FAST?.trim() ||
+        resolveEcosystemModelTier("work") ||
+        resolveEcosystemModelTier("fast") ||
         (ctxModel?.provider && ctxModel?.id ? `${ctxModel.provider}/${ctxModel.id}` : undefined);
       const outcome = await runWorktreeTournament({
         repoRoot: ctx.cwd,

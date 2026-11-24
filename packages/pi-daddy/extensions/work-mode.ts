@@ -17,6 +17,7 @@ import {
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
 import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
+import { loadEcosystemConfig, resolveEcosystemModelTier } from "../src/kernel/ecosystem-config.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
 
 export const WORK_MODE_ENTRY = "pi-daddy:work-mode:v1";
@@ -278,7 +279,7 @@ async function runColdDiffReview(
     if (!trimmed) return { pass: true };
     const registry = (ctx as any).modelRegistry;
     let model = (ctx as any).model;
-    const strongSpec = process.env.PI_ECO_MODEL_STRONG;
+    const strongSpec = resolveEcosystemModelTier("strong");
     if (strongSpec && typeof registry?.find === "function") {
       const sep = strongSpec.includes("/") ? "/" : ":";
       const idx = strongSpec.indexOf(sep);
@@ -330,7 +331,38 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   let savedThinking: string | undefined;
   let savedTools: string[] | undefined;
   let lastPrompt = "";
+  let lastCtx: ExtensionContext | undefined;
   let coldReviewRanForTurn = false;
+  let escalatedForTurn = false;
+
+  const runRescueEscalation = async (reason: string) => {
+    if (escalatedForTurn || !lastCtx) return;
+    const strongSpec = resolveEcosystemModelTier("strong");
+    if (!strongSpec) return;
+    escalatedForTurn = true;
+    const verdict = await runColdDiffReview(
+      lastCtx,
+      `${lastPrompt}\n\n[Escalation trigger: ${reason}. Identify the exact root cause and concrete fix.]`,
+      (lastCtx as any)?.signal,
+    );
+    const send = (pi as any).sendUserMessage;
+    if (!verdict.pass && verdict.feedback && typeof send === "function") {
+      send(
+        `[Strong-model escalation (${strongSpec}) — ${reason}]:\n\n${verdict.feedback}\n\nApply this fix directly and re-verify.`,
+        { deliverAs: "steer", expandPromptTemplates: false },
+      );
+    }
+  };
+
+  pi.events?.on?.("principal:thrash-detected:v1", (payload: any) => {
+    const cfg = loadEcosystemConfig();
+    if (process.env.PI_ECO_AUTO_ESCALATE === "0" || cfg.escalation?.auto === false) return;
+    const detail = `repeated failing check (${payload?.command ?? "test"}): ${payload?.signature ?? "thrash"}`;
+    void runRescueEscalation(detail).catch(() => {});
+  });
+  pi.events?.on?.("pi-daddy:escalate-request:v1", (payload: any) => {
+    void runRescueEscalation(String(payload?.reason ?? "operator panel")).catch(() => {});
+  });
 
   const restoreThinking = () => {
     if (savedThinking !== undefined && typeof (pi as any).setThinkingLevel === "function") {
@@ -359,14 +391,17 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     restoreTools();
     lastPrompt = "";
     coldReviewRanForTurn = false;
+    escalatedForTurn = false;
   };
 
   for (const ev of ["session_start", "session_switch", "session_fork", "session_shutdown"]) {
     (pi as any).on(ev, resetLifecycle);
   }
 
-  pi.on("before_agent_start", (event) => {
+  pi.on("before_agent_start", (event, ctx) => {
+    lastCtx = ctx;
     coldReviewRanForTurn = false;
+    escalatedForTurn = false;
     lastPrompt = typeof (event as any).prompt === "string" ? (event as any).prompt : "";
     const selected = beginWorkModeRequest(session, true);
     if (current(session)?.inherited) return;
@@ -436,9 +471,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     const wantsAmbitiousDepth =
       active?.mode === "ambitious" && (active.emphases.length === 0 || active.emphases.includes("depth"));
     const wantsStandardStrong =
-      !wantsAmbitiousDepth &&
-      Boolean(process.env.PI_ECO_MODEL_STRONG?.trim()) &&
-      process.env.PI_DADDY_AUTO_REVIEW !== "0";
+      !wantsAmbitiousDepth && Boolean(resolveEcosystemModelTier("strong")) && process.env.PI_DADDY_AUTO_REVIEW !== "0";
     if (!wantsAmbitiousDepth && !wantsStandardStrong) return;
     if (wantsStandardStrong) {
       const preview = await collectReviewDiff(ctx.cwd);

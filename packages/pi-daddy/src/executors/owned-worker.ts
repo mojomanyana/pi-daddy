@@ -8,6 +8,7 @@ import { constants as osConstants } from "node:os";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
 import { WORKER_SHA256 } from "./worker-artifact.ts";
+import { runPortableChild } from "./portable-child.ts";
 import type { ChildRunRequest, ChildRunResult } from "../kernel/run-child.ts";
 import { takeBytes, DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_TIMEOUT_MS, DEFAULT_KILL_GRACE_MS } from "../kernel/run-child.ts";
 import type { CapturedWorkerCleanup, CapturedWorkerIdentity } from "../kernel/captured-worker-contract.ts";
@@ -46,8 +47,12 @@ export async function runOwnedChild(request: OwnedChildRunRequest): Promise<Owne
   if (request.hardDeadlineAt !== undefined && request.hardDeadlineAt <= Date.now())
     return { ...notStarted("deadline elapsed before helper launch"), timedOut: true };
   if (request.signal?.aborted) return notStarted("cancelled before helper launch", true);
-  if (process.platform !== "linux" || process.arch !== "x64")
-    return notStarted("captured worker requires qualified Linux x64 helper");
+  if (process.platform !== "linux" || process.arch !== "x64") {
+    if (process.env.PI_DADDY_REQUIRE_LINUX_WORKER === "1") {
+      return notStarted("captured worker requires qualified Linux x64 helper");
+    }
+    return runPortableChild(request);
+  }
   if (request.terminalUi && (!process.stdin.isTTY || !process.stdout.isTTY || !process.stderr.isTTY))
     return notStarted("native Pi view requires a real pane terminal on stdin, stdout and stderr");
   const commandArgs = [request.command, ...request.args];

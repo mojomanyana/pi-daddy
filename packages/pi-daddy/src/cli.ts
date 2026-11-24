@@ -70,9 +70,13 @@ export interface ParsedArgs {
     | "outcomes"
     | "diagnostics-export"
     | "panel"
+    | "setup"
+    | "doctor"
     | "help"
     | "version";
   panelUrl?: string;
+  preset?: string;
+  skipInstall?: boolean;
   importTarget?: string;
   selectionPath?: string;
   exportDirectory?: string;
@@ -106,10 +110,27 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const [command, ...tail] = args;
   if (command === "panel") {
     const [url, ...extra] = tail;
-    if (!url || url.startsWith("-") || extra.length) {
-      return { command: "help", force: false, errors: ["panel needs: <http://127.0.0.1:PORT/?token=...>"] };
+    if ((url && url.startsWith("-")) || extra.length) {
+      return {
+        command: "help",
+        force: false,
+        errors: ["panel takes an optional <http://127.0.0.1:PORT/?token=...> URL"],
+      };
     }
-    return { command: "panel", force: false, errors: [], panelUrl: url };
+    return { command: "panel", force: false, errors: [], ...(url ? { panelUrl: url } : {}) };
+  }
+  if (command === "doctor") {
+    return { command: "doctor", force: false, errors: tail.length ? ["doctor takes no arguments"] : [] };
+  }
+  if (command === "setup") {
+    let preset: string | undefined;
+    let skipInstall = false;
+    for (let i = 0; i < tail.length; i++) {
+      if (tail[i] === "--preset" && tail[i + 1]) preset = tail[++i];
+      else if (tail[i] === "--skip-install") skipInstall = true;
+      else return { command: "help", force: false, errors: [`unknown setup option: ${tail[i]}`] };
+    }
+    return { command: "setup", force: false, errors: [], preset, skipInstall };
   }
   if (command === "diagnostics") {
     const [verb, selectionPath, exportDirectory, ...extra] = tail;
@@ -423,8 +444,16 @@ export async function main(
   }
   if (parsed.command === "panel") {
     const { runTerminalPanel } = await import("./products/terminal-panel.ts");
-    await runTerminalPanel(parsed.panelUrl!);
+    await runTerminalPanel(parsed.panelUrl);
     return 0;
+  }
+  if (parsed.command === "setup") {
+    const { runEcosystemSetup } = await import("./products/setup-doctor.ts");
+    return runEcosystemSetup({ preset: parsed.preset, skipInstall: parsed.skipInstall });
+  }
+  if (parsed.command === "doctor") {
+    const { runEcosystemDoctor } = await import("./products/setup-doctor.ts");
+    return runEcosystemDoctor();
   }
   if (parsed.command === "diagnostics-export") {
     const { exportDiagnostics } = await import("./products/diagnostic-export.ts");
