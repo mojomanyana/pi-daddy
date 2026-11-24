@@ -1,10 +1,12 @@
 /** Owner-bound dashboard settings. No provider call, global env edit, or permission inference. */
-import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "./session.ts";
-import type { DashboardJevState, DashboardSettingsSnapshot } from "../src/products/dashboard-settings.ts";
+import type {
+  DashboardJevState,
+  DashboardSettingsSnapshot,
+  JevEditAction,
+} from "../src/products/dashboard-settings.ts";
 import { telemetrySnapshot, setTelemetryEnabled, closeTelemetry } from "./dashboard-telemetry.ts";
-import { isJevEditAction, type JevEditAction } from "../src/products/dashboard-settings.ts";
 import { MAX_CHILDREN_PER_CALL } from "../src/kernel/fanout.ts";
 import { workModeSnapshot } from "./work-mode.ts";
 import {
@@ -14,16 +16,13 @@ import {
   idleTimeoutFromEnv,
 } from "../src/kernel/run-child.ts";
 
-const bridges = new WeakMap<GrantsSession, Pick<ExtensionAPI, "events">>();
 const unavailable = (error?: string): DashboardJevState => ({
   available: false,
   enabled: false,
   pending: false,
   ...(error ? { error } : {}),
 });
-export function registerDashboardSettings(pi: Pick<ExtensionAPI, "events">, session: GrantsSession): void {
-  bridges.set(session, pi);
-}
+export function registerDashboardSettings(_pi: Pick<ExtensionAPI, "events">, _session: GrantsSession): void {}
 function owner(session: GrantsSession, edit = false) {
   const current = session.reloadLifecycle?.autoMode;
   if (!session.ownerBound || !current || current.reader !== session.autoMode)
@@ -60,106 +59,12 @@ export function setDashboardLimit(session: GrantsSession, key: unknown, seconds:
   const ms = key === "wall" ? timeoutFromEnv(String(seconds)) : idleTimeoutFromEnv(String(seconds));
   session.reloadLifecycle.executionSettings = { ...settings, [key === "wall" ? "wallMs" : "idleMs"]: ms };
 }
-const safeText = (value: unknown) => (typeof value === "string" ? value.slice(0, 120) : undefined);
-// Route identifiers are data, never terminal control sequences or free-form provider labels.
-const safeIdentifier = (value: unknown) =>
-  typeof value === "string" && /^[A-Za-z0-9@~][A-Za-z0-9._:/@~+-]{0,255}$/.test(value) ? value : undefined;
-const safeStorageRoot = (value: unknown) =>
-  typeof value === "string" && value.startsWith("/") && !/[\p{Cc}\p{Cf}]/u.test(value)
-    ? value.length > 120
-      ? `${value.slice(0, 117)}...`
-      : value
-    : undefined;
 export async function dashboardJev(
-  session: GrantsSession,
+  _session: GrantsSession,
   action: "status" | "enable" | "disable" | JevEditAction,
 ): Promise<DashboardJevState> {
-  const current = owner(session, action !== "status");
-  const pi = bridges.get(session);
-  if (!pi?.events?.emit) {
-    if (action !== "status") throw new Error("JEV bridge unavailable; load skill-harness in the owner Pi session");
-    return unavailable();
-  }
-  const requestId = randomUUID();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => (action === "status" ? resolve(unavailable()) : reject(new Error("JEV control was not acknowledged"))),
-      200,
-    );
-    const reply = (input: unknown) => {
-      const value = input as {
-        version?: number;
-        requestId?: string;
-        sessionId?: string;
-        pending?: boolean;
-        error?: string;
-        status?: {
-          enabled?: boolean;
-          mode?: string;
-          storage?: string | null;
-          remaining?: number;
-          used?: number;
-          limit?: number;
-          hintsEnabled?: boolean;
-          controls?: unknown;
-          availability?: string;
-          providerReadiness?: string;
-          selectedProvider?: string | null;
-          selectedModel?: string | null;
-          transport?: string | null;
-          storageRoot?: string | null;
-        };
-      };
-      if (!value || value.version !== 1 || value.requestId !== requestId || value.sessionId !== current.nativeSessionId)
-        return;
-      clearTimeout(timer);
-      if (session.reloadLifecycle.autoMode !== current || session.autoMode !== current.reader) {
-        reject(new Error("JEV settings owner changed"));
-        return;
-      }
-      if (!value.status || typeof value.status.enabled !== "boolean") {
-        if (action !== "status") reject(new Error("JEV owner could not apply the request"));
-        else resolve(unavailable("JEV owner is not bound to this session"));
-        return;
-      }
-      if (value.error && isJevEditAction(action)) {
-        reject(new Error("JEV settings request declined. Check the main Pi session."));
-        return;
-      }
-      const count = (n: unknown) => (typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : undefined);
-      resolve({
-        available: true,
-        controls: Array.isArray(value.status.controls) ? value.status.controls.filter(isJevEditAction) : undefined,
-        used: count(value.status.used),
-        limit: count(value.status.limit),
-        hintsEnabled: typeof value.status.hintsEnabled === "boolean" ? value.status.hintsEnabled : undefined,
-        enabled: value.status.enabled,
-        pending: value.pending === true,
-        mode: safeText(value.status.mode),
-        storage: value.status.storage === null ? null : safeText(value.status.storage),
-        remaining: Number.isSafeInteger(value.status.remaining) ? value.status.remaining : undefined,
-        availability: safeText(value.status.availability),
-        providerReadiness: safeText(value.status.providerReadiness),
-        selectedProvider: safeIdentifier(value.status.selectedProvider),
-        selectedModel: safeIdentifier(value.status.selectedModel),
-        transport: safeIdentifier(value.status.transport),
-        storageRoot: safeStorageRoot(value.status.storageRoot),
-        ...(value.error ? { error: "JEV request declined or unavailable; inspect the owner Pi session." } : {}),
-      });
-    };
-    try {
-      pi.events.emit("skill-harness:jev-control-v1", {
-        version: 1,
-        requestId,
-        sessionId: current.nativeSessionId,
-        action,
-        reply,
-      });
-    } catch {
-      clearTimeout(timer);
-      reject(new Error("JEV control bridge failed"));
-    }
-  });
+  if (action !== "status") throw new Error("JEV support has been removed from this ecosystem");
+  return unavailable();
 }
 export async function dashboardSettingsSnapshot(
   session: GrantsSession,

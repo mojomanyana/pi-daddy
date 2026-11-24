@@ -410,6 +410,8 @@ export function registerInitiativeRuntime(
     pi.registerTool?.({
       name: "initiative_task",
       label: "Associate initiative task",
+      exposure: "deferred" as const,
+      defaultActive: false,
       description:
         "Associate one exact task from the human-selected work map with a planned operation_id. Does not dispatch or grant permissions.",
       parameters: Type.Object({

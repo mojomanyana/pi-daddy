@@ -55,12 +55,7 @@ test("no shipped module outside project-paths.ts spells a pi-daddy .pi path", as
 test("every project path lives under <cwd>/.pi/pi-daddy and every user path under <agent>/pi-daddy", () => {
   const cwd = "/work/proj";
   const env = { PI_CODING_AGENT_DIR: "/home/u/.pi/agent" };
-  const projectFns = [
-    paths.projectSettingsPath,
-    paths.projectGitignorePath,
-    paths.projectLedgerPath,
-    paths.activityTimelinePath,
-  ];
+  const projectFns = [paths.projectSettingsPath, paths.projectGitignorePath, paths.projectLedgerPath];
   const seen = new Set<string>();
   for (const fn of projectFns) {
     const p = fn(cwd);
@@ -68,6 +63,10 @@ test("every project path lives under <cwd>/.pi/pi-daddy and every user path unde
     assert.ok(!seen.has(p), `two helpers share ${p}`);
     seen.add(p);
   }
+  assert.ok(
+    paths.activityTimelinePath(cwd, env).startsWith("/home/u/.pi/agent/pi-daddy/activity/"),
+    paths.activityTimelinePath(cwd, env),
+  );
   assert.equal(paths.grantStorePath(cwd, env), `/home/u/.pi/agent/pi-daddy/grants/${paths.projectFileName(cwd)}`);
   assert.equal(paths.approvalsPath(cwd, env), `/home/u/.pi/agent/pi-daddy/approvals/${paths.projectFileName(cwd)}`);
   assert.equal(paths.workspaceLeasesDir(env), "/home/u/.pi/agent/pi-daddy/workspace-leases");

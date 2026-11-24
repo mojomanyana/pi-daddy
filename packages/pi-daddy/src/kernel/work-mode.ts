@@ -56,30 +56,23 @@ const emphases: Record<WorkModeEmphasis, string> = {
     "Broader approaches: borrow a useful technique from another discipline when it changes the method or result; choose concrete methods, not expert personas.",
 };
 
-/** Standard is a strict prompt no-op. Child guidance supplements, and never replaces, its assigned role. */
+/** Standard is a strict prompt no-op. Concise, non-contradictory guidance for open-weight models. */
 export function workModeGuidance(value: WorkModeSelection | undefined, role: "parent" | "child"): string | undefined {
   if (!value || value.mode === "standard") return;
-  const selected = value.emphases.length ? value.emphases : WORK_MODE_EMPHASES;
-  return [
-    "<pi-daddy-work-mode>",
-    `Working style: ${workModeLabel(value)}. This is optional approach guidance for this request.`,
+  const selected = value.emphases;
+  const lines = [
+    `Working style: ${workModeLabel(value)}.`,
     role === "child"
-      ? "Stay within the assigned task and role: review remains review and read-only investigation remains read-only. Return evidence and useful findings to the parent."
-      : "Own the agreed outcome and choose a proportionate approach using relevant installed skills and available tools.",
-    ...selected.map((key) => emphases[key]),
-    "Select the useful directions; they are not required stages. Before expensive work, identify the important assumption, " +
-      "available raw evidence and a check that could disprove it.",
-    "Use observed results to revise the method. Seek independent checks such as tests, measurements, source data or actual user-path observations. " +
-      "Another model's opinion alone is not proof.",
-    "Treat stretch targets as bounded experiments with a baseline and honest results. Ask about material changes to the agreed goal, scope or cost; " +
-      "continue routine authorized work without extra ceremony.",
-    "Missing optional evidence narrows claims, not independent work. Keep genuine permission and execution constraints. " +
-      "Mode selection changes no permissions, tools, models, limits or JEV settings.",
-    "Reuse completed work and current evidence. No mandatory delegation, research, evaluation or memory calls: " +
-      "use them only when useful and available under their existing rules.",
-    "For useful progress checkpoints, preserve the chosen approach, observed findings, limitations and next unfinished step through available memory, " +
-      "so resuming need not repeat work.",
-    "Keep planning and reporting concise; spend effort on delivery and verification.",
-    "</pi-daddy-work-mode>",
-  ].join("\n");
+      ? "Stay strictly within your assigned role and tool ceiling; report concrete evidence."
+      : "Own the end-to-end outcome cleanly with zero unnecessary ceremony.",
+  ];
+  if (selected.length === 0) {
+    lines.push(
+      "Balanced ambitious mode: verify root causes, cover edge cases with executable tests, and keep the diff minimal and clean.",
+    );
+  } else {
+    for (const key of selected) lines.push(emphases[key]);
+  }
+  lines.push("Prove every requirement with actual test/command output; keep reporting concise.");
+  return lines.join("\n");
 }
