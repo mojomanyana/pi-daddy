@@ -7,6 +7,7 @@
  */
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { resolveEcosystemModelTier } from "../kernel/ecosystem-config.ts";
 
 export type ReadOnlyRole = "review" | "architect" | "investigate";
 
@@ -65,8 +66,7 @@ export function resolveTierModel(
   env: NodeJS.ProcessEnv = process.env,
 ): { model: unknown; label: string } {
   const tierEnv =
-    explicitOverride?.trim() ||
-    (role === "investigate" ? env.PI_ECO_MODEL_FAST?.trim() : env.PI_ECO_MODEL_STRONG?.trim());
+    explicitOverride?.trim() || resolveEcosystemModelTier(role === "investigate" ? "fast" : "strong", env);
   if (tierEnv && typeof registry.find === "function") {
     const sep = tierEnv.includes("/") ? "/" : ":";
     const idx = tierEnv.indexOf(sep);

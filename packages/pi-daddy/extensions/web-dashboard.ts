@@ -1,7 +1,7 @@
 /**
- * Standalone /dashboard command + Pi TUI live footer status (zero Herdr required).
- * Supports live steering, work-mode, Auto permissions, thinking level, model tiers, and tool toggles
- * across macOS, Linux, and Windows in any terminal.
+ * Standalone /dashboard command + auto-attach locator + Pi TUI live footer (zero Herdr required).
+ * Supports 5-tab Terminal Side Panel (`pi-daddy panel`) & Web UI, live steering, usage/cost,
+ * Bookie/Scout observations, auto-split (tmux, WezTerm, macOS iTerm2, Windows Terminal), and Escalation.
  */
 import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -11,13 +11,22 @@ import {
   type WebDashboardEvent,
   type WebDashboardHandle,
   type WebDashboardState,
+  type WebDashboardTask,
 } from "../src/products/web-dashboard.ts";
+import {
+  loadEcosystemConfig,
+  removePanelLocator,
+  resolveEcosystemModelTier,
+  saveEcosystemConfig,
+  writePanelLocator,
+} from "../src/kernel/ecosystem-config.ts";
 import { workModeLabel } from "../src/kernel/work-mode.ts";
 import { setWorkMode, workModeSnapshot } from "./work-mode.ts";
 import { setAutoApproval } from "./session-auto-mode.ts";
 import type { GrantsSession } from "./session.ts";
 
 const MAX_EVENTS = 60;
+const MAX_TASKS = 30;
 const OPTIONAL_TOOLS = ["delegate_tournament", "quick_review", "delegate_all", "delegate_chain"] as const;
 const THINKING_ALLOWED = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -32,6 +41,25 @@ function openTerminalSplit(url: string): boolean {
       spawn("wezterm", ["cli", "split-pane", "--right", "--percent", "38", "--", "pi-daddy", "panel", url], {
         detached: true,
         stdio: "ignore",
+      }).unref();
+      return true;
+    }
+    if (process.platform === "darwin" && process.env.TERM_PROGRAM === "iTerm.app") {
+      const script = [
+        'tell application "iTerm2"',
+        "  tell current session of current window",
+        `    split vertically with default profile command ${JSON.stringify(cmd)}`,
+        "  end tell",
+        "end tell",
+      ].join("\n");
+      spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
+      return true;
+    }
+    if (process.platform === "win32" && process.env.WT_SESSION) {
+      spawn("wt", ["-w", "0", "sp", "-V", "-s", "0.38", "pi-daddy", "panel", url], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
       }).unref();
       return true;
     }
@@ -51,16 +79,43 @@ function openInBrowser(url: string): void {
       spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
     }
   } catch {
-    /* Best-effort browser open; URL is always printed to the user. */
+    /* Best-effort browser open; URL is always printed. */
   }
+}
+
+function summarizeObservations(session: GrantsSession): { memoryLines: string[]; researchLines: string[] } {
+  const memoryLines: string[] = [];
+  const researchLines: string[] = [];
+  try {
+    const obs = session.dashboardObservations?.();
+    for (const src of obs?.sources ?? []) {
+      const producer = String((src as { producer?: string }).producer ?? "").toLowerCase();
+      const target = producer.includes("scout") ? researchLines : producer.includes("bookie") ? memoryLines : undefined;
+      if (!target) continue;
+      const items = (src as { items?: Array<{ label?: string; state?: string }> }).items ?? [];
+      for (const item of items.slice(0, 6)) {
+        target.push(`${item.label ?? producer} (${item.state ?? "observed"})`);
+      }
+    }
+  } catch {
+    /* Observations are optional. */
+  }
+  return { memoryLines, researchLines };
 }
 
 export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): void {
   let handle: WebDashboardHandle | undefined;
+  let locatorCwd: string | undefined;
   let busy = false;
   let autoEnabled = false;
   let lastCtx: ExtensionContext | undefined;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let costUsd = 0;
+  let turns = 0;
   const recent: WebDashboardEvent[] = [];
+  const tasks: WebDashboardTask[] = [];
 
   const syncAuto = async () => {
     try {
@@ -75,6 +130,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     const model = modelObj?.provider && modelObj?.id ? `${modelObj.provider}/${modelObj.id}` : "unset";
     const thinking = typeof pi.getThinkingLevel === "function" ? String(pi.getThinkingLevel()) : "low";
     const activeTools = typeof pi.getActiveTools === "function" ? pi.getActiveTools() : [];
+    const denom = inputTokens + cacheReadTokens;
+    const cacheHitPct = denom > 0 ? Math.round((cacheReadTokens / denom) * 100) : 0;
+    const { memoryLines, researchLines } = summarizeObservations(session);
     return {
       sessionId: lastCtx?.sessionManager?.getSessionId?.() ?? session.episodeId,
       cwd: lastCtx?.cwd ?? session.cwd,
@@ -85,12 +143,16 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       activeTools,
       optionalTools: OPTIONAL_TOOLS,
       modelTiers: {
-        fast: process.env.PI_ECO_MODEL_FAST ?? "",
-        work: process.env.PI_ECO_MODEL_WORK ?? "",
-        strong: process.env.PI_ECO_MODEL_STRONG ?? "",
+        fast: resolveEcosystemModelTier("fast") ?? "",
+        work: resolveEcosystemModelTier("work") ?? "",
+        strong: resolveEcosystemModelTier("strong") ?? "",
       },
       workMode: workModeSnapshot(session),
       busy,
+      usage: { inputTokens, outputTokens, cacheReadTokens, cacheHitPct, costUsd, turns },
+      tasks,
+      memoryLines,
+      researchLines,
       recentEvents: recent,
     };
   };
@@ -100,8 +162,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     if (!target?.hasUI || typeof target.ui?.setStatus !== "function") return;
     const wm = workModeSnapshot(session);
     const label = wm.selection.mode === "standard" ? "Standard" : workModeLabel(wm.selection);
+    const costLabel = costUsd > 0 ? ` · $${costUsd.toFixed(3)}` : "";
     const dash = handle ? ` · panel:${handle.port}` : "";
-    target.ui.setStatus("pi-daddy", `Daddy · ${label}${busy ? " · running" : ""}${dash}`);
+    target.ui.setStatus("pi-daddy", `Daddy · ${label}${busy ? " · running" : ""}${costLabel}${dash}`);
   };
 
   const record = (kind: string, detail: string, ctx?: ExtensionContext) => {
@@ -110,6 +173,11 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     if (recent.length > MAX_EVENTS) recent.splice(0, recent.length - MAX_EVENTS);
     handle?.push(stateOf());
     updateFooter(ctx);
+  };
+
+  const recordTask = (kind: string, status: string, detail: string) => {
+    tasks.push({ at: new Date().toISOString(), kind, status, detail: detail.slice(0, 200) });
+    if (tasks.length > MAX_TASKS) tasks.splice(0, tasks.length - MAX_TASKS);
   };
 
   const applyConfig = (patch: WebDashboardConfigUpdate) => {
@@ -121,15 +189,27 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
     }
     if (patch.modelTiers) {
-      const setEnv = (key: string, val: string | undefined) => {
+      const cfg = loadEcosystemConfig();
+      const nextModels = { ...(cfg.models ?? {}) };
+      const applyTier = (tier: "fast" | "work" | "strong", envKey: string, val: string | undefined) => {
         if (val === undefined) return;
         const clean = val.trim();
-        if (!clean) delete process.env[key];
-        else process.env[key] = clean.slice(0, 200);
+        if (!clean) {
+          delete process.env[envKey];
+          delete nextModels[tier];
+        } else {
+          process.env[envKey] = clean.slice(0, 200);
+          nextModels[tier] = clean.slice(0, 200);
+        }
       };
-      setEnv("PI_ECO_MODEL_FAST", patch.modelTiers.fast);
-      setEnv("PI_ECO_MODEL_WORK", patch.modelTiers.work);
-      setEnv("PI_ECO_MODEL_STRONG", patch.modelTiers.strong);
+      applyTier("fast", "PI_ECO_MODEL_FAST", patch.modelTiers.fast);
+      applyTier("work", "PI_ECO_MODEL_WORK", patch.modelTiers.work);
+      applyTier("strong", "PI_ECO_MODEL_STRONG", patch.modelTiers.strong);
+      try {
+        saveEcosystemConfig({ ...cfg, models: nextModels });
+      } catch {
+        /* Best-effort persistence. */
+      }
       record("config", "updated model tiers");
     }
     if (patch.toggleTool && typeof pi.getActiveTools === "function" && typeof pi.setActiveTools === "function") {
@@ -165,19 +245,47 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         record("auto", enabled ? "ON" : "OFF");
       },
       onConfigChange: applyConfig,
+      onEscalate: (reason) => {
+        recordTask("escalate", "requested", reason ?? "manual escalation");
+        pi.events?.emit("pi-daddy:escalate-request:v1", { reason: reason ?? "panel" });
+        record("escalate", reason ?? "manual escalation");
+      },
     });
+    const cwd = lastCtx?.cwd ?? session.cwd;
+    if (cwd) {
+      locatorCwd = cwd;
+      try {
+        writePanelLocator({
+          url: handle.url,
+          port: handle.port,
+          pid: process.pid,
+          cwd,
+          startedAt: new Date().toISOString(),
+        });
+      } catch {
+        /* Locator is convenience only. */
+      }
+    }
     updateFooter();
     return handle;
   };
 
   pi.on("session_start", async (_ev, ctx) => {
     lastCtx = ctx;
+    inputTokens = 0;
+    outputTokens = 0;
+    cacheReadTokens = 0;
+    costUsd = 0;
+    turns = 0;
     await syncAuto();
     updateFooter(ctx);
-    if (process.env.PI_DADDY_DASHBOARD === "web") {
+    const cfg = loadEcosystemConfig();
+    const shouldAutoStart =
+      process.env.PI_DADDY_DASHBOARD === "web" ||
+      (ctx.hasUI && session.depth === 0 && cfg.dashboard?.autoStart === true);
+    if (shouldAutoStart) {
       try {
-        const started = await ensureStarted();
-        if (ctx.hasUI) ctx.ui.notify(`Pi Daddy side panel: ${started.url}`, "info");
+        await ensureStarted();
       } catch {
         /* Never block startup. */
       }
@@ -187,12 +295,37 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     busy = true;
     record("agent", "run started", ctx);
   });
+  pi.on("message_end", (ev, ctx) => {
+    const msg = (
+      ev as {
+        message?: {
+          role?: string;
+          usage?: { input?: number; output?: number; cacheRead?: number; cost?: { total?: number } };
+        };
+      }
+    )?.message;
+    if (msg?.role === "assistant" && msg.usage) {
+      turns++;
+      inputTokens += msg.usage.input ?? 0;
+      outputTokens += msg.usage.output ?? 0;
+      cacheReadTokens += msg.usage.cacheRead ?? 0;
+      costUsd += msg.usage.cost?.total ?? 0;
+      handle?.push(stateOf());
+      updateFooter(ctx);
+    }
+  });
   pi.on("tool_execution_start", (ev, ctx) => {
-    record("tool:start", String((ev as { toolName?: string }).toolName ?? "tool"), ctx);
+    const name = String((ev as { toolName?: string }).toolName ?? "tool");
+    if (name.startsWith("delegate") || name === "quick_review") recordTask(name, "running", "dispatched");
+    record("tool:start", name, ctx);
   });
   pi.on("tool_execution_end", (ev, ctx) => {
     const row = ev as { toolName?: string; isError?: boolean };
-    record("tool:end", `${row.toolName ?? "tool"}${row.isError ? " (error)" : ""}`, ctx);
+    const name = row.toolName ?? "tool";
+    if (name.startsWith("delegate") || name === "quick_review") {
+      recordTask(name, row.isError ? "error" : "done", row.isError ? "failed" : "completed");
+    }
+    record("tool:end", `${name}${row.isError ? " (error)" : ""}`, ctx);
   });
   pi.on("agent_settled", (_ev, ctx) => {
     busy = false;
@@ -201,12 +334,14 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   pi.on("session_shutdown", async () => {
     const current = handle;
     handle = undefined;
+    if (locatorCwd) removePanelLocator(locatorCwd, process.pid);
+    locatorCwd = undefined;
     if (current) await current.close().catch(() => {});
   });
 
   pi.registerCommand("dashboard", {
     description:
-      "Start or open the standalone side-panel steering & config dashboard (no Herdr needed; macOS/Linux/Windows)",
+      "Start or open the standalone 5-tab side panel (terminal split or web UI; works without Herdr on macOS/Linux/Windows)",
     handler: async (args, ctx) => {
       lastCtx = ctx;
       const sub = args.trim().toLowerCase();
@@ -217,6 +352,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         }
         const prev = handle;
         handle = undefined;
+        if (locatorCwd) removePanelLocator(locatorCwd, process.pid);
         await prev.close();
         updateFooter(ctx);
         ctx.ui.notify("Standalone dashboard stopped.", "info");
@@ -224,7 +360,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
       if (sub === "status") {
         ctx.ui.notify(
-          handle ? `Side panel running at ${handle.url}` : "Side panel stopped. Run /dashboard to start.",
+          handle
+            ? `Side panel running: pi-daddy panel  (${handle.url})`
+            : "Side panel stopped. Run /dashboard to start.",
           "info",
         );
         return;
@@ -240,8 +378,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
       ctx.ui.notify(
         `Pi Daddy Side Panel (no Herdr needed):\n` +
-          `  Terminal split: pi-daddy panel "${started.url}"\n` +
-          `  Browser UI:     ${started.url}`,
+          `  Terminal split (auto-attach): pi-daddy panel\n` +
+          `  Terminal explicit URL:        pi-daddy panel "${started.url}"\n` +
+          `  Browser UI:                   ${started.url}`,
         "info",
       );
     },

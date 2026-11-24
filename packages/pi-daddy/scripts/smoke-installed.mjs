@@ -254,12 +254,9 @@ ${managedInit.stderr}`);
   if (!dashboardOut.includes("No governed executions recorded yet")) {
     throw new Error(`installed dashboard bin did not run:\n${dashboardOut}`);
   }
-  const pluginManifest = readFileSync(
-    join(work, "node_modules", "pi-daddy", "herdr-plugin", "herdr-plugin.toml"),
-    "utf8",
-  );
-  if (!pluginManifest.includes('id = "pi-daddy.dashboard"') || !pluginManifest.includes("dist/products/dashboard-cli.js")) {
-    throw new Error("installed package dropped or changed the bundled Herdr plugin");
+  const doctorOut = run(join(work, "node_modules", ".bin", "pi-daddy"), ["doctor"], work);
+  if (!doctorOut.includes("Ecosystem Health Check")) {
+    throw new Error(`installed doctor bin did not run:\n${doctorOut}`);
   }
 
   // Exercise the SHIPPED native helper and compiled final verifier against the SHIPPED exact Pi dependency.
