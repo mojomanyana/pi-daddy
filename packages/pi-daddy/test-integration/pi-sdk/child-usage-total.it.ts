@@ -95,6 +95,7 @@ async function runTree(tools = "read,delegate", scenario?: "thrown") {
       PI_DADDY_AUTO_MODE: "0",
       PI_DADDY_ACTIVITY_TIMELINE: "off",
       PI_DADDY_LEDGER: ledger,
+      ...(scenario === "thrown" ? { PI_DADDY_LEAN_TOOLS: "0" } : {}),
       ...(scenario ? { DADDY_TEST_CHILD_USAGE: scenario } : {}),
     },
     stdio: ["pipe", "pipe", "pipe"],

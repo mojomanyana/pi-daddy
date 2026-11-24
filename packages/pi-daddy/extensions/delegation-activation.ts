@@ -7,8 +7,10 @@ function setDelegationActive(pi: ExtensionAPI, enabled: boolean): void {
   const surface = pi as ExtensionAPI & { getActiveTools?: () => string[]; setActiveTools?: (names: string[]) => void };
   if (!surface.getActiveTools || !surface.setActiveTools) return;
   const active = new Set(surface.getActiveTools());
-  const lean = process.env.PI_DADDY_LEAN_TOOLS === "1";
-  const target = enabled ? (lean ? ["delegate"] : ALL_DELEGATION_TOOL_NAMES) : [];
+  // Lean Turn-1 is ON by default (keeps delegate_all & delegate_chain ~10.7 KB inactive).
+  // Set PI_DADDY_LEAN_TOOLS=0 to expose delegate_all and delegate_chain eagerly.
+  const lean = process.env.PI_DADDY_LEAN_TOOLS !== "0";
+  const target = enabled ? (lean ? ["delegate", "delegate_describe"] : ALL_DELEGATION_TOOL_NAMES) : [];
   for (const name of ALL_DELEGATION_TOOL_NAMES) {
     if (target.includes(name)) active.add(name);
     else active.delete(name);
