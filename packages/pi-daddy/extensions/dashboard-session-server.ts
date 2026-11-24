@@ -46,7 +46,9 @@ export function ensureDashboardSessionServer(session: GrantsSession): Promise<Da
 }
 
 async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> {
-  const socketPath = join(tmpdir(), `pi-daddy-${process.pid}-${randomBytes(8).toString("hex")}.sock`);
+  const socketId = `pi-daddy-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const isWin = process.platform === "win32";
+  const socketPath = isWin ? `\\\\.\\pipe\\${socketId}` : join(tmpdir(), `${socketId}.sock`);
   const token = randomBytes(24).toString("hex");
   const server = createServer((socket) => {
     let input = "",
@@ -89,9 +91,9 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
     server.once("error", reject);
     server.listen(socketPath, () => resolve());
   });
-  await chmod(socketPath, 0o600);
+  if (!isWin) await chmod(socketPath, 0o600);
   const cleanup = () => {
-    close(server, socketPath);
+    if (!isWin) close(server, socketPath);
   };
   process.once("exit", cleanup);
   server.unref();
@@ -101,7 +103,7 @@ async function start(session: GrantsSession): Promise<DashboardSessionEndpoint> 
     close: async () => {
       process.off("exit", cleanup);
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      await rm(socketPath, { force: true });
+      if (!isWin) await rm(socketPath, { force: true });
     },
   };
 }

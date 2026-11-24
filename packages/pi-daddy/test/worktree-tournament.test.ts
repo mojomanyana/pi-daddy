@@ -93,3 +93,48 @@ test("cold judge breaks ties when multiple parallel candidates pass verification
   assert.match(outcome.rationale, /Candidate 2/);
   assert.equal(await readFile(join(repo, "math.mjs"), "utf8"), "export const add = (a, b) => a + b;\n");
 });
+
+test("tournament retains candidates that git commit and prevents overwriting pre-existing verifier files", async () => {
+  const repo = await makeRepo();
+  // Add an untracked verifier file in parent workspace
+  await writeFile(
+    join(repo, "verify.mjs"),
+    'import assert from "node:assert/strict";\nimport { add } from "./math.mjs";\nassert.equal(add(10, 5), 15);\n',
+  );
+
+  const outcome = await runWorktreeTournament({
+    repoRoot: repo,
+    task: "Fix add(a, b)",
+    approaches: ["commits fix", "tries to tamper verifier"],
+    verifyCommand: "node verify.mjs",
+    applyWinner: true,
+    runCandidate: async ({ index, worktree }) => {
+      if (index === 0) {
+        await writeFile(join(worktree, "math.mjs"), "export const add = (a, b) => a + b;\n");
+        execFileSync("git", ["-C", worktree, "add", "math.mjs"]);
+        execFileSync("git", [
+          "-C",
+          worktree,
+          "-c",
+          "user.name=Cand",
+          "-c",
+          "user.email=cand@example.invalid",
+          "commit",
+          "-q",
+          "-m",
+          "fix",
+        ]);
+      } else {
+        // Candidate 2 tries to make verify.mjs trivially pass without fixing math.mjs!
+        await writeFile(join(worktree, "verify.mjs"), "process.exit(0);\n");
+      }
+      return { ok: true, summary: `cand ${index}` };
+    },
+  });
+
+  assert.equal(outcome.candidates[0].verifyPassed, true, "committed candidate must not be disqualified");
+  assert.ok(outcome.candidates[0].changedFiles.includes("math.mjs"));
+  assert.equal(outcome.candidates[1].verifyPassed, false, "tampered verifier must be restored and fail");
+  assert.equal(outcome.winnerIndex, 0);
+  assert.equal(await readFile(join(repo, "math.mjs"), "utf8"), "export const add = (a, b) => a + b;\n");
+});

@@ -6,6 +6,7 @@ import {
   type WebDashboardConfigUpdate,
   type WebDashboardState,
 } from "../src/products/web-dashboard.ts";
+import { renderTerminalPanel } from "../src/products/terminal-panel.ts";
 import { standardWorkMode } from "../src/kernel/work-mode.ts";
 
 test("side-panel dashboard enforces token auth and supports live steering, auto toggle, work mode, and config", async () => {
@@ -99,6 +100,13 @@ test("side-panel dashboard enforces token auth and supports live steering, auto 
     assert.equal(thinking, "high");
     assert.equal(modelTiers.strong, "fireworks/qwen3.8-max");
     assert.ok(activeTools.has("quick_review"));
+
+    // Terminal side panel renders the same state cleanly
+    const rendered = renderTerminalPanel(makeState(), "Connected.", 80);
+    assert.match(rendered, /PI DADDY · TERMINAL SIDE PANEL/);
+    assert.match(rendered, /Ambitious \(depth\)/);
+    assert.match(rendered, /Auto: ON/);
+    assert.match(rendered, /\[s\] steer/);
   } finally {
     await handle.close();
   }

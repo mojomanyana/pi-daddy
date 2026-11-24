@@ -12,8 +12,7 @@ import type { ReloadLifecycle } from "./reload-environment.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 export const definitionIdDescription =
-  "Optional; omit it after delegate_describe, which binds the agent's current definitionId for this session " +
-  "(required for Principal phases).";
+  "Optional; omit it — Pi Daddy auto-binds the selected agent's current definitionId internally.";
 
 class DefinitionInputError extends Error {}
 
