@@ -21,6 +21,26 @@ const MAX_EVENTS = 60;
 const OPTIONAL_TOOLS = ["delegate_tournament", "quick_review", "delegate_all", "delegate_chain"] as const;
 const THINKING_ALLOWED = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
+function openTerminalSplit(url: string): boolean {
+  const cmd = `pi-daddy panel ${JSON.stringify(url)}`;
+  try {
+    if (process.env.TMUX) {
+      spawn("tmux", ["split-window", "-h", "-l", "48", cmd], { detached: true, stdio: "ignore" }).unref();
+      return true;
+    }
+    if (process.env.WEZTERM_PANE) {
+      spawn("wezterm", ["cli", "split-pane", "--right", "--percent", "38", "--", "pi-daddy", "panel", url], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+      return true;
+    }
+  } catch {
+    /* Fall back to printing command. */
+  }
+  return false;
+}
+
 function openInBrowser(url: string): void {
   try {
     if (process.platform === "darwin") {
@@ -211,7 +231,19 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
       const started = await ensureStarted();
       if (sub === "open") openInBrowser(started.url);
-      ctx.ui.notify(`Pi Daddy side panel (no Herdr needed): ${started.url}`, "info");
+      else if (sub === "split" || sub === "tui") {
+        const opened = openTerminalSplit(started.url);
+        if (opened) {
+          ctx.ui.notify(`Opened terminal side panel (${started.url}).`, "info");
+          return;
+        }
+      }
+      ctx.ui.notify(
+        `Pi Daddy Side Panel (no Herdr needed):\n` +
+          `  Terminal split: pi-daddy panel "${started.url}"\n` +
+          `  Browser UI:     ${started.url}`,
+        "info",
+      );
     },
   });
 }

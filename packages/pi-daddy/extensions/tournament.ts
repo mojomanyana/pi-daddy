@@ -18,9 +18,9 @@ import { resolveTierModel, runInProcessReadOnly, type StreamRegistry } from "../
 import type { GrantsSession } from "./session.ts";
 
 const DEFAULT_APPROACHES = [
-  "Clean minimal implementation focused on strict correctness and zero over-engineering.",
-  "Concurrency-safe, edge-case-hardened algorithmic design with explicit resource cleanup.",
-  "Alternative architecture prioritizing simplicity, clear invariants, and thorough tests.",
+  "State-machine / explicit data-structure invariant design with zero shared mutable promise chains and crisp error recovery.",
+  "Defensive boundary, cancellation, and resource-lifecycle design with adversarial counterexample tests for concurrency and leaks.",
+  "Minimal, composable functional decomposition prioritizing readability and strict API compatibility.",
 ];
 
 function resolvePiCommand(): { cmd: string; prefix: string[]; shell?: boolean } {
@@ -136,6 +136,7 @@ async function judgePassingCandidates(
   const sections = passing.map(
     (c) =>
       `### CANDIDATE ${c.index + 1} (${c.approach})\nFiles: ${c.changedFiles.join(", ")}\n` +
+      `Sibling cross-tests passed: ${c.crossTestsPassed ?? 0}\n` +
       `Verify output:\n${c.verifyOutput.slice(0, 800)}\nDiff:\n${c.diff.slice(0, 8000)}`,
   );
   const prompt = [
@@ -149,10 +150,12 @@ async function judgePassingCandidates(
     ...sections,
   ].join("\n");
   try {
+    const timeoutSignal = AbortSignal.timeout(15_000);
+    const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     const stream = registry.streamSimple(
       model,
       { messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }] },
-      { signal, reasoning: "medium" },
+      { signal: effectiveSignal, reasoning: "low" },
     );
     const msg = await stream.result();
     const raw = (msg?.content ?? [])

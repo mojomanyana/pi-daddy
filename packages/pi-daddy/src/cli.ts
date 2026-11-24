@@ -63,7 +63,16 @@ stays unspawnable. Capabilities that can change your machine
 
 export interface ParsedArgs {
   command:
-    "init" | "ledger-repair" | "ledger-import" | "report" | "outcomes" | "diagnostics-export" | "help" | "version";
+    | "init"
+    | "ledger-repair"
+    | "ledger-import"
+    | "report"
+    | "outcomes"
+    | "diagnostics-export"
+    | "panel"
+    | "help"
+    | "version";
+  panelUrl?: string;
   importTarget?: string;
   selectionPath?: string;
   exportDirectory?: string;
@@ -95,6 +104,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (args.includes("--version") || args.includes("-v")) return { command: "version", force: false, errors: [] };
 
   const [command, ...tail] = args;
+  if (command === "panel") {
+    const [url, ...extra] = tail;
+    if (!url || url.startsWith("-") || extra.length) {
+      return { command: "help", force: false, errors: ["panel needs: <http://127.0.0.1:PORT/?token=...>"] };
+    }
+    return { command: "panel", force: false, errors: [], panelUrl: url };
+  }
   if (command === "diagnostics") {
     const [verb, selectionPath, exportDirectory, ...extra] = tail;
     if (
@@ -403,6 +419,11 @@ export async function main(
   }
   if (parsed.command === "help") {
     console.log(USAGE);
+    return 0;
+  }
+  if (parsed.command === "panel") {
+    const { runTerminalPanel } = await import("./products/terminal-panel.ts");
+    await runTerminalPanel(parsed.panelUrl!);
     return 0;
   }
   if (parsed.command === "diagnostics-export") {

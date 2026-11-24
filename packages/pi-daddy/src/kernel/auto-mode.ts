@@ -45,7 +45,7 @@ export function parseAutoModeRef(raw: string): AutoModeRef {
     typeof ref !== "object" ||
     Object.keys(ref).sort().join(",") !== "ownerId,socketPath,token" ||
     typeof ref.socketPath !== "string" ||
-    !ref.socketPath.startsWith("/") ||
+    (!ref.socketPath.startsWith("/") && !ref.socketPath.startsWith("\\\\.\\pipe\\")) ||
     ref.socketPath.length > 107 ||
     typeof ref.token !== "string" ||
     !/^[a-f0-9]{48}$/.test(ref.token) ||

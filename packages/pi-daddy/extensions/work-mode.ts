@@ -16,6 +16,7 @@ import {
   type WorkModeSelection,
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
+import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
 
 export const WORK_MODE_ENTRY = "pi-daddy:work-mode:v1";
@@ -243,7 +244,7 @@ async function collectReviewDiff(cwd: string): Promise<string> {
     const untracked = stdout
       .split(/\r?\n/)
       .map((s) => s.trim())
-      .filter(Boolean)
+      .filter((s) => s && !s.startsWith(".") && !s.endsWith(".log") && !isUnderPiProjectDir(s))
       .slice(0, 12);
     let extraBytes = 0;
     for (const rel of untracked) {
@@ -303,12 +304,14 @@ async function runColdDiffReview(
       "=== GIT DIFF & NEW FILES ===",
       clippedDiff,
     ].join("\n");
+    const timeoutSignal = AbortSignal.timeout(15_000);
+    const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     const stream = registry.streamSimple(
       model,
       {
         messages: [{ role: "user", content: [{ type: "text", text: reviewPrompt }], timestamp: Date.now() }],
       },
-      { signal, reasoning: "medium" },
+      { signal: effectiveSignal, reasoning: "low" },
     );
     const message = await stream.result();
     const text = (message?.content ?? [])
@@ -388,13 +391,18 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
       }
     }
 
-    // Mechanical lever 1b: auto-activate Phase-2 tools for Ambitious range/altitude only.
+    // Mechanical lever 1b: auto-activate Phase-2 tools for balanced Ambitious or matching emphases.
     const getTools = (pi as any).getActiveTools;
     const setTools = (pi as any).setActiveTools;
     if (selected?.mode === "ambitious" && typeof getTools === "function" && typeof setTools === "function") {
+      const balanced = selected.emphases.length === 0;
       const extras: string[] = [];
-      if (selected.emphases.includes("range") && session.mayDelegate) extras.push("delegate_tournament");
-      if (selected.emphases.includes("altitude")) extras.push("quick_review");
+      if ((balanced || selected.emphases.includes("range")) && session.mayDelegate) {
+        extras.push("delegate_tournament");
+      }
+      if (balanced || selected.emphases.includes("altitude") || selected.emphases.includes("depth")) {
+        extras.push("quick_review");
+      }
       if (extras.length > 0) {
         const currentTools: string[] = getTools();
         const missing = extras.filter((t) => !currentTools.includes(t));
@@ -418,13 +426,26 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     }
   });
 
-  // Mechanical lever 2: automatic 1-shot cold diff review before settle when Ambitious depth is on.
+  // Mechanical lever 2: automatic fast (~1.5s, reasoning=low) cold diff review before settle:
+  // - Always enabled in Ambitious (balanced or depth).
+  // - Also enabled in Standard when PI_ECO_MODEL_STRONG is explicitly set (opt-out: PI_DADDY_AUTO_REVIEW=0)
+  //   and the diff is non-trivial (>=2 files or >=60 lines).
   (pi as any).on("agent_before_settle", async (event: any, ctx: ExtensionContext) => {
-    if (coldReviewRanForTurn) return;
+    if (coldReviewRanForTurn || !lastPrompt) return;
     const active = capturedWorkMode(session);
-    if (!active || active.mode !== "ambitious") return;
-    const wantsDepth = active.emphases.length === 0 || active.emphases.includes("depth");
-    if (!wantsDepth || !lastPrompt) return;
+    const wantsAmbitiousDepth =
+      active?.mode === "ambitious" && (active.emphases.length === 0 || active.emphases.includes("depth"));
+    const wantsStandardStrong =
+      !wantsAmbitiousDepth &&
+      Boolean(process.env.PI_ECO_MODEL_STRONG?.trim()) &&
+      process.env.PI_DADDY_AUTO_REVIEW !== "0";
+    if (!wantsAmbitiousDepth && !wantsStandardStrong) return;
+    if (wantsStandardStrong) {
+      const preview = await collectReviewDiff(ctx.cwd);
+      const fileCount = (preview.match(/^\+\+\+ b\//gm) ?? []).length;
+      const lineCount = preview.split("\n").length;
+      if (fileCount < 2 && lineCount < 60) return;
+    }
     coldReviewRanForTurn = true;
     const verdict = await runColdDiffReview(ctx, lastPrompt, (ctx as any)?.signal);
     if (verdict.pass || !verdict.feedback) return;

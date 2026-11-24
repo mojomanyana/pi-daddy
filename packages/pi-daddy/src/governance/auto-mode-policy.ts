@@ -35,8 +35,10 @@ export async function createAutoModeAuthority(initial: {
   enabled: boolean;
   source: AutoModeSource;
 }): Promise<AutoModeAuthority> {
+  const socketId = `daddy-auto-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const isWin = process.platform === "win32";
   const reference = {
-    socketPath: join(tmpdir(), `daddy-auto-${process.pid}-${randomBytes(8).toString("hex")}.sock`),
+    socketPath: isWin ? `\\\\.\\pipe\\${socketId}` : join(tmpdir(), `${socketId}.sock`),
     token: randomBytes(24).toString("hex"),
     ownerId: randomBytes(16).toString("hex"),
   };
@@ -174,15 +176,18 @@ export async function createAutoModeAuthority(initial: {
     server.once("error", reject);
     server.listen(reference.socketPath, resolve);
   });
-  try {
-    await chmod(reference.socketPath, 0o600);
-  } catch (error) {
-    server.close();
-    await unlink(reference.socketPath).catch(() => {});
-    throw error;
+  if (!isWin) {
+    try {
+      await chmod(reference.socketPath, 0o600);
+    } catch (error) {
+      server.close();
+      await unlink(reference.socketPath).catch(() => {});
+      throw error;
+    }
   }
   server.unref();
   const exit = () => {
+    if (isWin) return;
     try {
       unlinkSync(reference.socketPath);
     } catch {}

@@ -70,7 +70,9 @@ export async function principalBinding(
   )
     throw Error("Principal binding path escaped its selected package");
   const agentText = await read(agentPath, "delegated-agent", sources);
-  if (hash(skillText) !== row.skillSha256 || hash(agentText) !== row.agentSha256)
+  const hashMatches = (text: string, expected: string) =>
+    hash(text) === expected || hash(text.replace(/\r\n/g, "\n")) === expected;
+  if (!hashMatches(skillText, row.skillSha256) || !hashMatches(agentText, row.agentSha256))
     throw Error("Principal binding hash mismatch");
   const agent = parseSkillDefinition(agentPath, agentText);
   if (!agent) throw Error("Principal delegated definition is malformed");

@@ -1,18 +1,22 @@
 /**
  * Isolated parallel git-worktree tournament executor (Layer 2: executors).
  *
- * Runs N independent candidate solutions concurrently in detached temporary git worktrees,
- * evaluates every candidate objectively with `verifyCommand`, lets a cold diff-only judge
- * break ties among passing candidates, optionally applies the winning files to the parent
- * repo, and guarantees cleanup of every temporary worktree in `finally`.
+ * - Captures `baseSha` before spawning so candidates that run `git commit` are never disqualified.
+ * - Copies dirty tracked & untracked parent files into each worktree and snapshots pre-existing
+ *   test/verifier files so candidates cannot pass by modifying the verifier.
+ * - Supports cross-candidate test cross-pollination when >=2 candidates pass `verifyCommand`.
+ * - Always cleans up every temporary worktree in `finally`.
  */
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 
 const execFileAsync = promisify(execFile);
+const TEST_FILE_RE = /(?:^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|verify[^/]*\.[cm]?[jt]s$/i;
 
 export interface CandidateRunResult {
   readonly index: number;
@@ -25,6 +29,7 @@ export interface CandidateRunResult {
   readonly verifyPassed: boolean;
   readonly verifyExitCode: number | null;
   readonly verifyOutput: string;
+  readonly crossTestsPassed?: number;
   readonly error?: string;
 }
 
@@ -64,11 +69,58 @@ async function git(cwd: string, args: string[], timeout = 15_000): Promise<strin
   return stdout;
 }
 
-export async function createDetachedWorktree(repoRoot: string, index: number): Promise<string> {
+function sha256(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex");
+}
+
+async function snapshotParentWorkspace(repoRoot: string): Promise<{
+  dirtyFiles: Map<string, Buffer>;
+  protectedFiles: Map<string, Buffer>;
+}> {
+  const root = resolve(repoRoot);
+  const dirtyFiles = new Map<string, Buffer>();
+  const protectedFiles = new Map<string, Buffer>();
+  try {
+    const out = await git(root, ["status", "--porcelain", "-uall"]);
+    for (const line of out.split(/\r?\n/)) {
+      if (line.length < 4) continue;
+      const rel = line.slice(3).trim().replace(/^"|"$/g, "");
+      if (!rel || isUnderPiProjectDir(rel) || rel.startsWith(".principal/")) continue;
+      const abs = resolve(root, rel);
+      if (!abs.startsWith(root)) continue;
+      try {
+        const info = await stat(abs);
+        if (!info.isFile() || info.size > 512 * 1024) continue;
+        const buf = await readFile(abs);
+        dirtyFiles.set(rel, buf);
+        if (TEST_FILE_RE.test(rel)) protectedFiles.set(rel, buf);
+      } catch {
+        /* Skip deleted or unreadable path. */
+      }
+    }
+  } catch {
+    /* Non-git or empty status. */
+  }
+  return { dirtyFiles, protectedFiles };
+}
+
+export async function createDetachedWorktree(
+  repoRoot: string,
+  index: number,
+  dirtyFiles?: ReadonlyMap<string, Buffer>,
+): Promise<string> {
   const root = resolve(repoRoot);
   const base = await mkdtemp(join(tmpdir(), `pi-daddy-wt-${index}-`));
   const worktree = join(base, "wt");
   await git(root, ["worktree", "add", "--detach", worktree, "HEAD"]);
+  if (dirtyFiles) {
+    for (const [rel, buf] of dirtyFiles) {
+      const dst = resolve(worktree, rel);
+      if (!dst.startsWith(resolve(worktree))) continue;
+      await mkdir(dirname(dst), { recursive: true });
+      await writeFile(dst, buf);
+    }
+  }
   return worktree;
 }
 
@@ -83,20 +135,33 @@ export async function removeDetachedWorktree(repoRoot: string, worktree: string)
   await git(root, ["worktree", "prune"]).catch(() => {});
 }
 
-export async function collectWorktreeChanges(worktree: string): Promise<{
-  diff: string;
-  changedFiles: string[];
-}> {
+export async function collectWorktreeChanges(
+  worktree: string,
+  baseSha = "HEAD",
+  preSnapshot?: ReadonlyMap<string, Buffer>,
+): Promise<{ diff: string; changedFiles: string[] }> {
   const parts: string[] = [];
   const files = new Set<string>();
+  const unchangedFromPre = async (rel: string): Promise<boolean> => {
+    const prev = preSnapshot?.get(rel);
+    if (!prev) return false;
+    try {
+      const cur = await readFile(join(worktree, rel));
+      return sha256(cur) === sha256(prev);
+    } catch {
+      return false;
+    }
+  };
   try {
-    const diff = (await git(worktree, ["diff", "--no-color", "HEAD"])).trim();
+    const diff = (await git(worktree, ["diff", "--no-color", baseSha])).trim();
     if (diff) parts.push(diff);
-    const names = (await git(worktree, ["diff", "--name-only", "HEAD"]))
+    const names = (await git(worktree, ["diff", "--name-only", baseSha]))
       .split(/\r?\n/)
       .map((s) => s.trim())
       .filter(Boolean);
-    for (const f of names) files.add(f);
+    for (const f of names) {
+      if (!(await unchangedFromPre(f))) files.add(f);
+    }
   } catch {
     /* Empty or invalid diff. */
   }
@@ -108,6 +173,8 @@ export async function collectWorktreeChanges(worktree: string): Promise<{
       .slice(0, 24);
     let extra = 0;
     for (const rel of untracked) {
+      if (rel.startsWith(".") || rel.endsWith(".log")) continue;
+      if (await unchangedFromPre(rel)) continue;
       files.add(rel);
       if (extra >= 12_000) continue;
       try {
@@ -173,11 +240,51 @@ export async function applyWorktreeChanges(
       await mkdir(dirname(dst), { recursive: true });
       await cp(src, dst, { force: true });
     } catch {
-      // File was deleted in the winning worktree.
       await rm(dst, { force: true }).catch(() => {});
     }
   }
   return true;
+}
+
+async function crossPollinateTests(
+  passing: CandidateRunResult[],
+  verifyCommand: string,
+  signal?: AbortSignal,
+  timeoutMs = 30_000,
+): Promise<CandidateRunResult[]> {
+  if (passing.length < 2) return passing;
+  const scores = new Map<number, number>(passing.map((c) => [c.index, 0]));
+  for (const donor of passing) {
+    const donorTests = donor.changedFiles.filter((f) => TEST_FILE_RE.test(f));
+    if (donorTests.length === 0) continue;
+    for (const target of passing) {
+      if (target.index === donor.index) continue;
+      const backups = new Map<string, Buffer | null>();
+      try {
+        for (const rel of donorTests) {
+          const dst = resolve(target.worktree, rel);
+          try {
+            backups.set(rel, await readFile(dst));
+          } catch {
+            backups.set(rel, null);
+          }
+          await mkdir(dirname(dst), { recursive: true });
+          await cp(resolve(donor.worktree, rel), dst, { force: true });
+        }
+        const check = await runVerifyCommand(target.worktree, verifyCommand, signal, timeoutMs);
+        if (check.passed) scores.set(target.index, (scores.get(target.index) ?? 0) + 1);
+      } catch {
+        /* Best-effort cross-pollination. */
+      } finally {
+        for (const [rel, orig] of backups) {
+          const dst = resolve(target.worktree, rel);
+          if (orig === null) await rm(dst, { force: true }).catch(() => {});
+          else await writeFile(dst, orig).catch(() => {});
+        }
+      }
+    }
+  }
+  return passing.map((c) => ({ ...c, crossTestsPassed: scores.get(c.index) ?? 0 }));
 }
 
 export async function runWorktreeTournament(options: TournamentOptions): Promise<TournamentOutcome> {
@@ -185,13 +292,15 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
   if (approaches.length === 0) {
     throw new Error("Tournament requires at least one candidate approach");
   }
+  const baseSha = (await git(options.repoRoot, ["rev-parse", "HEAD"])).trim();
+  const { dirtyFiles, protectedFiles } = await snapshotParentWorkspace(options.repoRoot);
   const created: Array<string | undefined> = new Array(approaches.length).fill(undefined);
   try {
     const settled = await Promise.all(
       approaches.map(async (approach, index): Promise<CandidateRunResult> => {
         let worktree = "";
         try {
-          worktree = await createDetachedWorktree(options.repoRoot, index);
+          worktree = await createDetachedWorktree(options.repoRoot, index, dirtyFiles);
           created[index] = worktree;
           const run = await options.runCandidate({
             index,
@@ -199,7 +308,13 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
             worktree,
             signal: options.signal,
           });
-          const { diff, changedFiles } = await collectWorktreeChanges(worktree);
+          // Restore pre-existing verifier/test files so candidates cannot game verifyCommand.
+          for (const [rel, orig] of protectedFiles) {
+            const dst = resolve(worktree, rel);
+            await mkdir(dirname(dst), { recursive: true });
+            await writeFile(dst, orig);
+          }
+          const { diff, changedFiles } = await collectWorktreeChanges(worktree, baseSha, dirtyFiles);
           const verify = options.verifyCommand
             ? await runVerifyCommand(worktree, options.verifyCommand, options.signal, options.verifyTimeoutMs)
             : { passed: run.ok && changedFiles.length > 0, exitCode: run.ok ? 0 : 1, output: "" };
@@ -234,7 +349,11 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
       }),
     );
 
-    const passing = settled.filter((c) => c.ok && c.verifyPassed && c.changedFiles.length > 0);
+    let passing = settled.filter((c) => c.ok && c.verifyPassed && c.changedFiles.length > 0);
+    if (passing.length > 1 && options.verifyCommand) {
+      passing = await crossPollinateTests(passing, options.verifyCommand, options.signal, options.verifyTimeoutMs);
+    }
+
     let winnerIndex: number | null = null;
     let rationale = "No candidate passed objective verification with code changes.";
     if (passing.length === 1) {
@@ -247,10 +366,11 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
         winnerIndex = valid ? valid.index : passing[0].index;
         rationale = picked.rationale;
       } else {
-        // Deterministic fallback: prefer smallest clean diff among passing candidates.
-        const sorted = [...passing].sort((a, b) => a.diff.length - b.diff.length);
+        const sorted = [...passing].sort(
+          (a, b) => (b.crossTestsPassed ?? 0) - (a.crossTestsPassed ?? 0) || a.diff.length - b.diff.length,
+        );
         winnerIndex = sorted[0].index;
-        rationale = `Selected Candidate ${winnerIndex + 1} (smallest passing diff).`;
+        rationale = `Selected Candidate ${winnerIndex + 1} (cross-tests & smallest passing diff).`;
       }
     }
 

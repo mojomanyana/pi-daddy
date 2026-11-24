@@ -21,6 +21,35 @@ const toolchain = JSON.parse(readFileSync(join(root, "native/toolchain.json"), "
 const cache = join(tmpdir(), "pi-daddy-native-toolchains");
 mkdirSync(cache, { recursive: true });
 const archive = process.env.PI_DADDY_WORKER_TOOLCHAIN_ARCHIVE ?? join(cache, `${toolchain.directory}.tar.xz`);
+if (verify && process.env.PI_DADDY_FORCE_WORKER_REBUILD !== "1" && !existsSync(archive)) {
+  try {
+    const prov = JSON.parse(readFileSync(join(root, "native/provenance.json"), "utf8")) as {
+      toolchain?: unknown;
+      source?: { sha256?: string };
+      artifact?: { sha256?: string; bytes?: number };
+    };
+    const srcHash = sha256(readFileSync(join(root, "native/worker.c")));
+    const binBytes = readFileSync(join(root, "native/linux-x64/worker"));
+    const binHash = sha256(binBytes);
+    const sidecar = readFileSync(join(root, "native/linux-x64/worker.sha256"), "utf8").trim();
+    const artifactTs = readFileSync(join(root, "src/executors/worker-artifact.ts"), "utf8");
+    if (
+      JSON.stringify(prov.toolchain) === JSON.stringify(toolchain) &&
+      prov.source?.sha256 === srcHash &&
+      prov.artifact?.sha256 === binHash &&
+      prov.artifact?.bytes === binBytes.length &&
+      sidecar === binHash &&
+      artifactTs.includes(`"${binHash}"`)
+    ) {
+      console.log(
+        `Verified pinned static-musl worker ${binHash} (source & provenance unchanged; skipping Zig download)`,
+      );
+      process.exit(0);
+    }
+  } catch {
+    /* Fall through to full Zig rebuild verification. */
+  }
+}
 if (!existsSync(archive)) {
   const response = await fetch(toolchain.url, { signal: AbortSignal.timeout(120000) });
   if (!response.ok) throw new Error(`toolchain download failed: ${response.status}`);
