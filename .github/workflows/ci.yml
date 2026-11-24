@@ -71,6 +71,8 @@ jobs:
       # spend no model tokens. The live-Herdr and PI_DADDY_IT_MODEL tiers remain local-only below.
       - name: real-pi integration tests
         working-directory: packages/pi-daddy
+        env:
+          PI_DADDY_LEAN_TOOLS: "0"
         run: npm run test:integration:ci
 
       # A suite once silently overwrote tracked ledger-contract fixtures. A suite that edits the
@@ -127,6 +129,7 @@ jobs:
       - name: real Pi child, local scripted provider, exact process cleanup
         working-directory: packages/pi-daddy
         env:
+          PI_DADDY_LEAN_TOOLS: "0"
           DADDY_TEST_PI_CLI: ${{ runner.temp }}/pi-1.5.2/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js
           DADDY_TEST_PATTERN_RECEIPT: ${{ runner.temp }}/pi-152-native-cleanup.json
         run: node --test test-integration/pi-sdk/owned-pattern-cleanup.it.ts test-integration/pi-sdk/child-tool-delivery.it.ts test-integration/pi-sdk/child-usage-total.it.ts
