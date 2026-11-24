@@ -67,6 +67,7 @@ test("native Pi origins admit builtins and Daddy tools, preserve selected prompt
           DADDY_TOOL_CAPTURE: observed,
           PI_DADDY_HERDR: "0",
           PI_DADDY_AUTO_MODE: "0",
+          PI_DADDY_LEAN_TOOLS: "0",
           PI_DADDY_ACTIVITY_TIMELINE: "off",
           PI_DADDY_GRANT: ownGrant.join(","),
           ...env,
