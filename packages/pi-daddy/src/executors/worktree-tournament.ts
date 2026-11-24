@@ -13,6 +13,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
 
 const execFileAsync = promisify(execFile);
 const TEST_FILE_RE = /(?:^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|verify[^/]*\.[cm]?[jt]s$/i;
@@ -84,7 +85,7 @@ async function snapshotParentWorkspace(repoRoot: string): Promise<{
     for (const line of out.split(/\r?\n/)) {
       if (line.length < 4) continue;
       const rel = line.slice(3).trim().replace(/^"|"$/g, "");
-      if (!rel || rel.startsWith(".pi/") || rel.startsWith(".principal/")) continue;
+      if (!rel || isUnderPiProjectDir(rel) || rel.startsWith(".principal/")) continue;
       const abs = resolve(root, rel);
       if (!abs.startsWith(root)) continue;
       try {

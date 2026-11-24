@@ -16,6 +16,7 @@ import {
   type WorkModeSelection,
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
+import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
 
 export const WORK_MODE_ENTRY = "pi-daddy:work-mode:v1";
@@ -243,9 +244,7 @@ async function collectReviewDiff(cwd: string): Promise<string> {
     const untracked = stdout
       .split(/\r?\n/)
       .map((s) => s.trim())
-      .filter(
-        (s) => s && !s.startsWith(".") && !s.endsWith(".log") && !s.startsWith(".pi/") && !s.startsWith(".principal/"),
-      )
+      .filter((s) => s && !s.startsWith(".") && !s.endsWith(".log") && !isUnderPiProjectDir(s))
       .slice(0, 12);
     let extraBytes = 0;
     for (const rel of untracked) {
