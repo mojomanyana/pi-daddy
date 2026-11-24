@@ -1,6 +1,7 @@
 import { registerProjectMemoryOwner } from "./project-memory-owner.ts";
 import { registerWorkMode } from "./work-mode.ts";
 import { registerTournamentTools } from "./tournament.ts";
+import { registerWebDashboard } from "./web-dashboard.ts";
 import { registerDashboardSettings, childExecutionLimits, closeDashboardTelemetry } from "./dashboard-settings.ts";
 import { bindEcosystemVersions } from "./ecosystem-versions.ts";
 import {
@@ -104,6 +105,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   // Once per instance, unlike the delegation tools, which session_start registers again (2026-11-17).
   registerChildUsageReport(pi, session);
   registerTournamentTools(pi, session);
+  registerWebDashboard(pi, session);
   const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
   registerDashboardSettings(pi, session);
   const beginWorkMode = registerWorkMode(pi, session);
@@ -305,7 +307,9 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         );
       }
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-      // Only a parent opens the dashboard. View-only children inherit the parent's controls.
+      // Only run Herdr dashboard handshake when explicitly opted into Herdr (PI_DADDY_HERDR=1).
+      // Cross-OS / terminal-agnostic sessions use the standalone /dashboard side panel instead.
+      if (process.env.PI_DADDY_HERDR !== "1") return undefined;
       if (session.depth !== 0 || session.ownExecutionId || session.malformedBounds.length) return undefined;
       try {
         const sessionEndpoint = await ensureDashboardSessionServer(session);

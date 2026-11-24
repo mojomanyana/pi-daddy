@@ -65,6 +65,8 @@ jobs:
       - name: unit tests
         timeout-minutes: 5
         working-directory: packages/pi-daddy
+        env:
+          PI_DADDY_REQUIRE_DESCRIBE: "1"
         run: npm test
 
       # Model-free and Herdr-free. The devDependency supplies the real pi process; these are not fakes and
@@ -73,6 +75,7 @@ jobs:
         working-directory: packages/pi-daddy
         env:
           PI_DADDY_LEAN_TOOLS: "0"
+          PI_DADDY_REQUIRE_DESCRIBE: "1"
         run: npm run test:integration:ci
 
       # A suite once silently overwrote tracked ledger-contract fixtures. A suite that edits the

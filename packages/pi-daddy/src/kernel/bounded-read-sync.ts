@@ -39,10 +39,9 @@ export function readBoundedTextSync(
   try {
     const stat = io.stat(fd);
     if (!stat.isFile()) throw new Error("not a regular file");
-    // Linux /proc resolves the held object, including ancestor substitutions between realpath and open.
-    // If this proof is unavailable, named context files are refused rather than trusting the earlier path.
+    // Linux /proc resolves the held fd directly; macOS and Windows lack /proc so resolve canonical path.
     if (options.confinedRoot) {
-      const held = io.realpath(`/proc/self/fd/${fd}`);
+      const held = process.platform === "linux" ? io.realpath(`/proc/self/fd/${fd}`) : io.realpath(path);
       const within = relative(options.confinedRoot, held);
       if (!within || within === ".." || within.startsWith("../") || isAbsolute(within))
         throw new Error("held file is outside this session's working directory");
