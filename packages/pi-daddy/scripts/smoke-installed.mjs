@@ -115,7 +115,7 @@ ${managedInit.stderr}`);
       `assert.equal(loaded.extensions.length, 1, "managed package must register exactly its declared extension");`,
       `const extension = loaded.extensions[0];`,
       `assert.deepEqual([...extension.tools.keys()], ["activity_lifecycle", "delegate_tournament", "quick_review", "initiative_task"]);`,
-      `assert.deepEqual([...extension.commands.keys()], ["work-mode", "dashboard", "grants"]);`,
+      `assert.deepEqual([...extension.commands.keys()], ["dashboard", "work-mode", "grants"]);`,
       `const manifestPath = join(packageRoot, "package.json");`,
       `const original = readFileSync(manifestPath, "utf8");`,
       `const manifest = JSON.parse(original);`,
