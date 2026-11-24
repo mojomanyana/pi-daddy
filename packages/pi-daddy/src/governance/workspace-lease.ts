@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "../kernel/refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "../kernel/workspace.ts";
 import { assertCloseBounds, HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
+import { acquirePortableWriterLease } from "./portable-lease.ts";
 import { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
 export { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
 import { workspaceLeasesDir } from "../kernel/project-paths.ts";
@@ -113,6 +114,9 @@ export async function acquireWorkspaceLease(input: {
 
   await mkdir(input.leaseDir, { recursive: true, mode: 0o700 });
   const paths = leasePaths(input.leaseDir, input.workspace.root);
+  if (process.platform !== "linux" && !input.flockCommand) {
+    return acquirePortableWriterLease(paths.lock, input.workspace, input.ownerId);
+  }
   const { spawn } = await import("node:child_process");
   const holder = spawn(
     input.flockCommand ?? "flock",

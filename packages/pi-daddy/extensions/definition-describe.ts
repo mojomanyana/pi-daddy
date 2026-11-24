@@ -39,10 +39,17 @@ export function bindDescribedDefinitions<T extends { agent?: string; definitionI
   specs: readonly T[],
 ): { specs: T[]; bindings: Array<DefinitionBinding | undefined> } {
   const described = session.reloadLifecycle?.describedDefinitions;
+  const requireExplicitDescribe = process.env.PI_DADDY_REQUIRE_DESCRIBE === "1";
   const bindings = specs.map((spec): DefinitionBinding | undefined => {
     if (spec.definitionId !== undefined) return { definitionId: spec.definitionId, source: "supplied" };
     const remembered = spec.agent === undefined ? undefined : described?.get(spec.agent);
-    return remembered === undefined ? undefined : { definitionId: remembered, source: "remembered" };
+    if (remembered !== undefined) return { definitionId: remembered, source: "remembered" };
+    // Auto-pin the current discovered definitionId so models do not hit a 2-step describe refusal.
+    if (!requireExplicitDescribe && spec.agent !== undefined) {
+      const current = session.definitions.get(spec.agent)?.definitionId;
+      if (current) return { definitionId: current, source: "remembered" };
+    }
+    return undefined;
   });
   return {
     specs: specs.map((spec, index) => {

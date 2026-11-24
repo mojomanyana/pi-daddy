@@ -9,6 +9,8 @@
  * auto-activated for Ambitious `range` / `altitude` runs in `extensions/work-mode.ts`.
  */
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { runWorktreeTournament, type CandidateRunResult } from "../src/executors/worktree-tournament.ts";
@@ -20,6 +22,28 @@ const DEFAULT_APPROACHES = [
   "Concurrency-safe, edge-case-hardened algorithmic design with explicit resource cleanup.",
   "Alternative architecture prioritizing simplicity, clear invariants, and thorough tests.",
 ];
+
+function resolvePiCommand(): { cmd: string; prefix: string[]; shell?: boolean } {
+  if (process.platform !== "win32") return { cmd: "pi", prefix: [] };
+  const pathVar = process.env.PATH ?? process.env.Path ?? "";
+  for (const dir of pathVar.split(delimiter)) {
+    if (!dir) continue;
+    const shim = join(dir, "pi.cmd");
+    if (!existsSync(shim)) continue;
+    try {
+      const text = readFileSync(shim, "utf8");
+      const m = /"%~?dp0\\([^"]+\.(?:m|c)?js)"/i.exec(text);
+      if (m?.[1]) {
+        const cli = resolve(dirname(shim), m[1].replace(/\\/g, "/"));
+        if (existsSync(cli)) return { cmd: process.execPath, prefix: [cli] };
+      }
+    } catch {
+      /* fallback */
+    }
+    return { cmd: shim, prefix: [], shell: true };
+  }
+  return { cmd: "pi", prefix: [] };
+}
 
 function runPiCandidate(input: {
   task: string;
@@ -48,11 +72,13 @@ function runPiCandidate(input: {
   ];
   if (input.model) args.push("--model", input.model);
   args.push(prompt);
-  return new Promise((resolve) => {
-    const child = spawn("pi", args, {
+  const resolved = resolvePiCommand();
+  return new Promise((resolveDone) => {
+    const child = spawn(resolved.cmd, [...resolved.prefix, ...args], {
       cwd: input.worktree,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PI_DADDY_HERDR: "0", PI_DADDY_ACTIVITY_TIMELINE: "off" },
+      ...(resolved.shell ? { shell: true } : {}),
     });
     let stdout = "";
     let stderr = "";
@@ -62,7 +88,7 @@ function runPiCandidate(input: {
       settled = true;
       clearTimeout(timer);
       input.signal?.removeEventListener("abort", onAbort);
-      resolve(res);
+      resolveDone(res);
     };
     const onAbort = () => {
       try {
