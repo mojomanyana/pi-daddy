@@ -21,6 +21,11 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - working-directory: packages/pi-daddy
-        run: npm run typecheck && npm run build && npm test
+        run: npm run typecheck && npm run build
+      - name: Run unit tests with the same describe policy as CI
+        working-directory: packages/pi-daddy
+        env:
+          PI_DADDY_REQUIRE_DESCRIBE: "1"
+        run: npm test
       - working-directory: packages/pi-daddy
         run: npm publish --provenance --access public
