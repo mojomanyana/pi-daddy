@@ -1,6 +1,6 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 1.1.0 - 2026-11-25
 
 - **Bucket 4 — 2-Stage Classifier-Driven Auto-Harvesting (`session-harvest.ts`, `[h]` panel hotkey, `POST /api/harvest`):** After a turn settles, a free Stage-1 signal filter checks for thrash, escalation, Cold Diff Review blockers, live user steering, or tool-failure + edit recovery; qualifying turns are triaged by `models.fast` (Stage-2 structured JSON classifier at `reasoning: "off"` over a secret-redacted digest) and auto-saved (`harvest.mode: "auto"`, default; configurable to `"suggest"` or `"off"`) into `~/.pi/agent/pi-daddy/harvested-evals/<repo>/` with zero project repo pollution. Manual `[h]` harvest hotkey and Web UI button also supported.
 - **Final legacy env cleanup:** Permanently removed the pre-1.0 `PI_GRANTS_*` legacy env adoption table from `env-names.ts`.
