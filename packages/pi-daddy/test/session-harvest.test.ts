@@ -27,15 +27,19 @@ function tempDirs(t: TestContext) {
 }
 
 const baseSignals: TurnHarvestSignals = {
-  prompt: "Fix auth header parsing when token=sk-1234567890abcdefghijklmno is supplied",
+  prompt:
+    'Fix auth header parsing when {"token":"synthetic-review-value"} and token=sk-1234567890abcdefghijklmno are supplied',
   thrashDetected: true,
   escalated: false,
   reviewBlockers: 0,
   userSteered: false,
   toolFailedAndEdited: true,
-  failureSummary: "AssertionError: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 rejected with 401",
+  failureSummary:
+    'AssertionError: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 payload {"token":"synthetic-review-value"} rejected with 401',
   editedFiles: ["src/auth.ts"],
-  verifyCommands: ["TOKEN=synthetic-token-12345 DB_PASSWORD=supersecretpass npm test"],
+  verifyCommands: [
+    'TOKEN=synthetic-token-12345 DB_PASSWORD=supersecretpass npm test -- \'{"token":"synthetic-review-value"}\'',
+  ],
 };
 
 test("Stage 1 filter skips clean routine turns at zero cost and passes real signals", () => {
@@ -100,6 +104,10 @@ test("Stage 2 classifier redacts secrets before dispatch, skips unauthenticated 
   assert.equal(decided.scenarioId, "auth-header-parsing-fix");
   assert.equal(decided.modelUsed, "google/gemini-3.5-flash-lite");
   assert.ok(!seenPrompt.includes("sk-1234567890"), "API key must be redacted before Stage 2 classifier");
+  assert.ok(
+    !seenPrompt.includes("synthetic-review-value"),
+    "quoted JSON token must be redacted before Stage 2 classifier",
+  );
   assert.ok(!seenPrompt.includes("synthetic-token-12345"), "TOKEN= in verifyCommands must be redacted");
   assert.ok(!seenPrompt.includes("supersecretpass"), "password in verifyCommands must be redacted");
   assert.ok(!seenPrompt.includes("eyJhbGci"), "Bearer token must be redacted before Stage 2 classifier");
@@ -237,8 +245,157 @@ test("P2: built-in writer preserves uniqueness suffix for two saves with the sam
   assert.ok(yaml2.includes(`id: "${maxId}"`));
   assert.ok(yaml2.includes("vitest run two.test.ts"));
   assert.ok(!yaml2.includes("npm test -- one"));
+  assert.ok(!redactHarvestText('{"token":"synthetic-review-value"}').includes("synthetic-review-value"));
   assert.ok(!redactHarvestText("https://alice:topsecret@example.com/api").includes("topsecret"));
   assert.ok(harvestOutputDir(repo, env).startsWith(agent));
+});
+
+test("P2: suggest mode saves the exact classified turn A even after turn B starts, then manual harvest saves turn B", async (t) => {
+  const { agent, repo } = tempDirs(t);
+  mkdirSync(agent, { recursive: true });
+  mkdirSync(repo, { recursive: true });
+  const prevAgent = process.env.PI_CODING_AGENT_DIR;
+  const prevPath = process.env.PATH;
+  process.env.PI_CODING_AGENT_DIR = agent;
+  process.env.PATH = agent; // empty of skill-harness so built-in path runs deterministically
+  t.after(() => {
+    if (prevAgent === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prevAgent;
+    if (prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = prevPath;
+  });
+
+  saveEcosystemConfig(
+    {
+      models: { fast: "google/gemini-3.5-flash-lite" },
+      harvest: { mode: "suggest", minConfidence: 0.75 },
+    },
+    { PI_CODING_AGENT_DIR: agent },
+  );
+
+  const hooks = new Map<string, Array<(...args: unknown[]) => unknown>>();
+  const events = new Map<string, Array<(payload: unknown) => void>>();
+  let dashboard!: Parameters<ExtensionAPI["registerCommand"]>[1];
+  const pi = {
+    on(name: string, fn: (...args: unknown[]) => unknown) {
+      const list = hooks.get(name) ?? [];
+      list.push(fn);
+      hooks.set(name, list);
+    },
+    events: {
+      on(name: string, fn: (payload: unknown) => void) {
+        const list = events.get(name) ?? [];
+        list.push(fn);
+        events.set(name, list);
+      },
+      emit() {},
+    },
+    registerCommand(_name: string, cmd: typeof dashboard) {
+      dashboard = cmd;
+    },
+  } as unknown as ExtensionAPI;
+
+  registerWebDashboard(pi, {
+    cwd: repo,
+    depth: 0,
+    episodeId: "ep-suggest",
+    reloadLifecycle: {},
+  } as unknown as GrantsSession);
+
+  const fastModel = { provider: "google", id: "gemini-3.5-flash-lite" };
+  const ctx = {
+    cwd: repo,
+    hasUI: false,
+    ui: { notify() {}, setStatus() {} },
+    model: fastModel,
+    modelRegistry: {
+      find: () => fastModel,
+      hasConfiguredAuth: () => true,
+      streamSimple: () => ({
+        result: async () => ({
+          stopReason: "stop",
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                harvest: true,
+                category: "thrash",
+                confidence: 0.92,
+                scenarioId: "turn-a-parser-bug",
+                reason: "Turn A failed parser check repeatedly",
+              }),
+            },
+          ],
+        }),
+      }),
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await dashboard.handler("", ctx);
+  try {
+    // Turn A: prompt A, edits src/turn-a.ts, runs npm test -- turn-a, triggers thrash -> settles -> suggestion appears
+    for (const fn of hooks.get("before_agent_start") ?? [])
+      fn({ prompt: "Turn A: fix CSV quote escaping in parser" }, ctx);
+    for (const fn of hooks.get("tool_execution_start") ?? [])
+      fn({ toolName: "edit", args: { path: "src/turn-a.ts" } }, ctx);
+    for (const fn of hooks.get("tool_execution_start") ?? [])
+      fn({ toolName: "bash", args: { command: "npm test -- turn-a" } }, ctx);
+    for (const fn of events.get("principal:thrash-detected:v1") ?? [])
+      fn({ command: "npm test -- turn-a", signature: "csv-fail" });
+    for (const fn of hooks.get("agent_settled") ?? []) fn({}, ctx);
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Turn B starts BEFORE operator clicks/presses [h] to save the visible suggestion!
+    for (const fn of hooks.get("before_agent_start") ?? []) fn({ prompt: "Turn B: rename button color in CSS" }, ctx);
+    for (const fn of hooks.get("tool_execution_start") ?? [])
+      fn({ toolName: "edit", args: { path: "src/turn-b.css" } }, ctx);
+    for (const fn of hooks.get("tool_execution_start") ?? [])
+      fn({ toolName: "bash", args: { command: "vitest run turn-b.test.ts" } }, ctx);
+
+    const { readPanelLocator } = await import("../src/kernel/ecosystem-config.ts");
+    const loc = readPanelLocator(repo, { PI_CODING_AGENT_DIR: agent });
+    assert.ok(loc);
+    const endpoint = new URL(loc.url);
+    endpoint.pathname = "/api/harvest";
+
+    // First harvest saves the suggested Turn A!
+    const respA = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "terminal-panel" }),
+    });
+    assert.equal(respA.status, 200);
+    const bodyA = (await respA.json()) as { saved?: boolean; path?: string; scenarioId?: string };
+    assert.equal(bodyA.saved, true);
+    assert.equal(bodyA.scenarioId, "turn-a-parser-bug");
+    assert.ok(bodyA.path && existsSync(bodyA.path));
+    const yamlA = readFileSync(bodyA.path, "utf8");
+    assert.ok(yamlA.includes("turn-a-parser-bug"));
+    assert.ok(yamlA.includes("Turn A: fix CSV quote escaping in parser"));
+    assert.ok(yamlA.includes("src/turn-a.ts"));
+    assert.ok(yamlA.includes("npm test -- turn-a"));
+    assert.ok(!yamlA.includes("Turn B:"), "must not mix Turn B prompt into Turn A suggestion");
+    assert.ok(!yamlA.includes("src/turn-b.css"), "must not mix Turn B edits into Turn A suggestion");
+    assert.ok(!yamlA.includes("turn-b.test.ts"), "must not mix Turn B verify commands into Turn A suggestion");
+
+    // Second harvest (now with NO pending suggestion) preserves manual harvest behavior for Turn B!
+    const respB = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "manual" }),
+    });
+    assert.equal(respB.status, 200);
+    const bodyB = (await respB.json()) as { saved?: boolean; path?: string; scenarioId?: string };
+    assert.equal(bodyB.saved, true);
+    assert.equal(bodyB.scenarioId, "manual-session-harvest");
+    assert.ok(bodyB.path && bodyB.path !== bodyA.path);
+    const yamlB = readFileSync(bodyB.path, "utf8");
+    assert.ok(yamlB.includes("Turn B: rename button color in CSS"));
+    assert.ok(yamlB.includes("src/turn-b.css"));
+    assert.ok(yamlB.includes("vitest run turn-b.test.ts"));
+  } finally {
+    await dashboard.handler("stop", ctx);
+  }
 });
 
 test("P1/P2: Windows installed skill-harness.cmd shim resolves to Node entrypoint with shell:false and receives structured --turn-json stdin", (t) => {

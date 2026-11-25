@@ -56,8 +56,12 @@ export function hasHarvestSignal(s: TurnHarvestSignals): boolean {
   );
 }
 
+const QUOTED_SECRET_KEY_VALUE =
+  /((["'])[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|auth|credential)[A-Za-z0-9_.-]*\2\s*:\s*)(?:"[^"\r\n]+"|'[^'\r\n]+')/gi;
+
 export function redactHarvestText(input: string): string {
   return input
+    .replace(QUOTED_SECRET_KEY_VALUE, (_m, prefix: string) => `${prefix}"[REDACTED]"`)
     .replace(/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/g, "[REDACTED_KEY]")
     .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{20,})\b/g, "[REDACTED_SECRET]")
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, "$1[REDACTED_TOKEN]")

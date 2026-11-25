@@ -22,6 +22,7 @@ import {
   hasHarvestSignal,
   saveHarvestedEval,
   type HarvestClassifierRegistry,
+  type TurnHarvestSignals,
 } from "../src/products/session-harvest.ts";
 import {
   loadEcosystemConfig,
@@ -87,6 +88,16 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   let costUsd = 0;
   let turns = 0;
   let harvestInfo: WebDashboardHarvestInfo | undefined;
+  let pendingHarvestSuggestion:
+    | {
+        readonly scenarioId: string;
+        readonly reason: string;
+        readonly confidence: number;
+        readonly signals: TurnHarvestSignals;
+        readonly sessionFile?: string;
+        readonly cwd: string;
+      }
+    | undefined;
   const harvestTracker = createTurnHarvestTracker();
   const recent: WebDashboardEvent[] = [];
   const tasks: WebDashboardTask[] = [];
@@ -224,24 +235,28 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         record("escalate", reason ?? "manual escalation");
       },
       onHarvest: (reason) => {
-        const cwd = lastCtx?.cwd ?? session.cwd;
-        const sessionFile = (
-          lastCtx as { sessionManager?: { getSessionFile?: () => string | undefined } } | undefined
-        )?.sessionManager?.getSessionFile?.();
+        const pending = pendingHarvestSuggestion;
+        const cwd = pending?.cwd ?? lastCtx?.cwd ?? session.cwd;
+        const sessionFile =
+          pending?.sessionFile ??
+          (
+            lastCtx as { sessionManager?: { getSessionFile?: () => string | undefined } } | undefined
+          )?.sessionManager?.getSessionFile?.();
         const saved = saveHarvestedEval({
           cwd,
-          scenarioId: harvestInfo?.scenarioId || "manual-session-harvest",
-          signals: harvestTracker.snapshot(),
-          reason: reason ?? harvestInfo?.reason,
+          scenarioId: pending?.scenarioId || "manual-session-harvest",
+          signals: pending?.signals ?? harvestTracker.snapshot(),
+          reason: pending?.reason ?? reason,
           sessionFile,
         });
         if (!saved.saved || !saved.path) {
           throw new Error(saved.error ?? "Failed to save harvested eval");
         }
+        pendingHarvestSuggestion = undefined;
         harvestInfo = {
           scenarioId: saved.scenarioId,
-          reason: harvestInfo?.reason ?? reason ?? "operator-harvested",
-          confidence: harvestInfo?.confidence ?? 1,
+          reason: pending?.reason ?? reason ?? "operator-harvested",
+          confidence: pending?.confidence ?? 1,
           savedPath: saved.path,
         };
         recordTask("harvest", "saved", `${saved.scenarioId} (${saved.via})`);
@@ -275,6 +290,8 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     cacheReadTokens = 0;
     costUsd = 0;
     turns = 0;
+    harvestInfo = undefined;
+    pendingHarvestSuggestion = undefined;
     await syncAuto();
     updateFooter(ctx);
     const cfg = loadEcosystemConfig();
@@ -374,6 +391,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
             sessionFile,
           });
           if (!saved.saved || !saved.path) return;
+          pendingHarvestSuggestion = undefined;
           harvestInfo = {
             scenarioId: saved.scenarioId,
             reason: decision.reason,
@@ -383,6 +401,14 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
           recordTask("harvest", "auto-saved", `${saved.scenarioId} (${Math.round(decision.confidence * 100)}%)`);
           record("harvest", `auto-saved ${saved.path}`, ctx);
         } else {
+          pendingHarvestSuggestion = {
+            scenarioId: decision.scenarioId,
+            reason: decision.reason,
+            confidence: decision.confidence,
+            signals,
+            sessionFile,
+            cwd: ctx.cwd,
+          };
           harvestInfo = { scenarioId: decision.scenarioId, reason: decision.reason, confidence: decision.confidence };
           record("harvest", `candidate ${decision.scenarioId} — press [h] to save`, ctx);
         }
