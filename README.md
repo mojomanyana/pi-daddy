@@ -8,9 +8,9 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 ### Install the ecosystem
 
-**Fresh profile:** Use Pi Daddy 1.0.3 or later. Run `npx pi-daddy@latest setup --preset open-weight`. Setup installs the Daddy extension matching the launcher's exact version and the four [qualified companion releases](packages/pi-daddy/src/products/ecosystem-release.json). Run `pi list` to see the installed versions.
+**Fresh profile:** Use Pi Daddy 1.0.3 or later. Run `npx pi-daddy@latest setup --preset auto`. Setup installs the Daddy extension matching the launcher's exact version and the four [qualified companion releases](packages/pi-daddy/src/products/ecosystem-release.json). Run `pi list` to see the installed versions.
 
-Choose a preset for a provider you have configured in Pi. The `open-weight` preset uses Fireworks and `google` uses Google. For another provider, edit the model tiers in the dashboard Settings or `ecosystem.json`. Bookie skips distillation when the configured fast model is unavailable.
+The `auto` preset detects configured providers and builds ordered model fallbacks, including the current Pi session. You can also choose an explicit provider preset or edit model tiers in dashboard Settings or `ecosystem.json`. Run `pi-daddy doctor` to inspect the effective configuration. Bookie skips distillation when the configured fast model is unavailable.
 
 **Repair or reproduce an install:** Use the explicit pins below. Run `pi list` in the affected project first. Update each package in its original scope with `pi install --local` for project-local entries and `pi install` for user entries.
 
