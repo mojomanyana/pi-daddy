@@ -19,15 +19,15 @@ Requires Node 24+ and stable Pi 1.6.0+. Tested with Pi 1.6.0.
 
 ```bash
 pi install npm:pi-bookie@1.0.2
-pi install npm:pi-daddy@1.0.2
+pi install npm:pi-daddy@1.0.3
 pi install npm:principal-pi-skills@6.0.2
 pi install npm:pi-scout-research@1.0.2
 pi install npm:skill-harness@1.0.2
 
 # Optional on a fresh profile without ecosystem.json: initialize the open-weight preset (or use --preset google).
-# npx pi-daddy@1.0.2 setup --skip-install --preset open-weight
+# npx pi-daddy@1.0.3 setup --skip-install --preset open-weight
 # Optional: put the matching standalone CLI on PATH for /dashboard split and pi-daddy panel.
-# npm install -g pi-daddy@1.0.2
+# npm install -g pi-daddy@1.0.3
 ```
 <!-- verified-beta-install:end -->
 
