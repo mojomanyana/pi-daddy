@@ -1,17 +1,9 @@
 name: Public beta install
 on:
   pull_request:
-    paths:
-      - "packages/pi-daddy/src/products/ecosystem-release.json"
-      - "packages/pi-daddy/src/products/setup-doctor.ts"
-      - "packages/pi-daddy/src/cli.ts"
-      - "packages/pi-daddy/scripts/beta-grants.mjs"
-      - "packages/pi-daddy/package.json"
-      - "package-lock.json"
-      - ".github/workflows/beta-start.yml"
-      - "packages/pi-daddy/scripts/beta-start.mjs"
-      - "README.md"
   workflow_dispatch:
+  schedule:
+    - cron: "17 8 * * 1"
 
 permissions:
   contents: read
@@ -27,16 +19,35 @@ jobs:
           node-version: "24"
       - name: Compare the public commands with the verified release manifest
         run: node packages/pi-daddy/scripts/beta-start.mjs
+      - name: Check for newer published ecosystem packages
+        if: github.event_name == 'schedule'
+        run: node packages/pi-daddy/scripts/beta-start.mjs --check-latest
       - run: npm ci
       - run: npm run build
-      - name: Run setup in a fresh Pi profile and verify the published Principal roles
+      - name: Run the packed candidate setup and verify its actual Principal roles
         env:
           PI_CODING_AGENT_DIR: ${{ runner.temp }}/beta-agent
         run: |
           set -euo pipefail
           export PATH="$GITHUB_WORKSPACE/node_modules/.bin:$PATH"
           test "$(pi --version)" = "$(node -p "require('./packages/pi-daddy/src/products/ecosystem-release.json').piSdk")"
+          mkdir "$RUNNER_TEMP/daddy-candidate"
+          candidate="$RUNNER_TEMP/daddy-candidate"
+          npm pack --workspace pi-daddy --pack-destination "$candidate" --ignore-scripts
+          tar -xzf "$candidate"/*.tgz -C "$candidate"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$candidate/node_modules"
+          version=$(node -p "require('./packages/pi-daddy/package.json').version")
           cd "$RUNNER_TEMP"
-          node "$GITHUB_WORKSPACE/packages/pi-daddy/dist/cli.js" setup
+          node "$GITHUB_WORKSPACE/packages/pi-daddy/scripts/beta-candidate-setup.mjs" "$candidate"/*.tgz "$candidate/package"
           pi list
+          PI_OFFLINE=1 node "$GITHUB_WORKSPACE/packages/pi-daddy/scripts/beta-grants.mjs" "$(command -v pi)" "$version"
+      - name: Verify the documented reproduction commands against published packages
+        env:
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/published-beta-agent
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/node_modules/.bin:$PATH"
+          cd "$RUNNER_TEMP"
+          sed -n '/^<!-- verified-beta-install:start -->$/,/^<!-- verified-beta-install:end -->$/p' "$GITHUB_WORKSPACE/README.md" | sed -n '/^pi install /p' > beta-install.sh
+          bash -e beta-install.sh
           PI_OFFLINE=1 node "$GITHUB_WORKSPACE/packages/pi-daddy/scripts/beta-grants.mjs" "$(command -v pi)"
