@@ -8,7 +8,9 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 ### Install the ecosystem
 
-**Fresh profile:** Check `npx pi-daddy@latest --version`. For 1.0.0 through 1.0.2, use the five explicit install commands below. Those CLI releases select an older Daddy that rejects Principal v6's agents. Once the corrected CLI ships, run `npx pi-daddy@latest setup --preset open-weight`. Setup installs the Daddy extension matching the launcher's exact version and the four [qualified companion releases](packages/pi-daddy/src/products/ecosystem-release.json). Run `pi list` to see the installed versions.
+**Fresh profile:** Use Pi Daddy 1.0.3 or later. Run `npx pi-daddy@latest setup --preset auto`. Setup installs the Daddy extension matching the launcher's exact version and the four [qualified companion releases](packages/pi-daddy/src/products/ecosystem-release.json). Run `pi list` to see the installed versions.
+
+The `auto` preset detects configured providers and builds ordered model fallbacks, including the current Pi session. You can also choose an explicit provider preset or edit model tiers in dashboard Settings or `ecosystem.json`. Run `pi-daddy doctor` to inspect the effective configuration. Bookie skips distillation when the configured fast model is unavailable.
 
 **Repair or reproduce an install:** Use the explicit pins below. Run `pi list` in the affected project first. Update each package in its original scope with `pi install --local` for project-local entries and `pi install` for user entries.
 
@@ -16,11 +18,11 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 Requires Node 24+ and stable Pi 1.6.0+. Tested with Pi 1.6.0.
 
 ```bash
-pi install npm:pi-bookie@1.0.1
+pi install npm:pi-bookie@1.0.2
 pi install npm:pi-daddy@1.0.2
-pi install npm:principal-pi-skills@6.0.1
-pi install npm:pi-scout-research@1.0.1
-pi install npm:skill-harness@1.0.1
+pi install npm:principal-pi-skills@6.0.2
+pi install npm:pi-scout-research@1.0.2
+pi install npm:skill-harness@1.0.2
 
 # Optional on a fresh profile without ecosystem.json: initialize the open-weight preset (or use --preset google).
 # npx pi-daddy@1.0.2 setup --skip-install --preset open-weight

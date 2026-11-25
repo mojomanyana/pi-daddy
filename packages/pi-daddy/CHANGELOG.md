@@ -1,11 +1,17 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 1.0.3 - 2026-11-25
 
 - **Complete Herdr removal:** Permanently deleted all 27 Herdr modules, tests, plugin manifest (`herdr-plugin/`), Apache license notice, `PI_DADDY_HERDR*` env vars, `"herdr"` executor enum, `herdrPaneId`/`herdrAgentName` ledger fields, and Herdr lease-close plumbing (~6,000+ LOC removed). Captured subprocess execution (`"process"`) and the standalone 5-tab terminal/web Side Panel are now the sole supported paths.
 - **Provider auto-detect & ordered tier fallbacks (`pi-daddy setup --preset auto`, `modelFallbacks`):** `pi-daddy setup --preset auto` inspects configured Pi providers (`~/.pi/agent/auth.json` key names + env var presence, never reading secrets) to pick working `models.{fast,work,strong}` and populate ordered `modelFallbacks` chains (or `--preset session` when none are detected). Supports `open-weight`, `google`, `openrouter`, `deepseek`, `anthropic`, `openai`, `session`, and `auto`, plus comma-separated fallback specs in `PI_ECO_MODEL_*` env vars.
 - **Ghostty & Kitty `/dashboard split` support:** `/dashboard split` and `pi-daddy doctor` now support Kitty (`kitty @ launch --location=vsplit`) and Ghostty (macOS & Linux) alongside tmux, WezTerm, macOS iTerm2, and Windows Terminal.
 - `pi-daddy setup` and the manual install commands now use the same tested package pins. Previously both installed Pi Daddy 1.0.0, which rejected Principal v6's `build`, `review`, and `debug` agents. For an existing install, apply the pinned `pi install` commands in the quickstart and run `/reload`; no grant changes are needed.
+
+- Install the extension matching the setup launcher and qualified companion versions from one manifest.
+- Preserve damaged configuration and custom model overrides, apply preset changes correctly, and report effective tiers.
+- Report dashboard save failures before changing live model settings.
+- Verify the packed candidate and published baseline, check runtime minimums, and detect weekly release drift.
+- Strengthen the portable public-notice verifier with fresh inputs and line-break checks.
 
 ## 1.0.2 — 2026-11-25
 
