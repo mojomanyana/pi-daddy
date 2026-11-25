@@ -10,12 +10,20 @@ child process, with an optional append-only, hash-chained governance ledger.
 This file is the product description, present tense. If code and this file disagree, fix this file. Agents start at
 `AGENTS.md`, which carries the rules, the decisions still in force, the measured facts and the roadmap.
 
+## v1.0 Highlights (Cross-OS, Herdr-Free)
+
+- **One-command setup & diagnostics:** `pi-daddy setup [--preset open-weight|google]` installs all 5 ecosystem packages and writes `~/.pi/agent/ecosystem.json`; `pi-daddy doctor` checks Node, `pi`, `git`, Docker, terminal split support, and config.
+- **5-Tab Terminal & Web Side-Panel Dashboard:** run `/dashboard split` inside Pi (auto-splits tmux, WezTerm, macOS iTerm2, or Windows Terminal) or bare `pi-daddy panel` in a second pane (auto-attaches via per-project locator; zero Herdr dependency).
+- **Cross-OS `delegate` (`portable-child.ts` + `inprocess-readonly.ts`):** native sub-agent execution on macOS, Windows, and Linux x64, plus sub-150ms in-process `quick_review`.
+- **Parallel Worktree Tournaments (`delegate_tournament`) & Smart Auto-Escalation:** parallel isolated git-worktree candidates with cold-judge selection, plus 1-shot strong-model rescue on `principal:thrash-detected:v1` or manual `[x]` panel escalation.
+- **`principal-pi-skills@6.x` binding:** validates both v6 3-phase (`build`, `review`, `debug`) and legacy v5 manifests in `principal-agents.json`.
+
 ## Work mode: optional approach guidance
 
 **Standard (current behavior)** is the default. It adds no work-mode prompt to the
 parent or children. **Ambitious** adds concise guidance to choose useful methods,
 challenge assumptions and verify the agreed outcome. It changes no permissions,
-models, tools, execution limits or JEV settings, and starts no separate provider call.
+models, tools, or execution limits, and starts no separate provider call.
 
 Open **Settings → Work mode → Choose work mode…**. The editor is a draft until
 **Apply work mode**; **Cancel** leaves settings unchanged. Choose:

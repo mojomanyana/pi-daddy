@@ -4,19 +4,47 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 ## Start here
 
-**Try it with a working Pi model on Linux x64.** The full beta install and checkpoint recovery were checked with Pi 1.5.2 and Node 24. Use `pi --version` to see your Pi version. These commands install the tested package versions into the current Pi profile. To keep your usual profile separate, run `export PI_CODING_AGENT_DIR="$HOME/.pi-beta/agent"` in this shell first. Use the same shell to start Pi and sign into your chosen model there if prompted. The [tested release manifest](.github/beta-release.json) lists the pins. To install only pi-daddy, see [Install and first run](#install-and-first-run).
+**Works natively on macOS (Apple Silicon & Intel), Linux, and Windows** with Pi 1.6.0+ and Node 24+ (no Herdr required).
+
+### One-command ecosystem setup
+
+```bash
+npx pi-daddy@1.0.2 setup --preset open-weight   # installs all 5 packages + writes ~/.pi/agent/ecosystem.json
+npx pi-daddy@1.0.2 doctor                       # verifies Node, pi, git, Docker, terminal split support & config
+```
+
+Or install the pinned package versions directly into Pi (see [the release manifest](.github/beta-release.json); to install only `pi-daddy`, see [Install and first run](#install-and-first-run)):
 
 <!-- verified-beta-install:start -->
 ```bash
-pi install npm:pi-bookie@0.9.0
-pi install npm:pi-daddy@0.63.0
-pi install npm:principal-pi-skills@4.19.1
-pi install npm:pi-scout-research@0.4.0
-pi install npm:skill-harness@0.37.0
+pi install npm:pi-bookie@1.0.1
+pi install npm:pi-daddy@1.0.2
+pi install npm:principal-pi-skills@6.0.1
+pi install npm:pi-scout-research@1.0.1
+pi install npm:skill-harness@1.0.1
 ```
 <!-- verified-beta-install:end -->
 
-**Give Pi one real requirement.** Create and enter an empty folder, run `git init` and `git -c user.name=Beta -c user.email=beta@example.invalid commit --allow-empty -m setup`, then start `pi` there. Use fictional data. Pick the model you want to try, leave JEV off, and keep Standard work mode for this first task. Leave Daddy Auto off. Type `/bookie-task enable` and approve project memory for this workspace. This lets Bookie save and recall the checkpoint while other permission prompts remain manual. A separate dashboard is optional.
+### Interactive 5-Tab Side-Panel Dashboard (Herdr-Free)
+
+Start `pi` in any git repository. `pi-daddy` automatically starts a token-authenticated localhost control plane and writes a per-project auto-attach locator so you can steer and configure Pi from a split pane or browser:
+
+```bash
+/dashboard split          # inside Pi: auto-splits tmux, WezTerm, macOS iTerm2, or Windows Terminal
+pi-daddy panel            # from any second terminal pane in the same repo: auto-attaches with zero copy-paste
+```
+
+Tabs & hotkeys: `[1] Overview` (live tokens, prompt cache %, cost, events) · `[2] Tasks` · `[3] Memory` · `[4] Research` · `[5] Settings` · `[s]` live steer · `[f]` follow-up · `[m]` work mode · `[a]` auto · `[t]` thinking · `[o]` toggle optional tools (`delegate_tournament`, `quick_review`) · `[e]` edit `fast`/`work`/`strong` model tiers (persisted to `~/.pi/agent/ecosystem.json`) · `[x]` manual strong-model escalation.
+
+### Key v1.0 Capabilities
+
+- **Lean Turn-1 footprint:** 5 active tools (`read`, `bash`, `edit`, `write`, `delegate`) by default; optional orchestration tools stay deferred or toggleable from the panel.
+- **Two-tier cross-OS `delegate`:** Tier-1 in-process read-only reviews (`<150ms`, `quick_review`) on all OSs; Tier-2 hardened Linux x64 worker on Linux + clean Node process-group `portable-child` runner on macOS and Windows.
+- **Parallel Worktree Tournaments (`delegate_tournament`):** runs N competing candidates in isolated git worktrees in parallel, verifies each with anti-gaming verifier restoration, and uses a cold judge to pick and apply the winning diff.
+- **Fast Cold Diff Review & Smart Auto-Escalation:** lightweight `reasoning: "low"` diff review in `work-mode` plus automatic 1-shot strong-model rescue when `principal:thrash-detected:v1` fires (or on manual `[x]` escalation).
+- **Single Config (`~/.pi/agent/ecosystem.json`):** shared `models.{fast,work,strong}`, `escalation`, `bookie`, and `scout` settings across all 5 packages (env vars override when set).
+
+**Try a quick verification task.** Create and enter an empty folder, run `git init` and `git -c user.name=Demo -c user.email=demo@example.invalid commit --allow-empty -m setup`, then start `pi` there in Standard work mode:
 
 > Build a public notice exporter in this folder. I should be able to pipe one JSON object into `node public-notice.cjs`. Print just its `message` on one line, even if the object also contains a staff-only note. A missing message should exit with an error and print no public output. Show me what actually happened when you tried it, then save and read back a short “Public notice” checkpoint with the result. Leave the work local.
 
