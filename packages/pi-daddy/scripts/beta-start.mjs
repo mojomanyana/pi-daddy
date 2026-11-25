@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const root = new URL("../../../", import.meta.url);
-const manifest = JSON.parse(readFileSync(new URL(".github/beta-release.json", root), "utf8"));
+const manifest = JSON.parse(readFileSync(new URL("../src/products/ecosystem-release.json", import.meta.url), "utf8"));
 const readme = new URL("README.md", root);
 const text = readFileSync(readme, "utf8");
 const start = "<!-- verified-beta-install:start -->";
@@ -25,7 +25,19 @@ const commands = names.map((name) => {
   assert.match(pins[name], /^\d+\.\d+\.\d+$/);
   return `pi install npm:${name}@${pins[name]}`;
 });
-const block = ["", "```bash", ...commands, "```", ""].join("\n");
+const cli = `pi-daddy@${pins["pi-daddy"]}`;
+const block = [
+  "",
+  "```bash",
+  ...commands,
+  "",
+  "# Optional: fill missing preset settings without changing the installed packages (or use --preset google).",
+  `# npx ${cli} setup --skip-install --preset open-weight`,
+  "# Optional: put the matching standalone CLI on PATH for /dashboard split and pi-daddy panel.",
+  `# npm install -g ${cli}`,
+  "```",
+  "",
+].join("\n");
 const updated = text.slice(0, bounds[0] + start.length) + block + text.slice(bounds[1]);
 
 if (process.argv[2] === "--write") {

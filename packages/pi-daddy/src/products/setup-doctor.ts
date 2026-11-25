@@ -9,14 +9,7 @@ import {
   saveEcosystemConfig,
   type EcosystemConfig,
 } from "../kernel/ecosystem-config.ts";
-
-const ECOSYSTEM_PACKAGES = [
-  "npm:pi-daddy@1.0.0",
-  "npm:principal-pi-skills@6.0.0",
-  "npm:pi-bookie@1.0.0",
-  "npm:pi-scout-research@1.0.0",
-  "npm:skill-harness@1.0.0",
-] as const;
+import release from "./ecosystem-release.json" with { type: "json" };
 
 const PRESETS: Record<string, EcosystemConfig> = {
   "open-weight": {
@@ -78,7 +71,9 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
       console.error("pi-daddy setup: `pi` CLI not found on PATH. Install @earendil-works/pi-coding-agent first.");
       return 1;
     }
-    for (const pkg of ECOSYSTEM_PACKAGES) {
+    const pins: Record<string, string> = release.publicVersions;
+    for (const name of release.normalCliInstalls) {
+      const pkg = `npm:${name}@${pins[name]}`;
       console.log(`  installing ${pkg}...`);
       const res = spawnSync("pi", ["install", pkg], {
         stdio: "inherit",

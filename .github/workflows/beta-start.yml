@@ -2,7 +2,12 @@ name: Public beta install
 on:
   pull_request:
     paths:
-      - ".github/beta-release.json"
+      - "packages/pi-daddy/src/products/ecosystem-release.json"
+      - "packages/pi-daddy/src/products/setup-doctor.ts"
+      - "packages/pi-daddy/src/cli.ts"
+      - "packages/pi-daddy/scripts/beta-grants.mjs"
+      - "packages/pi-daddy/package.json"
+      - "package-lock.json"
       - ".github/workflows/beta-start.yml"
       - "packages/pi-daddy/scripts/beta-start.mjs"
       - "README.md"
@@ -22,15 +27,16 @@ jobs:
           node-version: "24"
       - name: Compare the public commands with the verified release manifest
         run: node packages/pi-daddy/scripts/beta-start.mjs
-      - name: Install the published packages using a fresh Pi profile
+      - run: npm ci
+      - run: npm run build
+      - name: Run setup in a fresh Pi profile and verify the published Principal roles
         env:
           PI_CODING_AGENT_DIR: ${{ runner.temp }}/beta-agent
         run: |
           set -euo pipefail
-          pi_version=$(node -p "require('./.github/beta-release.json').piSdk")
-          npm install --prefix "$RUNNER_TEMP/beta-runtime" --no-audit --no-fund "@earendil-works/pi-coding-agent@$pi_version"
-          export PATH="$RUNNER_TEMP/beta-runtime/node_modules/.bin:$PATH"
-          # The preceding check restricts this block to exact, pinned pi install commands.
-          sed -n '/^<!-- verified-beta-install:start -->$/,/^<!-- verified-beta-install:end -->$/p' README.md | sed -n '/^pi install /p' > "$RUNNER_TEMP/beta-install.sh"
-          bash -e "$RUNNER_TEMP/beta-install.sh"
+          export PATH="$GITHUB_WORKSPACE/node_modules/.bin:$PATH"
+          test "$(pi --version)" = "$(node -p "require('./packages/pi-daddy/src/products/ecosystem-release.json').piSdk")"
+          cd "$RUNNER_TEMP"
+          node "$GITHUB_WORKSPACE/packages/pi-daddy/dist/cli.js" setup
           pi list
+          PI_OFFLINE=1 node "$GITHUB_WORKSPACE/packages/pi-daddy/scripts/beta-grants.mjs" "$(command -v pi)"

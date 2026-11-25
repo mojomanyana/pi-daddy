@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- `pi-daddy setup` and the manual install commands now use the same tested package pins. Previously both installed Pi Daddy 1.0.0, which rejected Principal v6's `build`, `review`, and `debug` agents. For an existing install, apply the pinned `pi install` commands in the quickstart and run `/reload`; no grant changes are needed.
+
 ## 1.0.2 — 2026-11-25
 
 - Updated `README.md`, `packages/pi-daddy/README.md`, `packages/pi-daddy/CHANGELOG.md`, and `.github/beta-release.json` to document the v1.0 cross-OS Herdr-free architecture, 5-tab side-panel dashboard, `pi-daddy setup`/`doctor`, `ecosystem.json`, `portable-child`, `delegate_tournament`, Smart Auto-Escalation, and `principal-pi-skills@6.x` binding.

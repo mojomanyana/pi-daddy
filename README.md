@@ -6,28 +6,30 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 **Works natively on macOS (Apple Silicon & Intel), Linux, and Windows** with Pi 1.6.0+ and Node 24+ (no Herdr required).
 
-### One-command ecosystem setup
+### Install the ecosystem
 
-```bash
-npx pi-daddy@1.0.2 setup --preset open-weight   # installs all 5 packages + writes ~/.pi/agent/ecosystem.json
-npx pi-daddy@1.0.2 doctor                       # verifies Node, pi, git, Docker, terminal split support & config
-```
-
-Or install the pinned package versions directly into Pi (see [the release manifest](.github/beta-release.json); to install only `pi-daddy`, see [Install and first run](#install-and-first-run)):
+For a fresh user profile, install the [tested package versions](packages/pi-daddy/src/products/ecosystem-release.json) below. To repair an existing install, first run `pi list` in the affected project. Update the packages you use in their original scope: use `pi install --local` for project-local entries and plain `pi install` for user entries. The published `pi-daddy setup` in 1.0.0–1.0.2 selects an older Daddy that rejects Principal v6's agents.
 
 <!-- verified-beta-install:start -->
 ```bash
-pi install npm:pi-bookie@1.0.0
-pi install npm:pi-daddy@1.0.0
-pi install npm:principal-pi-skills@6.0.0
-pi install npm:pi-scout-research@1.0.0
-pi install npm:skill-harness@1.0.0
+pi install npm:pi-bookie@1.0.1
+pi install npm:pi-daddy@1.0.2
+pi install npm:principal-pi-skills@6.0.1
+pi install npm:pi-scout-research@1.0.1
+pi install npm:skill-harness@1.0.1
+
+# Optional: fill missing preset settings without changing the installed packages (or use --preset google).
+# npx pi-daddy@1.0.2 setup --skip-install --preset open-weight
+# Optional: put the matching standalone CLI on PATH for /dashboard split and pi-daddy panel.
+# npm install -g pi-daddy@1.0.2
 ```
 <!-- verified-beta-install:end -->
 
+In an open Pi session, run `/reload`, then `/grants`: `build`, `review`, and `debug` should be listed, even if they need your approval. To install Daddy alone, see [Install and first run](#install-and-first-run).
+
 ### Interactive 5-Tab Side-Panel Dashboard (Herdr-Free)
 
-Start `pi` in any git repository. `pi-daddy` automatically starts a token-authenticated localhost control plane and writes a per-project auto-attach locator so you can steer and configure Pi from a split pane or browser:
+`pi install` updates the extension, not your shell's `pi-daddy` binary. For a split pane, use the matching standalone CLI above and check `pi-daddy --version`. Start Pi in the repository. Run `/dashboard split` to start and open the dashboard, or run `/dashboard` first and then `pi-daddy panel` from another terminal in the same directory. With `dashboard.autoStart` enabled, the manual start is unnecessary.
 
 ```bash
 /dashboard split          # inside Pi: auto-splits tmux, WezTerm, macOS iTerm2, or Windows Terminal
