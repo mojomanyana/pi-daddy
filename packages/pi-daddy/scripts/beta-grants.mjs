@@ -9,7 +9,9 @@ import release from "../src/products/ecosystem-release.json" with { type: "json"
 const profile = process.env.PI_CODING_AGENT_DIR;
 assert.ok(profile, "Point PI_CODING_AGENT_DIR at the fresh setup profile");
 const configured = JSON.parse(readFileSync(join(profile, "settings.json"), "utf8")).packages;
-assert.deepEqual(configured.toSorted(), Object.entries(release.publicVersions).map(([n, v]) => `npm:${n}@${v}`).sort());
+const expectedVersions = { ...release.publicVersions };
+if (process.argv[3]) expectedVersions["pi-daddy"] = process.argv[3];
+assert.deepEqual(configured.toSorted(), Object.entries(expectedVersions).map(([n, v]) => `npm:${n}@${v}`).sort());
 
 const phases = ["build", "review", "debug"];
 const client = new RpcClient({ cliPath: process.argv[2], args: ["--offline", "--no-session", "--no-approve"] });
