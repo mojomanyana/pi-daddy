@@ -136,9 +136,7 @@ function selectedRoots(roots: DashboardNode[], index: TreeIndex, limit: number):
 
 function nodeLine(node: DashboardNode, color: boolean): string {
   const style = STYLE[node.state];
-  const phase = phaseLabel(node);
-  const pane = displayIdentifier(node.runtime?.herdrPaneId);
-  const suffix = [phase, pane ? `pane ${pane}` : ""].filter(Boolean).join(" · ");
+  const suffix = phaseLabel(node);
   return [
     paint(style.symbol, style.color, color),
     displayIdentifier(node.agentName) || "governed execution",

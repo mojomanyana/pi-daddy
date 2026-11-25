@@ -31,7 +31,7 @@ import grantsExtension from "../extensions/grants.ts";
 import { PARENT_TOOL_EXTENSION_PATH } from "../extensions/parent-tool-host.ts";
 import { createGrantsSession } from "../extensions/session.ts";
 import { callParentTool } from "../src/governance/parent-tool-calls.ts";
-import { ENV_HERDR, ENV_PARENT_TOOLS, ENV_WORKSPACE_REGISTRY } from "../src/kernel/env-names.ts";
+import { ENV_PARENT_TOOLS, ENV_WORKSPACE_REGISTRY } from "../src/kernel/env-names.ts";
 import { PARENT_TOOL_REFUSALS } from "../src/kernel/parent-tools.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
@@ -41,7 +41,6 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 after(cleanupTempDirs);
 const KEYS = [
   ...GRANT_ENV_KEYS,
-  ENV_HERDR,
   ENV_PARENT_TOOLS,
   ENV_WORKSPACE_REGISTRY,
   "PI_DADDY_GATED",
@@ -157,7 +156,7 @@ async function harness(
   const record = await installChild(dir);
   process.env.PATH = `${join(dir, "bin")}:${saved.get("PATH")}`;
   delete process.env.PI_CODING_AGENT_DIR;
-  Object.assign(process.env, { [ENV_HERDR]: "0", ...(options.durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
+  Object.assign(process.env, { ...(options.durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
 
   const registered = new Map<string, any>();
   const commands = new Map<string, any>();

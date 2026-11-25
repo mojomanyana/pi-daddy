@@ -20,7 +20,7 @@ export function isRetiredLedgerEvent(event: { event?: unknown }): boolean {
 }
 
 const SHA256_RE = /^[a-f0-9]{64}$/i;
-const EXECUTORS = new Set(["process", "herdr"]);
+const EXECUTORS = new Set(["process"]);
 const APPROVAL_SOURCES = new Set(["prompt", "session", "persisted", "inherited", "auto"]);
 const APPROVAL_SCOPES = new Set(["once", "session", "always"]);
 const GATE_OUTCOMES = new Set(["declined", "dismissed", "expired", "aborted", "no-ui", "error"]);
@@ -188,8 +188,6 @@ const FIELDS = {
     "exportedEnvironment",
     "definitionHash",
     "definitionPackageVersion",
-    "herdrPaneId",
-    "herdrAgentName",
     "correlation",
   ]),
 } as const;
@@ -509,18 +507,6 @@ function validateChildLifecycle(event: LedgerV3Object): string | null {
   }
   if (Object.hasOwn(event, "usage") && Object.hasOwn(event, "usageUnavailable")) {
     return "child lifecycle usage and usageUnavailable are mutually exclusive";
-  }
-  if (
-    !optional(event, "herdrPaneId", isLedgerDisplayIdentifier) ||
-    !optional(event, "herdrAgentName", isLedgerDisplayIdentifier)
-  ) {
-    return "Herdr runtime identity is invalid";
-  }
-  if (Object.hasOwn(event, "herdrPaneId") !== Object.hasOwn(event, "herdrAgentName")) {
-    return "Herdr runtime identity must be paired";
-  }
-  if (Object.hasOwn(event, "herdrPaneId") && event.executor !== "herdr") {
-    return "Herdr runtime identity requires the Herdr executor";
   }
   return null;
 }

@@ -476,8 +476,7 @@
         "executor": {
           "type": "string",
           "enum": [
-            "process",
-            "herdr"
+            "process"
           ]
         },
         "taskFrom": {
@@ -654,8 +653,7 @@
         "executor": {
           "type": "string",
           "enum": [
-            "process",
-            "herdr"
+            "process"
           ]
         },
         "exitCode": {
@@ -812,12 +810,6 @@
         "definitionPackageVersion": {
           "type": "string",
           "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$"
-        },
-        "herdrPaneId": {
-          "$ref": "#/$defs/ledgerDisplayIdentifier"
-        },
-        "herdrAgentName": {
-          "$ref": "#/$defs/ledgerDisplayIdentifier"
         }
       },
       "required": [
@@ -856,33 +848,6 @@
             "required": [
               "deadlineAt"
             ]
-          }
-        },
-        {
-          "if": {
-            "anyOf": [
-              {
-                "required": [
-                  "herdrPaneId"
-                ]
-              },
-              {
-                "required": [
-                  "herdrAgentName"
-                ]
-              }
-            ]
-          },
-          "then": {
-            "required": [
-              "herdrPaneId",
-              "herdrAgentName"
-            ],
-            "properties": {
-              "executor": {
-                "const": "herdr"
-              }
-            }
           }
         }
       ]

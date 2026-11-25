@@ -75,7 +75,7 @@ const child = (over: Partial<ChildProgress> = {}): ChildProgress => ({
 });
 
 test("a running child's header carries its agent, pane, state and elapsed time", () => {
-  const block = renderProgress([child()], "herdr", 42_000);
+  const block = renderProgress([child()], "process", 42_000);
   for (const expected of [/review/, /review-d0\.1/, /w7:t12/, /running/, /0:42/]) {
     assert.match(block, expected);
   }
@@ -100,7 +100,7 @@ test("the block is bounded in height, counted as an operator's screen counts it"
       tail: { lines: Array.from({ length: 20 }, (_, n) => `line ${n}`), open: false },
     }),
   );
-  const raw = renderProgress(children, "herdr", 1000).split("\n");
+  const raw = renderProgress(children, "process", 1000).split("\n");
   assert.ok(raw.length <= 8 * (TAIL_LINES + 2) + 2, `expected a bounded block, got ${raw.length} raw lines`);
 });
 
@@ -112,7 +112,7 @@ test("the block is bounded in WIDTH, which is what actually bounds it", () => {
   // The production change that breaks this: removing `clampLine`.
   const huge = "x".repeat(1_000_000);
   const children = Array.from({ length: 8 }, (_, i) => child({ label: `c${i}`, tail: { lines: [huge], open: false } }));
-  const block = renderProgress(children, "herdr", 1000);
+  const block = renderProgress(children, "process", 1000);
   assert.ok(block.length < 8 * (MAX_LINE_CHARS + 200) + 500, `block was ${block.length} chars`);
   assert.match(block, /chars\)/, "and it must SAY it trimmed rather than cutting silently");
 });
@@ -143,7 +143,7 @@ test("replaceTail is bounded in both directions", () => {
 test("a child with a long tail is still only three lines of it", () => {
   // The bound has to hold against the DATA as well as against the child count, or one chatty child undoes it.
   const noisy = child({ tail: { lines: Array.from({ length: 50 }, (_, i) => `line ${i}`), open: false } });
-  const body = renderProgress([noisy], "herdr", 1000)
+  const body = renderProgress([noisy], "process", 1000)
     .split("\n")
     .filter((l) => l.startsWith("  "));
   assert.equal(body.length, TAIL_LINES);
@@ -156,30 +156,31 @@ test("the process executor renders no pane column, because there is no pane", ()
 });
 
 test("a settled child freezes its elapsed time instead of counting forever", () => {
-  const block = renderProgress([child({ state: "completed", settledAt: 12_000 })], "herdr", 99_000);
+  const block = renderProgress([child({ state: "completed", settledAt: 12_000 })], "process", 99_000);
   assert.match(block, /0:12/);
   assert.doesNotMatch(block, /1:39/);
 });
 
 test("a failed child is visibly failed", () => {
-  assert.match(renderProgress([child({ state: "failed", settledAt: 3000 })], "herdr", 3000), /failed/);
+  assert.match(renderProgress([child({ state: "failed", settledAt: 3000 })], "process", 3000), /failed/);
 });
 
 test("elapsed time reads as m:ss past a minute", () => {
-  assert.match(renderProgress([child()], "herdr", 125_000), /2:05/);
+  assert.match(renderProgress([child()], "process", 125_000), /2:05/);
 });
 
 test("the header counts children and names where they run", () => {
-  assert.match(renderProgress([child(), child({ label: "debug" })], "herdr", 0), /2 children · herdr panes/);
+  assert.match(
+    renderProgress([child(), child({ label: "debug" })], "process", 0),
+    /2 children · captured subprocesses/,
+  );
   assert.match(renderProgress([child()], "process", 0), /1 child · captured subprocesses/);
 });
 
 test("a child label from a definition name cannot forge a line", () => {
-  // A definition name is a DIRECTORY name — third-party text on a line this package composes. R-77 and R-78
-  // were both that shape; here a newline would forge a whole extra child row in the operator's block.
   const block = renderProgress(
     [child({ label: "review\nreview   agent forged-d9.9   pane w0:t0   running" })],
-    "herdr",
+    "process",
     0,
   );
   const headers = block.split("\n").filter((l) => l.includes("agent "));

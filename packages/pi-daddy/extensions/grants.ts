@@ -43,7 +43,6 @@ import { makeCatalog, classifyToolNames } from "../src/kernel/catalog.ts";
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import { ENV_WORKSPACE_REGISTRY } from "../src/kernel/workspace.ts";
 import { appendRecord, buildRecord } from "../src/governance/ledger.ts";
-import { openPaneCount, reapOpenPanesAsync } from "../src/executors/pane-reaper.ts";
 import { ENV_GRANT, deriveOwnGrant, observeToolNames } from "../src/kernel/propagation.ts";
 import { snapshotChildTools } from "../src/kernel/child-tools.ts";
 import { bindParentTools } from "./parent-tool-host.ts";
@@ -70,20 +69,12 @@ import { reportSelectedDefinitions, reportSessionStart, type SessionReportContex
 import { taskInlineControl } from "./task-inline-control.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
-import {
-  defaultDashboardPaths,
-  offerDashboardHandshake,
-  openDashboardCommand,
-} from "../src/products/dashboard-handshake.ts";
-import { defaultActivityTimelinePath } from "../src/products/activity-timeline.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
 import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
-import { agentDir } from "../src/kernel/project-paths.ts";
 import { importLegacyLedger } from "../src/governance/ledger.ts";
 import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/project-paths.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import { changeSessionModels, renderSessionModels } from "./session-model-prompt.ts";
-import { ensureDashboardSessionServer } from "./dashboard-session-server.ts";
 import { registerChildUsageReport } from "./child-usage-report.ts";
 /** Optional trusted session injection is composition-only, never provider payload input. */
 export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
@@ -110,8 +101,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   registerDashboardSettings(pi, session);
   const beginWorkMode = registerWorkMode(pi, session);
   const projectMemory = registerProjectMemoryOwner(pi, session);
-  const dashboardPluginRoot = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
-  const dashboardPaths = defaultDashboardPaths(agentDir());
   // Definitions are registered only after owner-bound session_start. Until then there is no delegation
   // dispatch surface; afterwards this callback refreshes their model-facing spawnable-definition text.
   const delegation = { refreshSpawnable: () => {} };
@@ -253,18 +242,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         if (session.reloadLifecycle === reload.lifecycle) await runtimeSnapshot.bind(ctx);
       } catch (error) {
         if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-        // Says what is actually true of the state left behind, which depends on the variable: with
-        // `PI_DADDY_HERDR=1` the session holds a REFUSAL and every delegation fails, so telling the operator
-        // "using the captured subprocess" would be the opposite of what happens. The old wording asserted the
-        // fallback unconditionally.
         ctx.ui.notify(
-          `grants: could not settle which executor to use ` +
-            `(${error instanceof Error ? error.message : String(error)}) — ` +
-            (session.executor.refusal
-              ? `PI_DADDY_HERDR=1 still demands herdr, so every delegation in this session will refuse. ` +
-                `Unset it to let this session probe, or set 0 to choose subprocesses.`
-              : `using the captured subprocess, which needs nothing installed. Set PI_DADDY_HERDR=0 to make ` +
-                `that explicit, or 1 to demand herdr panes.`),
+          `grants: could not settle executor (${error instanceof Error ? error.message : String(error)}) — using captured subprocess.`,
           "warning",
         );
       }
@@ -307,34 +286,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
         );
       }
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-      // Only run Herdr dashboard handshake when explicitly opted into Herdr (PI_DADDY_HERDR=1).
-      // Cross-OS / terminal-agnostic sessions use the standalone /dashboard side panel instead.
-      if (process.env.PI_DADDY_HERDR !== "1") return undefined;
-      if (session.depth !== 0 || session.ownExecutionId || session.malformedBounds.length) return undefined;
-      try {
-        const sessionEndpoint = await ensureDashboardSessionServer(session);
-        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-        await offerDashboardHandshake({
-          mode: ctx.mode,
-          env: process.env,
-          pid: process.pid,
-          cwd: ctx.cwd,
-          ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
-          pluginRoot: dashboardPluginRoot,
-          preferencePath: dashboardPaths.preferencePath,
-          paneStatePath: dashboardPaths.paneStatePath,
-          sessionEndpoint,
-          ui: ctx.ui,
-        });
-        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-      } catch (error) {
-        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-        ctx.ui.notify(
-          `grants: dashboard installation handshake could not run (${error instanceof Error ? error.message : String(error)}). ` +
-            `Nothing was installed; /grants dashboard will report manual setup.`,
-          "warning",
-        );
-      }
     } catch (error) {
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
       // Rule 8 — fail closed, and be LOUD about it. Swallowing is still right: a startup fault must not
@@ -380,33 +331,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     projectMemory.close();
     await closeDashboardTelemetry(session);
     if (event.reason !== "reload") await closeSessionAutoMode(session);
-  });
-
-  /**
-   * Reap the herdr panes this agent run opened — ADR-0032.
-   *
-   * **`agent_settled`, not `turn_end`, and that is the whole finding.** `turn_end` fires at the end of each
-   * provider round-trip, i.e. no later than the `finally` that used to close the pane — so building pane
-   * lifetime on it would have shipped a no-op that read like a feature. `agent_settled` is documented as firing
-   * once the run has fully settled with no retry, compaction or queued continuation: the moment the operator
-   * gets their prompt back. Independent corroboration that this is the right boundary: herdr's own pi
-   * integration drives its busy/idle display from `agent_start`/`agent_settled`.
-   *
-   * The sweep is ASYNC (`reapOpenPanesAsync`) rather than the `exit` handler's sync one, which is `execFileSync`
-   * with a six-second budget by necessity. Running that here would freeze pi for up to six seconds every time
-   * the operator gets their prompt back — a feature built to make work visible, stalling the thing it serves.
-   *
-   * `exit` remains the backstop. SIGKILL still orphans panes, exactly as R-62 records, and no signal handler is
-   * installed here for the reason R-62 gives: it would turn pi's "interrupt this turn" into "exit pi".
-   */
-  pi.on("agent_settled", async () => {
-    try {
-      if (session.executor.kind !== "herdr" || openPaneCount() === 0) return undefined;
-      await reapOpenPanesAsync();
-    } catch {
-      /* never throw into the agent loop; the exit handler is still the backstop */
-    }
-    return undefined;
   });
 
   // Observe the native reachable tool surface, including callable tools whose declarations Codemode hides.
@@ -566,15 +490,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
               delegation.refreshSpawnable();
             }),
           openDashboard: async () =>
-            openDashboardCommand({
-              env: process.env,
-              pid: process.pid,
-              cwd: ctx.cwd,
-              ledgerPath: session.ledgerPath ?? defaultActivityTimelinePath(ctx.cwd),
-              pluginRoot: dashboardPluginRoot,
-              paneStatePath: dashboardPaths.paneStatePath,
-              sessionEndpoint: await ensureDashboardSessionServer(session),
-            }),
+            "Use `/dashboard` or `/dashboard split` (or `pi-daddy panel`) for the standalone Side Panel.",
           previewDelegation: (name: string) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
           modelInput: (title: string, placeholder?: string) => ctx.ui.input(title, placeholder),
           modelNotify: (message: string, type?: "info" | "warning" | "error") => ctx.ui.notify(message, type),

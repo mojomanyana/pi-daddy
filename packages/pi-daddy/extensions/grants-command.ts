@@ -258,7 +258,7 @@ export const grantsCommand = {
       // is always zero and a permanent zero is noise; on an upgraded one it is the count of pre-0.16 lines, which
       // is worth seeing.
       lines.push(
-        `  executors  ${report.executors.herdr} herdr pane(s) · ${report.executors.process} subprocess(es)` +
+        `  executors  ${report.executors.process} subprocess(es)` +
           (report.executors.unknown > 0
             ? ` · ${report.executors.unknown} not recorded (written before 0.16.0, which added the field)`
             : ""),

@@ -622,76 +622,6 @@ test("a clean release leaves the attached process alone", async () => {
  * unreleasable lock strands a worktree with no in-product recovery, which is strictly worse than a
  * recorded failure to close). So a successor can still acquire.
  */
-test("a retained lease releases its process, and the lock is recoverable afterwards", async () => {
-  const root = await gitWorkspace();
-  const leaseDir = await tempDir("workspace-leases-");
-  // Hermetic: `herdr` is stubbed and the per-attempt bound is passed, so this cannot depend on whether a real
-  // herdr is installed — it is, on the machine this was written on, and inheriting the 15s default while the
-  // successor loop waits 5s made the outcome ambient state in a suite advertised as fast and pure.
-  const fakeBin = await stubHerdr("exit 1");
-  const moduleUrl = pathToFileURL(join(process.cwd(), "src", "kernel", "workspace.ts")).href;
-  const leaseUrl = pathToFileURL(join(process.cwd(), "src", "governance", "workspace-lease.ts")).href;
-  const code = `
-    import { validateRegisteredWorkspace } from ${JSON.stringify(moduleUrl)};
-    import { acquireWorkspaceLease } from ${JSON.stringify(leaseUrl)};
-    const workspace = await validateRegisteredWorkspace({workspaceId:"w1", registeredRoot:${JSON.stringify(root)}});
-    const lease = await acquireWorkspaceLease({
-      workspace, access:"write", leaseDir:${JSON.stringify(leaseDir)}, ownerId:"retainer",
-      herdrCloseAttempts:1, herdrCloseTimeoutMs:800,
-    });
-    lease.attachHerdrTab("tab-that-will-not-close");
-    await lease.markRetained("herdr-close-failed");
-    process.stdout.write("RETAINED\\n");
-  `;
-  const holder = spawn(process.execPath, ["--input-type=module", "-e", code], {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
-  });
-  try {
-    let output = "";
-    holder.stdout.on("data", (chunk) => {
-      output += String(chunk);
-    });
-    // The timer is CLEARED. Left dangling it kept the file alive for the whole deadline on every green run
-    // — +10s on a suite advertised as fast — which is the same "a bound is not free" lesson as R-146 itself.
-    let deadline: NodeJS.Timeout | undefined;
-    const exited = await Promise.race([
-      once(holder, "close").then(() => "exited" as const),
-      new Promise<"hung">((resolve) => {
-        deadline = setTimeout(() => resolve("hung"), 10_000);
-      }),
-    ]).finally(() => clearTimeout(deadline));
-    assert.match(output, /RETAINED/, "the child never reached markRetained");
-    assert.equal(
-      exited,
-      "exited",
-      "a retained lease left the holding process unable to exit — the pipes to the lock helper are still " +
-        "referenced, so any host that waits for the loop to drain (pi's print mode, a library consumer) " +
-        "never leaves (R-146)",
-    );
-    assert.equal(holder.exitCode, 0);
-  } finally {
-    holder.kill("SIGKILL");
-  }
-
-  // The lock goes back on its own, so retention is recoverable rather than a stranded worktree (R-102).
-  //
-  // **What this configuration does not cover:** `herdrCloseAttempts: 1` above. At the production default of
-  // ten attempts a second apart the lock is held for ~10s after the parent dies, which is longer than the
-  // loop below waits — so this asserts that release HAPPENS, not that it happens promptly.
-  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  let successor;
-  for (let i = 0; i < 200 && !successor; i += 1) {
-    try {
-      successor = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "successor" });
-    } catch (error) {
-      if ((error as GovernanceRefusal).code !== "WORKSPACE_WRITE_CONFLICT") throw error;
-      await new Promise((r) => setTimeout(r, 25));
-    }
-  }
-  assert.ok(successor, "the retained lock was never released, so the worktree is stranded (R-102)");
-  await successor.release("test-complete");
-});
 
 /**
  * **R-146, second half: a bound on retries is not a bound on time.**
@@ -819,35 +749,13 @@ test("a herdr that hangs on close does not strand the lock forever", async () =>
 test("release() after markRetained answers `retained` and leaves the record alone", async () => {
   const root = await gitWorkspace();
   const leaseDir = await tempDir("workspace-leases-");
-  const fakeBin = await stubHerdr("exit 1");
   const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${fakeBin}:${previousPath ?? ""}`;
-  try {
-    const lease = await trackedLease({
-      workspace,
-      access: "write",
-      leaseDir,
-      ownerId: "retainer",
-      herdrCloseAttempts: 1,
-      herdrCloseTimeoutMs: 500,
-    });
-    lease.attachHerdrTab("tab-that-will-not-close");
-    await lease.markRetained("herdr-close-failed");
-
-    const record = () => readFile(leasePaths(leaseDir, root).metadata, "utf8").then((raw) => JSON.parse(raw));
-    assert.equal((await record()).release_reason, "retained:herdr-close-failed");
-
-    assert.equal(await lease.release("completed"), "retained", "a retained lease is already settled");
-    assert.equal(
-      (await record()).release_reason,
-      "retained:herdr-close-failed",
-      "release() after retention rewrote the record, so the ledger claims a clean handover for a lease kept " +
-        "because a pane would not close (R-146)",
-    );
-  } finally {
-    process.env.PATH = previousPath;
-  }
+  const lease = await trackedLease({ workspace, access: "write", leaseDir, ownerId: "retainer" });
+  await lease.markRetained("operator-retained");
+  const record = () => readFile(leasePaths(leaseDir, root).metadata, "utf8").then((raw) => JSON.parse(raw));
+  assert.equal((await record()).release_reason, "retained:operator-retained");
+  assert.equal(await lease.release("completed"), "retained", "a retained lease is already settled");
+  assert.equal((await record()).release_reason, "retained:operator-retained");
 });
 
 /**
@@ -916,40 +824,6 @@ test("markRetained after a clean release leaves the record and answers what real
  * **The production change that breaks this test** (rule 7): deleting a clause from the bound validation, or
  * moving it back below the read-lease early return, where it validated nothing.
  */
-test("an impossible close bound throws, on read leases as well as write", async () => {
-  // Replaces "a zero or negative close bound is refused, naming the parameter", which asserted a
-  // `GovernanceRefusal` on the write path only and had no upper bound. Superseded, not weakened: this covers
-  // both access modes, both ends of the range, fractions, and the exception TYPE that keeps a caller bug off
-  // the governance channel.
-  const root = await gitWorkspace();
-  const leaseDir = await tempDir("workspace-leases-");
-  const workspace = await validateRegisteredWorkspace({ workspaceId: "w1", registeredRoot: root });
-
-  const cases = [
-    { field: "herdrCloseTimeoutMs", value: 0 },
-    { field: "herdrCloseTimeoutMs", value: -1 },
-    { field: "herdrCloseTimeoutMs", value: Number.NaN },
-    { field: "herdrCloseTimeoutMs", value: Number.MAX_SAFE_INTEGER },
-    { field: "herdrCloseTimeoutMs", value: 2_147_483_648 },
-    { field: "herdrCloseAttempts", value: 0 },
-    { field: "herdrCloseAttempts", value: 1.5 },
-  ] as const;
-
-  for (const access of ["write", "read"] as const) {
-    for (const { field, value } of cases) {
-      await assert.rejects(
-        () => trackedLease({ workspace, access, leaseDir, ownerId: "o", [field]: value }),
-        (error: unknown) => {
-          assert.ok(error instanceof RangeError, `expected a RangeError for ${field}=${value}, got ${error}`);
-          assert.ok(!(error instanceof GovernanceRefusal), "a caller bug must not travel as a governance refusal");
-          assert.match((error as RangeError).message, new RegExp(field));
-          return true;
-        },
-        `${access} lease accepted ${field}: ${String(value)}`,
-      );
-    }
-  }
-});
 
 /**
  * **R-152: a retention whose record could not be written stays repairable.**

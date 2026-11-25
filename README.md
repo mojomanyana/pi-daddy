@@ -208,7 +208,7 @@ absolute Linux path (no symlink components):
 
 ```bash
 mkdir -m 700 "$HOME/pi-public-evidence"
-PI_DADDY_PUBLIC_EVIDENCE_DIR="$(realpath "$HOME/pi-public-evidence")" PI_DADDY_HERDR=0 pi
+PI_DADDY_PUBLIC_EVIDENCE_DIR="$(realpath "$HOME/pi-public-evidence")" pi
 ```
 
 Each returned result keeps its authored text, runtime evidence, error state and structured details. An added
@@ -475,7 +475,7 @@ Retained capacity is rechecked against the original bound ownership and settleme
 Governed Herdr children appear in the native agent sidebar while running, with their role (for example
 Plan, Build or Review) and a corresponding named tab. Sidebar state is observational: native process
 receipts still determine settlement. The launcher releases its own sidebar source after settlement; with
-`PI_DADDY_HERDR_KEEP_PANE=1`, its output tab remains for inspection, without a live interactive child.
+Governed children always run via captured subprocesses across Linux, macOS, and Windows (Herdr was removed).
 Herdr can retain a cached unknown Pi entry after that release even when all owned processes have exited.
 This display limitation has been observed on servers 0.8.2, 0.9.0 and 0.9.3; disappearance is not guaranteed by
 a newer release number. Normal settlement resets the terminal title; an abruptly killed launcher can
@@ -491,7 +491,7 @@ a new local approval request refuses instead of waiting in a view-only tab. Exis
 decisions remain effective; an unknown project receives the same noninteractive refusal as captured mode,
 without writing a new trust decision. Missing sidebar delivery is reported but does not change the execution result.
 
-Set `PI_DADDY_HERDR=0` for captured execution or `PI_DADDY_HERDR=1` to demand Herdr panes. An unset value
+Captured subprocess execution is the sole executor (Herdr support was removed).
 probes for a responding server. Startup requires a successful tab-list response and live JSON server status
 reporting a running, CLI-compatible transport. Newer release numbers and an older compatible server do not
 cause refusal. An explicit endpoint incompatibility also refuses; endpoint compatibility alone cannot override
@@ -590,7 +590,7 @@ configuration where both exist.
 | Area | Variables |
 | :--- | :--- |
 | Governance | `PI_DADDY_GOVERNANCE`, `PI_DADDY_GRANT`, `PI_DADDY_GATED`, `PI_DADDY_MAX_DEPTH`, `PI_DADDY_FANOUT`, `PI_DADDY_LEDGER`, `PI_DADDY_APPROVAL_TIMEOUT`, `PI_DADDY_AUTO_MODE` |
-| Child execution | `PI_DADDY_HERDR`, `PI_DADDY_HERDR_WORKSPACE`, `PI_DADDY_HERDR_KEEP_PANE`, `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS`, `PI_DADDY_REPLAY_RETRY` |
+| Child execution | `PI_DADDY_CHILD_IDLE_TIMEOUT`, `PI_DADDY_CHILD_TIMEOUT`, `PI_DADDY_ALLOW_UNRESOLVED_MODELS`, `PI_DADDY_PARENT_TOOLS`, `PI_DADDY_REPLAY_RETRY` |
 | Workspaces and retention | `PI_DADDY_WORKSPACE_REGISTRY`, `PI_DADDY_WORKSPACE_LEASE_DIR`, `PI_DADDY_EXECUTION_ARCHIVE`, `PI_DADDY_RETAIN_NATIVE_SESSIONS`, `PI_DADDY_NATIVE_SESSION_ROOT` |
 | Activity | `PI_DADDY_ACTIVITY_TIMELINE`, `PI_DADDY_ACTIVITY_CONTENT` |
 

@@ -70,16 +70,16 @@ test("every variable the planner writes into a child's environment is a governan
 
 test("legacy names are adopted once, never win over the new name, and are reported", () => {
   const env: NodeJS.ProcessEnv = {
-    PI_GRANTS_HERDR: "1",
+    PI_GRANTS_DEPTH: "1",
     PI_GRANTS_LEDGER: "/old",
     PI_DADDY_LEDGER: "/new",
     OTHER: "x",
   };
   const adopted = adoptLegacyEnvironment(env);
-  assert.deepEqual(adopted, ["PI_GRANTS_HERDR"]);
-  assert.equal(env.PI_DADDY_HERDR, "1");
+  assert.deepEqual(adopted, ["PI_GRANTS_DEPTH"]);
+  assert.equal(env.PI_DADDY_DEPTH, "1");
   assert.equal(env.PI_DADDY_LEDGER, "/new", "an explicit new name is never overwritten by a legacy one");
-  assert.equal(env.PI_GRANTS_HERDR, "1", "the legacy variable is left for older siblings");
+  assert.equal(env.PI_GRANTS_DEPTH, "1", "the legacy variable is left for older siblings");
   assert.deepEqual(adoptLegacyEnvironment(env), [], "a second pass adopts nothing");
-  assert.match(legacyEnvironmentWarning(adopted), /PI_GRANTS_HERDR is deprecated .* rename to PI_DADDY_HERDR/);
+  assert.match(legacyEnvironmentWarning(adopted), /PI_GRANTS_DEPTH is deprecated .* rename to PI_DADDY_DEPTH/);
 });

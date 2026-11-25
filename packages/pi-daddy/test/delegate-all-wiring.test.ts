@@ -39,7 +39,6 @@ import {
   ENV_MAX_DEPTH,
   ENV_PARENT_ID,
 } from "../src/kernel/propagation.ts";
-import { ENV_HERDR } from "../src/executors/executor.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { ENV_WORKSPACE_REGISTRY, validateRegisteredWorkspace } from "../src/kernel/workspace.ts";
@@ -61,7 +60,6 @@ const KEYS = [
   ENV_FANOUT,
   ENV_PARENT_ID,
   ENV_EXECUTION_ID,
-  ENV_HERDR,
   ENV_WORKSPACE_REGISTRY,
   // ADR-0042. Not cosmetic: a pin established by one test's registry survived into the next, whose workspace
   // is a different directory, so routing refused with "the registry has been rewritten" against a registry
@@ -102,7 +100,7 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
   // A test whose outcome depends on which daemons happen to be running is not a test. `0` skips the probe
   // entirely; a test that wants the other paths overrides it and says why.
   if (durable && !saved.has("PI_CODING_AGENT_DIR")) saved.set("PI_CODING_AGENT_DIR", process.env.PI_CODING_AGENT_DIR);
-  Object.assign(process.env, { [ENV_HERDR]: "0", ...(durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
+  Object.assign(process.env, { ...(durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
 
   const tools = new Map<string, ToolSpec>(),
     commands = new Map<string, any>(),
@@ -669,62 +667,6 @@ test("a definition whose tools no governed child can load is not advertised, tho
   assert.match(shown.join("\n"), /allow {2}reviewer {2}/);
 });
 
-test("ADR-0031: a session that DEMANDED herdr and cannot reach it refuses every delegation", async () => {
-  // **The refusal must land in the PLANNER's path, not at the executor.** A child that reaches `tab create`
-  // has already had its ledger line written, so a refusal any later would record a spawn that never happened
-  // — and one any earlier could not know the probe's answer. The production change that breaks this: moving
-  // the `session.executor.refusal` check into `runHerdrPane`, or making `1` fall back to a subprocess.
-  //
-  // The probe is made to fail for real rather than mocked: `PATH` is emptied for the duration, so
-  // `execFile("herdr", …)` cannot resolve the binary and `defaultExec` is exercised end to end. That is why
-  // this test is worth having on top of `test/executor.test.ts`, which covers the table in isolation.
-  const realPath = process.env.PATH;
-  process.env.PATH = "";
-  try {
-    const { tools } = await harness({
-      [ENV_GRANT]: "tool:read,tool:delegate",
-      [ENV_HERDR]: "1",
-    });
-
-    await assert.rejects(
-      () =>
-        tools.get("delegate")!.execute("c1", { task: "read the file", tools: ["read"] }, undefined, undefined, {
-          cwd: process.cwd(),
-          ui: { notify: () => {}, select: async () => undefined },
-          hasUI: false,
-        }),
-      (error: Error) => {
-        assert.match(error.message, /PI_DADDY_HERDR/, "the refusal must name the variable that caused it");
-        assert.match(error.message, /refused/);
-        return true;
-      },
-    );
-  } finally {
-    process.env.PATH = realPath;
-  }
-});
-
-test("ADR-0031: PI_DADDY_HERDR=0 spawns nothing through herdr and does not refuse", async () => {
-  // The other side of the same switch: an operator who ruled herdr out must be unaffected by whether herdr is
-  // running. This is also the configuration every other test in this file runs under, asserted once so the
-  // harness default above is not merely assumed.
-  const { tools } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
-  // A capability the session does not hold, so it is refused for THAT reason and never spawned — the same
-  // trick the rest of this suite uses to stay fast. What matters is which reason comes back.
-  await assert.rejects(
-    () =>
-      tools.get("delegate")!.execute("c1", { task: "write a file", tools: ["write"] }, undefined, undefined, {
-        cwd: process.cwd(),
-        ui: { notify: () => {}, select: async () => undefined },
-        hasUI: false,
-      }),
-    (error: Error) => {
-      assert.doesNotMatch(error.message, /PI_DADDY_HERDR/, "a PI_DADDY_HERDR=0 session must never blame herdr");
-      return true;
-    },
-  );
-});
-
 test("ADR-0032: delegate_all paints DURING the run, one block covering every child", async () => {
   // A final combined frame alone proves nothing about streaming. Both inert children print distinct
   // markers, then wait for the SAME combined running frame to release them. A painter per child or
@@ -753,7 +695,7 @@ const poll = setInterval(() => {
   try {
     const frames: string[] = [];
     let combinedWhileRunning: string | undefined;
-    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+    const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
     const onUpdate = (partial: { content: Array<{ text: string }> }) => {
       const frame = partial.content[0].text;
       frames.push(frame);
@@ -815,7 +757,7 @@ test("ADR-0032: delegate paints too — it is the one-child case of the same blo
 test("ADR-0032: the block names the executor it is running under", async () => {
   // So a transcript read later says where those children ran, matching the ledger and the banner.
   const frames: string[] = [];
-  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", [ENV_HERDR]: "0" });
+  const { tools, ctx } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
   const onUpdate = (partial: { content: Array<{ text: string }> }) => void frames.push(partial.content[0].text);
 
   await tools
@@ -834,29 +776,17 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
   //
   // This drives the real extension end to end and reads the real ledger file, once per executor. The production
   // change that breaks it: hardcoding either call site, or dropping `session.executor.kind`.
-  for (const [herdr, expected] of [
-    ["0", "process"],
-    ["1", "herdr"],
-  ] as const) {
+  {
     const dir = await tempDir("grants-executor-ledger-");
     const ledger = join(dir, "ledger.jsonl");
-    // PATH is emptied for the herdr case so the probe fails and the delegation refuses — a refusal still writes a
-    // record, and the executor it names must be the one the session settled on, not a default.
-    const realPath = process.env.PATH;
-    if (herdr === "1") process.env.PATH = "";
-    try {
-      const { tools, ctx } = await harness({
-        [ENV_GRANT]: "tool:read,tool:delegate",
-        [ENV_LEDGER]: ledger,
-        [ENV_HERDR]: herdr,
-      });
-      await tools
-        .get("delegate")!
-        .execute("t", { task: "audit", tools: ["write"] }, undefined, undefined, ctx)
-        .catch(() => undefined);
-    } finally {
-      process.env.PATH = realPath;
-    }
+    const { tools, ctx } = await harness({
+      [ENV_GRANT]: "tool:read,tool:delegate",
+      [ENV_LEDGER]: ledger,
+    });
+    await tools
+      .get("delegate")!
+      .execute("t", { task: "audit", tools: ["write"] }, undefined, undefined, ctx)
+      .catch(() => undefined);
 
     const lines = (await readFile(ledger, "utf8"))
       .trim()
@@ -864,9 +794,9 @@ test("ADR-0031: the ledger records the executor a REAL spawn ran under, not a co
       .filter(Boolean)
       .map((l) => JSON.parse(l).body)
       .filter((body) => body.event !== "session_config");
-    assert.ok(lines.length >= 1, `no record written for PI_DADDY_HERDR=${herdr}`);
+    assert.ok(lines.length >= 1, "no record written for process executor");
     for (const record of lines) {
-      assert.equal(record.executor, expected, `PI_DADDY_HERDR=${herdr} must record executor ${expected}`);
+      assert.equal(record.executor, "process", "must record executor process");
     }
   }
 });

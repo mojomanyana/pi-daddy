@@ -3,7 +3,6 @@ import { realpath } from "node:fs/promises";
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
 import { retainDiscoveryCleanupFailure } from "./session.ts";
 import type { CapacityReservation } from "../src/kernel/capacity.ts";
-import { runHerdrOwned } from "../src/executors/herdr-owned.ts";
 import { runCapturedExecution } from "../src/executors/captured-execution.ts";
 import { capturedFinalSession, type ChildFinal } from "../src/executors/child-final.ts";
 import type { CapturedWorkerCleanup } from "../src/kernel/captured-worker-contract.ts";
@@ -14,16 +13,13 @@ import {
   type RetentionStatus,
 } from "../src/governance/execution-retention.ts";
 import { appendLedgerEvent, buildChildLifecycleEvent } from "../src/governance/ledger.ts";
-import { hasFinalizerError } from "../src/governance/finalization.ts";
 import { mergeChildEnv } from "../src/kernel/propagation.ts";
 import type { Capability } from "../src/kernel/resolve.ts";
 import { DEFAULT_KILL_GRACE_MS, ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
 import { activitySessionFor } from "../src/executors/activity-session.ts";
 import { processTreeActivity } from "../src/executors/process-activity.ts";
-import { resolveWorkspace } from "../src/executors/herdr-cli.ts";
-import { HerdrWriterCloseError } from "../src/executors/run-herdr.ts";
 import { GovernanceRefusal, refusal, type StructuredRefusal } from "../src/kernel/refusals.ts";
-import { ENV_HERDR_KEEP_PANE, type GrantsSession } from "./session.ts";
+import type { GrantsSession } from "./session.ts";
 import { CHILD_ATTRIBUTION_ENV_KEYS, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 import { releaseDelegationWorkspace, type PreparedWorkspace } from "./workspace-runtime.ts";
 import { ActivityTimelineRecorder, ENV_ACTIVITY_PARENT_TASK } from "../src/products/activity-timeline.ts";
@@ -122,13 +118,6 @@ export async function appendAfterRuntimeRecord<T>(
   return appendTerminal();
 }
 
-/** A failed writer-tab close may be secondary to the executor error that triggered cleanup. */
-export function isHerdrWriterCloseFailure(error: unknown): boolean {
-  return (
-    error instanceof HerdrWriterCloseError ||
-    hasFinalizerError(error, (value) => value instanceof HerdrWriterCloseError)
-  );
-}
 export interface ChildProgressUpdate {
   chunk?: string;
   snapshot?: string[];
@@ -440,7 +429,7 @@ async function executePreparedChild(
     let terminalAttempted = false;
 
     let runtimeRecord: Promise<void> | undefined;
-    const recordRunning = (executor: "process" | "herdr", pane?: { id: string; agentName: string }): void => {
+    const recordRunning = (executor: "process"): void => {
       if (!ledgerPath) return;
       try {
         runtimeRecord = appendLedgerEvent(
@@ -458,7 +447,6 @@ async function executePreparedChild(
             executor,
             deadlineAt,
             idleTimeoutMs: configuredIdleMs,
-            ...(pane ? { herdrPaneId: pane.id, herdrAgentName: pane.agentName } : {}),
             exportedEnvironment: CHILD_ATTRIBUTION_ENV_KEYS,
             ...runtimeAttribution(),
             definitionHash: plan.definitionHash,
@@ -476,61 +464,38 @@ async function executePreparedChild(
         throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", session.executor.refusal));
       executorEntered = true;
       onExecutorEntry();
-      let displayHerdr: ((text: string) => void) | undefined;
-      const output = await runCapturedExecution(
-        {
-          executionId,
-          terminalUi: session.executor.kind === "herdr",
-          sessionPath: activitySession.path,
-          onReadCleanup,
-          onOwnership: async (identity) => {
-            runtime?.bind(identity);
-            input.capacityReservation?.bindOwnership(identity);
-            await preparedWorkspace?.lease.attachCapturedWorker(identity);
-          },
-          command: "pi",
-          args,
-          env: mergeChildEnv(process.env, parentTools ? { ...plan.env, ...parentTools.env } : plan.env),
-          cwd,
-          signal: executionSignal,
-          // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
-          // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
-          timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
-          hardDeadlineAt: Date.parse(deadlineAt),
-          idleTimeoutMs: configuredIdleMs,
-          activityProbe: probe,
-          onOutput: (chunk) => {
-            displayHerdr?.(chunk);
-            onProgress?.({ chunk });
-          },
-          onObservation: (stream, bytes) => retention.capture(stream, bytes),
-          onSpawn: (pid) => {
-            childPid = pid;
-            // Lease attachment is a security hook and may fail the spawn. The shared reporters isolate
-            // display exceptions before they reach this callback; runChild deliberately kills on any error
-            // here, so presentation must never be added directly without that reporter boundary.
-
-            retention.native({ pid });
-            recordRunning(session.executor.kind);
-            onProgress?.({ state: "running" });
-          },
+      const output = await runCapturedExecution({
+        executionId,
+        terminalUi: false,
+        sessionPath: activitySession.path,
+        onReadCleanup,
+        onOwnership: async (identity) => {
+          runtime?.bind(identity);
+          input.capacityReservation?.bindOwnership(identity);
+          await preparedWorkspace?.lease.attachCapturedWorker(identity);
         },
-        session.executor.kind === "herdr"
-          ? (request) =>
-              runHerdrOwned(request, {
-                displayName: input.agent ?? "child",
-                onDisplay: (display) => {
-                  displayHerdr = display;
-                },
-                workspace: resolveWorkspace(process.env),
-                keepPane: process.env[ENV_HERDR_KEEP_PANE] === "1",
-                onPane: (paneId, tabId) => {
-                  retention.native({ paneId, tabId });
-                  onProgress?.({ paneId, state: "starting" });
-                },
-              })
-          : undefined,
-      );
+        command: "pi",
+        args,
+        env: mergeChildEnv(process.env, parentTools ? { ...plan.env, ...parentTools.env } : plan.env),
+        cwd,
+        signal: executionSignal,
+        // SIGTERM gets only grace that fits INSIDE the recorded deadline. The independent hard timer
+        // prevents a delayed soft-timeout callback from starting a fresh grace period beyond that bound.
+        timeoutMs: Math.max(1, remainingTimeoutMs - terminationGraceMs),
+        hardDeadlineAt: Date.parse(deadlineAt),
+        idleTimeoutMs: configuredIdleMs,
+        activityProbe: probe,
+        onOutput: (chunk) => {
+          onProgress?.({ chunk });
+        },
+        onObservation: (stream, bytes) => retention.capture(stream, bytes),
+        onSpawn: (pid) => {
+          childPid = pid;
+          retention.native({ pid });
+          recordRunning(session.executor.kind);
+          onProgress?.({ state: "running" });
+        },
+      });
 
       const capturedBranch = capturedFinalSession(output.final);
       if (capturedBranch)
@@ -722,7 +687,6 @@ async function executePreparedChild(
         truncated: false,
         failed: true,
       });
-      retainWriterLease ||= Boolean(writerLease && isHerdrWriterCloseFailure(error));
       const usageObservation = await observeUsage();
       if (ledgerPath && !terminalAttempted) {
         // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that

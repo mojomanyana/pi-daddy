@@ -191,7 +191,6 @@ test("every guard holds: retry once, naming the first failure", () => {
 const guards: Array<[string, string, Partial<ReplayRetryFacts>]> = [
   ["disabled", "the kill switch is off", { enabled: false }],
   ["not-replay-safe", "the plan holds a shell", { capabilities: ["tool:read", "tool:bash"] }],
-  ["executor", "the child ran in a Herdr pane", { executor: "herdr" }],
   ["cancelled", "the parent tool call was aborted", { parentAborted: true }],
   ["cancelled", "the child was cancelled", { attempt: { ...crashed, aborted: true } }],
   ["refused", "the planner refused before launch", { attempt: { ok: false, exitCode: null } }],
@@ -650,10 +649,6 @@ test("/grants marks an allowed definition replay-safe and says when this session
     "  replay-safe: retried once automatically if it fails without answering; with operation_id, marked replayable " +
       "for the coordinator to retry instead",
   ]);
-  // R-28's shape, from review: the enforcer never retries under Herdr, so the screen must not say it does.
-  rows = await render({ kind: "herdr" });
-  assert.match(rows.look ?? "", /\]  tool:grep, tool:read  replay-safe$/);
-  assert.deepEqual(rows.notice, ["  replay-safe: not retried or marked replayable under the Herdr executor"]);
   setEnv(ENV_REPLAY_RETRY, "0");
   rows = await render();
   assert.match(rows.look ?? "", /\]  tool:grep, tool:read  replay-safe$/);

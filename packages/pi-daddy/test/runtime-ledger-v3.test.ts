@@ -58,10 +58,8 @@ test("public v3 builders refuse free text in fields classified as display identi
         parentExecutionId,
         childId: "d0.1",
         state: "running",
-        executor: "herdr",
-        deadlineAt: "2026-08-28T12:10:00.000Z",
-        herdrPaneId: "SECRET OUTPUT TEXT",
-        herdrAgentName: "review-d0-1",
+        executor: "process",
+        deadlineAt: "not-a-timestamp",
         now: base.now,
       }),
     /invalid ledger v3 event/i,
@@ -102,51 +100,19 @@ test("a non-terminal lifecycle must carry one contract-valid RFC 3339 deadline",
   );
 });
 
-test("Herdr runtime identity is paired and cannot be attached to a process executor", () => {
-  const identity = {
-    executionId,
-    parentExecutionId,
-    childId: "d0.1",
-    state: "running" as const,
-    deadlineAt: "2026-08-28T12:10:00.000Z",
-    now: base.now,
-  };
-  assert.throws(
-    () =>
-      buildChildLifecycleEvent({
-        ...identity,
-        executor: "process",
-        herdrPaneId: "w1:p2",
-        herdrAgentName: "review-d0-1",
-      }),
-    /Herdr runtime identity/,
-  );
-  assert.throws(
-    () =>
-      buildChildLifecycleEvent({
-        ...identity,
-        executor: "herdr",
-        herdrPaneId: "w1:p2",
-      }),
-    /paired/,
-  );
-});
-
-test("lifecycle events join by execution id and may carry a Herdr focus identity", () => {
+test("lifecycle events join by execution id under process executor", () => {
   const event = buildChildLifecycleEvent({
     executionId,
     parentExecutionId,
     childId: "d0.1",
     state: "running",
-    executor: "herdr",
+    executor: "process",
     deadlineAt: "2026-08-28T12:10:00.000Z",
-    herdrPaneId: "w1:p2",
-    herdrAgentName: "review-d0-1",
     now: new Date("2026-08-28T12:00:01.000Z"),
   });
   assert.equal(event.ledgerVersion, 3);
   assert.equal(event.executionId, executionId);
-  assert.equal(event.herdrPaneId, "w1:p2");
+  assert.equal(event.executor, "process");
 });
 
 test("the reader accepts v3 beside historical v2 while rejecting malformed v3 identity", async () => {

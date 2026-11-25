@@ -710,7 +710,7 @@ verified primary work. Native tool results preserve separate work, final, cleanu
 Amended 2026-10-08: the native pane launcher above qualifies the pinned Herdr matrix; other versions still refuse.
 
 This reverses ADR-0031's runnable Herdr auto-selection until parity is independently qualified: selection remains
-visible but governed execution refuses with no fallback. `PI_DADDY_HERDR=0` explicitly chooses captured execution.
+Captured subprocess execution is the sole executor across Linux, macOS, and Windows (Herdr was removed).
 It also reverses ADR-0033's partial required handoff: oversized complete output blocks the dependent step and stays
 available in the returned result. These are mechanical process/protocol guarantees, not model quality or hostile
 same-user containment claims. Source tests include actual model-free Pi CLI and native phase handoffs.

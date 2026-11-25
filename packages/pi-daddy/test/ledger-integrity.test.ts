@@ -541,13 +541,10 @@ test("ADR-0031: a record names the executor, because the argv differs between th
     now: new Date("2026-08-17T12:00:00Z"),
   };
 
-  assert.equal(buildRecord({ ...shape, executor: "herdr" }).executor, "herdr");
   assert.equal(buildRecord({ ...shape, executor: "process" }).executor, "process");
 });
 
 test("ADR-0031: a REFUSED spawn still names an executor — the one the session would have used", () => {
-  // A refused spawn has no executor of its own, and omitting the field would make "which refusals came from a
-  // herdr session?" unanswerable. The honest value is what the session had settled on.
   const record = buildRecord({
     parentId: "d0",
     childId: "d0.1",
@@ -558,15 +555,14 @@ test("ADR-0031: a REFUSED spawn still names an executor — the one the session 
     result: { effective: [], denied: ["tool:bash"], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
     blocked: true,
     reason: "exceeds the parent grant",
-    executor: "herdr",
+    executor: "process",
     now: new Date(),
   });
   assert.equal(record.blocked, true);
-  assert.equal(record.executor, "herdr");
+  assert.equal(record.executor, "process");
 });
 
 test("ADR-0031: the executor survives a round trip through the ledger file", async () => {
-  // Written AND read back: a field the writer sets and the parser drops is the shape R-51 was.
   const dir = await tempDir("grants-executor-");
   const path = join(dir, "ledger.jsonl");
   await appendRecord(
@@ -579,13 +575,13 @@ test("ADR-0031: the executor survives a round trip through the ledger file", asy
       parentGrant: [],
       result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
       blocked: false,
-      executor: "herdr",
+      executor: "process",
       now: new Date(),
     }),
   );
 
   const [line] = (await readFile(path, "utf8")).trim().split("\n");
-  assert.equal(JSON.parse(line).body.executor, "herdr");
+  assert.equal(JSON.parse(line).body.executor, "process");
 
   const report = await verifyLedger(path);
   assert.equal(report.ok, true, "the new field must not make a line unparseable");

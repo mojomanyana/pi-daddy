@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { runChild } from "../src/kernel/run-child.ts";
 import { activitySessionFor } from "../src/executors/activity-session.ts";
-import { waitForSettled } from "../src/executors/herdr-poll.ts";
 import { processTreeActivity } from "../src/executors/process-activity.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
@@ -233,35 +232,6 @@ function usage(input: number, output: number, totalCost: number) {
           : { input: 1, output: 1, cacheRead: 1, cacheWrite: 1, total: totalCost },
   };
 }
-
-test("the Herdr settle loop stops a pane whose text and session file stop changing", async () => {
-  // Breaks by: dropping the idle check from waitForSettled, or resetting activity on an unchanged pane.
-  let marker = 0;
-  const reply = (result: unknown) => ({ code: 0, stdout: JSON.stringify({ id: "x", result }), stderr: "" });
-  const exec = async (argv: string[]) => {
-    if (argv[0] === "agent" && argv[1] === "get")
-      return reply({ agent: { agent_status: "working", state_change_seq: 11 } });
-    if (argv[0] === "agent" && argv[1] === "read") return reply({ text: "same text" });
-    return reply({});
-  };
-  const started = Date.now();
-  const settled = await waitForSettled(
-    exec as never,
-    {
-      name: "child-1",
-      pollIntervalMs: 10,
-      idleTimeoutMs: 150,
-      activityProbe: () => (marker < 5 ? String(++marker) : String(marker)),
-      onSnapshot: () => {},
-    },
-    10,
-    Date.now() + 10_000,
-    65536,
-  );
-  assert.deepEqual(settled, { timedOut: true, idle: true });
-  const elapsed = Date.now() - started;
-  assert.ok(elapsed >= 150 && elapsed < 5_000, `idleness fired after ${elapsed}ms`);
-});
 
 test("a child that is silent everywhere but whose grandchild burns CPU is working (Linux /proc signal)", async (t) => {
   // Review finding 1 on PR 3e: pi writes its session file only when a message or tool result ENDS, so one long tool

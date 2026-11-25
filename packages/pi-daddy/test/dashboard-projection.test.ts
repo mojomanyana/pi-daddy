@@ -178,15 +178,15 @@ test("a running event cannot replace the lifecycle's recorded deadline", () => {
   assert.match(projection.corrupt[0]?.reason ?? "", /deadline changed/);
 });
 
-test("restarting reconstructs the same state and retained Herdr identity from ledger facts", () => {
+test("restarting reconstructs the same state from ledger facts", () => {
   const text = lines(
     decision(),
-    lifecycle({ state: "running", executor: "herdr", herdrPaneId: "w1:p2", herdrAgentName: "review-d0-1" }),
-    lifecycle({ state: "completed", executor: "herdr", ts: "2026-08-28T12:02:00.000Z", exitCode: 0, signal: null }),
+    lifecycle({ state: "running", executor: "process" }),
+    lifecycle({ state: "completed", executor: "process", ts: "2026-08-28T12:02:00.000Z", exitCode: 0, signal: null }),
   );
   const first = parseDashboardLedger(text, { now });
   assert.deepEqual(first, parseDashboardLedger(text, { now }));
-  assert.equal(first.nodes[0]?.runtime?.herdrPaneId, "w1:p2");
+  assert.equal(first.nodes[0]?.executor, "process");
 });
 
 test("corrupt bodies are reported by line, and raw damage ends the read without repair (ADR-0076 PR 3d)", () => {
@@ -358,9 +358,7 @@ test("parent execution identity, runtime identity and caller-declared workflow l
       lifecycle({
         executionId: parent,
         state: "running",
-        executor: "herdr",
-        herdrPaneId: "w1:p2",
-        herdrAgentName: "review-d0-1",
+        executor: "process",
       }),
       decision({
         executionId: child,
@@ -376,7 +374,7 @@ test("parent execution identity, runtime identity and caller-declared workflow l
   );
 
   assert.equal(byExecution(projection.nodes, child).parentExecutionId, parent);
-  assert.equal(byExecution(projection.nodes, parent).runtime?.herdrPaneId, "w1:p2");
+  assert.equal(byExecution(projection.nodes, parent).executor, "process");
   assert.deepEqual(projection.workflows, [
     {
       runId: "run-principal-1",

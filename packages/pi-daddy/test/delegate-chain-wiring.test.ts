@@ -13,7 +13,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
-import { ENV_HERDR } from "../src/executors/executor.ts";
 import { MAX_CHAIN_STEPS } from "../src/kernel/fanout.ts";
 import { ENV_FANOUT, ENV_GATED, ENV_GRANT, ENV_LEDGER } from "../src/kernel/propagation.ts";
 import { parseDashboardLedger } from "../src/products/dashboard-projection.ts";
@@ -410,35 +409,6 @@ test("ADR-0033: a `tools:`-only step is never offered a 30-day project-wide appr
     !offered.flat().some((o) => /30 days/.test(o)),
     `a <delegate> subject must not be offered a persisted scope; got ${JSON.stringify(offered.flat())}`,
   );
-});
-
-test("ADR-0033: a demanded-but-unreachable herdr refuses the chain BEFORE any dialog", async () => {
-  // **Shipped with no test, so re-breaking it cost nothing.** The executor check was hoisted above the gate for the
-  // reason recorded on the `delegate` path a day earlier — with `PI_DADDY_HERDR=1` and herdr down, an operator was
-  // asked to approve `bash` for a child that could never exist, and the yes was banked for 30 days. A reviewer moved
-  // the check back below `planChain` and all 496 tests stayed green.
-  //
-  // PATH is emptied so the real probe genuinely fails.
-  const dir = await tempDir("grants-chain-");
-  await definition(dir, "digger", "Read, Bash");
-  const realPath = process.env.PATH;
-  process.env.PATH = "";
-  try {
-    const { tools, ctx, selects } = await harness(
-      { [ENV_GRANT]: "agent:digger,tool:read,tool:bash,tool:delegate", [ENV_HERDR]: "1", [ENV_FANOUT]: "12" },
-      dir,
-    );
-    await assert.rejects(
-      () =>
-        tools
-          .get("delegate_chain")!
-          .execute("c", { steps: [{ task: "dig", agent: "digger" }] }, undefined, undefined, ctx),
-      /PI_DADDY_HERDR/,
-    );
-    assert.equal(selects.length, 0, "nobody may be asked to approve a capability for a child that cannot be started");
-  } finally {
-    process.env.PATH = realPath;
-  }
 });
 
 test("ADR-0033: a gate-refused chain WRITES a ledger line naming the refused subject", async () => {

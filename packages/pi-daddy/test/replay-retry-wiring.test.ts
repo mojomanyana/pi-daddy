@@ -19,7 +19,6 @@ import { after, afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import grantsExtension from "../extensions/grants.ts";
 import { createGrantsSession } from "../extensions/session.ts";
-import { ENV_HERDR } from "../src/executors/executor.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
 import { openOperationArtifacts } from "../src/governance/operation-artifacts.ts";
 import {
@@ -56,7 +55,6 @@ const KEYS = [
   ENV_LEDGER,
   ENV_FANOUT,
   ENV_PARENT_ID,
-  ENV_HERDR,
   ENV_REPLAY_RETRY,
   ENV_CHILD_TIMEOUT,
   ENV_CHILD_IDLE_TIMEOUT,
@@ -145,7 +143,6 @@ async function harness(
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) if (k !== "PATH") delete process.env[k];
   Object.assign(process.env, {
-    [ENV_HERDR]: "0",
     PATH: `${bin}:${saved.get("PATH") ?? ""}`,
     REPLAY_FIXTURE_DIR: fixtures,
     ...(options.durable ? { PI_CODING_AGENT_DIR: dir } : {}),
@@ -291,23 +288,6 @@ test("delegate_describe and the startup summary mark replay-safe definitions fro
         "\n  replay-safe (retried once automatically if it fails without answering; with operation_id, marked " +
           "replayable for the coordinator to retry instead): look",
       ),
-    ),
-    JSON.stringify(notes),
-  );
-});
-
-test("under the Herdr executor the startup summary says replay-safe definitions are not retried", async () => {
-  // Review finding 1 (R-28's shape): the line promised a retry the enforcer refuses for every Herdr pane.
-  // PI_DADDY_HERDR=1 with no herdr answering settles the executor kind without running anything.
-  const { notes, session } = await harness(
-    { [ENV_GRANT]: `${GRANT},agent:look`, [ENV_HERDR]: "1" },
-    { definitions: { look: "read, grep" } },
-  );
-  assert.equal(session.executor.kind, "herdr");
-  await session.ensureDefinitions?.(); // as Pi's first request does: selected definitions are then reported
-  assert.ok(
-    notes.some((note) =>
-      note.endsWith("\n  replay-safe (not retried or marked replayable under the Herdr executor): look"),
     ),
     JSON.stringify(notes),
   );

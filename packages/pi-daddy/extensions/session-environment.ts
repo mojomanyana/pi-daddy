@@ -20,7 +20,7 @@ import {
   parseList,
 } from "../src/kernel/propagation.ts";
 import { storedGrantSessionState } from "./stored-grant-session.ts";
-import { chooseExecutor, ENV_HERDR } from "../src/executors/executor.ts";
+import { chooseExecutor } from "../src/executors/executor.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
 import type { ReloadLifecycle } from "./reload-environment.ts";
 import { ENV_GOVERNANCE, type GrantsSession } from "./session.ts";
@@ -56,7 +56,7 @@ export function reconcileSessionEnvironment(
   session.malformedBounds = bounds.malformed;
   session.gated = session.governed ? gatedFromEnv(environment[ENV_GATED]) : parseList(environment[ENV_GATED]);
   session.ledgerPath = ledgerRaw !== undefined ? ledgerRaw : stored.defaultLedger;
-  session.executor = chooseExecutor(environment[ENV_HERDR], null);
+  session.executor = chooseExecutor();
   session.ownSpawnId = environment[ENV_PARENT_ID]?.trim() || `d${session.depth}`;
   session.ownExecutionId = environment[ENV_EXECUTION_ID]?.trim() || undefined;
   const inheritedEpisodeId = environment[ENV_EPISODE_ID]?.trim();

@@ -14,8 +14,8 @@ import type { StructuredRefusal } from "./refusals.ts";
 import type { WorkspacePins } from "./workspace-pin.ts";
 import type { WorkModeSelection } from "./work-mode.ts";
 
-/** The two ways a child can be started. Defined here, below the executors, so the ledger and the planner can name it without importing an executor (ADR-0076 layering). */
-export const EXECUTOR_KINDS = ["process", "herdr"] as const;
+/** Governed child execution runs via captured subprocess across Linux, macOS, and Windows. */
+export const EXECUTOR_KINDS = ["process"] as const;
 export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 
 export interface DelegationRequest {

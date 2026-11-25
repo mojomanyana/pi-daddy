@@ -57,7 +57,6 @@ export async function acquirePortableWriterLease(
     recovered,
     attachProcess: () => {},
     attachCapturedWorker: async () => {},
-    attachHerdrTab: () => {},
     markRetained: async () => (released ? "not-held" : "retained"),
     readCloseFailure: async () => null,
     lost: new Promise(() => {}),

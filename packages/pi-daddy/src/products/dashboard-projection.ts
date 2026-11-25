@@ -14,11 +14,6 @@ import { readRecords } from "../governance/record.ts";
 export type DashboardState =
   "authorised" | "starting" | "running" | "completed" | "failed" | "refused" | "incomplete" | "historical";
 
-export interface DashboardRuntimeIdentity {
-  herdrPaneId?: string;
-  herdrAgentName?: string;
-}
-
 export interface DashboardNode {
   executionId: string;
   parentExecutionId: string | null;
@@ -34,9 +29,8 @@ export interface DashboardNode {
   durationMs: number;
   effectiveGrant: string[];
   denied: string[];
-  executor?: "process" | "herdr";
+  executor?: "process";
   workspace?: { id: string; access: "read" | "write"; root: string };
-  runtime?: DashboardRuntimeIdentity;
   correlation?: CorrelationMetadata;
   refusal?: { code?: string; message?: string };
 }
@@ -72,7 +66,7 @@ export interface DashboardProjectionOptions {
 }
 
 const START_GRACE_MS = 5_000;
-const EXECUTORS = new Set(["process", "herdr"]);
+const EXECUTORS = new Set(["process"]);
 // The artifact is frozen, so projection can validate the exact published v2 contract rather than grow a
 // second partial reader. `createRequire` resolves from both src/ in tests and dist/ in the installed package.
 const TERMINAL_STATES = new Set(["completed", "failed"]);
@@ -125,7 +119,7 @@ function legacyNode(event: ObjectRecord, line: number, now: Date): DashboardNode
     durationMs: 0,
     effectiveGrant: strings(event.effective) ? event.effective.filter(isLedgerCapabilityIdentifier) : [],
     denied: event.denied.filter(isLedgerCapabilityIdentifier),
-    executor: EXECUTORS.has(String(event.executor)) ? (event.executor as "process" | "herdr") : undefined,
+    executor: EXECUTORS.has(String(event.executor)) ? (event.executor as "process") : undefined,
     correlation: correlationOf(event.correlation),
     refusal: object(event.refusal) ? (event.refusal as DashboardNode["refusal"]) : undefined,
   };
@@ -167,15 +161,6 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
         : state === "incomplete" && deadline
           ? deadline
           : now.getTime();
-  const runtimeEvent = occurrence.lifecycle.findLast(
-    (event) => nonEmpty(event.herdrPaneId) || nonEmpty(event.herdrAgentName),
-  );
-  const runtime = runtimeEvent
-    ? {
-        ...(nonEmpty(runtimeEvent.herdrPaneId) ? { herdrPaneId: runtimeEvent.herdrPaneId } : {}),
-        ...(nonEmpty(runtimeEvent.herdrAgentName) ? { herdrAgentName: runtimeEvent.herdrAgentName } : {}),
-      }
-    : undefined;
   const correlation =
     correlationOf(decision?.correlation) ??
     correlationOf(latestLifecycle?.correlation) ??
@@ -199,7 +184,7 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
     effectiveGrant: strings(decision?.effective) ? decision.effective : [],
     denied: strings(decision?.denied) ? decision.denied : [],
     executor: EXECUTORS.has(String(decision?.executor ?? latestLifecycle?.executor))
-      ? ((decision?.executor ?? latestLifecycle?.executor) as "process" | "herdr")
+      ? ((decision?.executor ?? latestLifecycle?.executor) as "process")
       : undefined,
     ...(lease
       ? {
@@ -210,7 +195,6 @@ function nodeOf(occurrence: Occurrence, now: Date, graceMs: number): DashboardNo
           },
         }
       : {}),
-    ...(runtime ? { runtime } : {}),
     ...(correlation ? { correlation } : {}),
     ...(object(decision?.refusal) ? { refusal: decision.refusal as DashboardNode["refusal"] } : {}),
   };

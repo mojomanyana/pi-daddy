@@ -57,8 +57,7 @@ Every v3 execution event carries:
 Consumers join capability, lifecycle, and lease events by `executionId`, never by `childId`. Repeated or concurrent
 calls may reuse a logical position such as `d0.1`; they may never reuse an execution id.
 
-A lifecycle `running` event may include `herdrPaneId` and `herdrAgentName` for navigation. These are runtime
-observations, not enforcement boundaries. `deadlineAt` is immutable within one occurrence and bounds how long a
+`deadlineAt` is immutable within one occurrence and bounds how long a
 non-terminal start can be rendered as live; after it, the truthful state is incomplete.
 
 All timestamp fields share one schema/runtime profile: JSON Schema `date-time` with seconds restricted to `00`–`59`.

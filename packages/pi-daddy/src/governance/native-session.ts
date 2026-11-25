@@ -7,8 +7,7 @@ import { ENV_NATIVE_SESSION_ROOT } from "../kernel/env-names.ts";
 export { ENV_NATIVE_SESSION_ROOT } from "../kernel/env-names.ts";
 
 export const MAX_NATIVE_SESSION_BYTES = 1024 * 1024;
-export type NativeSessionSource =
-  "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager" | "pi-captured-final";
+export type NativeSessionSource = "pi-session-file" | "pi-session-manager" | "pi-captured-final";
 export interface NativeSessionObservation {
   source: NativeSessionSource | null;
   status: "missing" | "verified" | "invalid" | "changed" | "truncated" | "unsupported";
@@ -275,17 +274,4 @@ export async function readNativeSession(input: {
   } finally {
     await handle?.close().catch(() => undefined);
   }
-}
-
-/** Herdr 0.8.2 protocol 20 AgentInfo.agent_session; never scrape terminal text, PID or names. */
-export function herdrSessionReference(
-  value: unknown,
-  expectedPane: string,
-): { source: "herdr-id" | "herdr-path"; value: string } | null {
-  if (!obj(value) || value.pane_id !== expectedPane || value.agent !== "pi" || !obj(value.agent_session)) return null;
-  const s = value.agent_session;
-  if (s.agent !== "pi" || typeof s.source !== "string" || s.source.length > 128) return null;
-  if (s.kind === "id" && uuid(s.value)) return { source: "herdr-id", value: s.value };
-  if (s.kind === "path" && filePath(s.value)) return { source: "herdr-path", value: s.value };
-  return null;
 }
