@@ -1,5 +1,9 @@
 {
   "piSdk": "1.6.0",
+  "minimumRuntime": {
+    "pi": "1.6.0",
+    "nodeMajor": 24
+  },
   "normalCliInstalls": [
     "pi-bookie",
     "pi-daddy",

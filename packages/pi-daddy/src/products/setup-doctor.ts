@@ -3,15 +3,18 @@
  * (Layer 3: products). Works natively on macOS, Linux, and Windows.
  */
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   ecosystemConfigPath,
-  loadEcosystemConfig,
+  readEcosystemConfig,
+  resolveEcosystemModelTier,
   saveEcosystemConfig,
   type EcosystemConfig,
 } from "../kernel/ecosystem-config.ts";
 import release from "./ecosystem-release.json" with { type: "json" };
+import { compareStableVersions } from "../kernel/stable-version.ts";
 
-const PRESETS: Record<string, EcosystemConfig> = {
+const PRESETS = {
   "open-weight": {
     models: {
       fast: "fireworks/accounts/fireworks/models/glm-5p3-flash",
@@ -34,7 +37,39 @@ const PRESETS: Record<string, EcosystemConfig> = {
     scout: { directUrls: true },
     bookie: { autoRecall: true, autoDistill: true },
   },
-};
+} satisfies Record<string, EcosystemConfig>;
+
+type PresetName = keyof typeof PRESETS;
+const tiers = ["fast", "work", "strong"] as const;
+const isPreset = (name: unknown): name is PresetName => typeof name === "string" && Object.hasOwn(PRESETS, name);
+
+function applyPreset(existing: EcosystemConfig, requested?: PresetName): EcosystemConfig {
+  // Legacy profiles have no provenance. Match known shipped values and preserve other model IDs as overrides.
+  const previous = existing.setupPreset;
+  const previousName = isPreset(previous?.name) ? previous.name : undefined;
+  const legacyName = (Object.keys(PRESETS) as PresetName[]).find((name) =>
+    tiers.some((tier) => PRESETS[name].models[tier] === existing.models?.[tier]),
+  );
+  const name = requested ?? previousName ?? legacyName ?? "open-weight";
+  const base = PRESETS[name];
+  const models = { ...base.models, ...existing.models };
+  for (const tier of tiers) {
+    const value = existing.models?.[tier];
+    const wasDefault = previous
+      ? previous.defaults?.[tier] === value
+      : Object.values(PRESETS).some((preset) => preset.models[tier] === value);
+    if (value === undefined || (wasDefault && (requested || previousName))) models[tier] = base.models[tier];
+  }
+  return {
+    ...existing,
+    setupPreset: { name, defaults: { ...base.models } },
+    models,
+    dashboard: { ...base.dashboard, ...existing.dashboard },
+    escalation: { ...base.escalation, ...existing.escalation },
+    scout: { ...base.scout, ...existing.scout },
+    bookie: { ...base.bookie, ...existing.bookie },
+  };
+}
 
 function probeCmd(cmd: string, args: string[]): { ok: boolean; output: string } {
   const res = spawnSync(cmd, args, {
@@ -51,27 +86,52 @@ function probeCmd(cmd: string, args: string[]): { ok: boolean; output: string } 
   };
 }
 
-export function runEcosystemSetup(options: { preset?: string; skipInstall?: boolean } = {}): number {
-  const presetName = options.preset && options.preset in PRESETS ? options.preset : "open-weight";
-  const existing = loadEcosystemConfig();
-  const base = PRESETS[presetName];
-  const merged: EcosystemConfig = {
-    models: { ...base.models, ...existing.models },
-    dashboard: { ...base.dashboard, ...existing.dashboard },
-    escalation: { ...base.escalation, ...existing.escalation },
-    scout: { ...base.scout, ...existing.scout },
-    bookie: { ...base.bookie, ...existing.bookie },
+function checkNode() {
+  const version = process.versions.node;
+  const minimum = release.minimumRuntime.nodeMajor;
+  return {
+    ok: Number(version.split(".")[0]) >= minimum,
+    output: `v${version} (ecosystem requires Node.js ${minimum}+)`,
   };
-  const cfgFile = saveEcosystemConfig(merged);
-  console.log(`pi-daddy setup: wrote ${cfgFile} (preset: ${presetName})`);
+}
+
+function checkPi() {
+  const probe = probeCmd("pi", ["--version"]);
+  const minimum = release.minimumRuntime.pi;
+  const order = compareStableVersions(probe.output, minimum);
+  return {
+    ok: probe.ok && order !== undefined && order >= 0,
+    output: `${probe.output || "pi CLI unavailable on PATH"} (requires stable Pi >=${minimum})`,
+  };
+}
+
+export function runEcosystemSetup(options: { preset?: string; skipInstall?: boolean } = {}): number {
+  const { preset } = options;
+  if (preset !== undefined && !isPreset(preset)) {
+    console.error(`pi-daddy setup: unknown preset '${preset}'. Choose ${Object.keys(PRESETS).join(" or ")}.`);
+    return 1;
+  }
+  const node = checkNode();
+  if (!node.ok) {
+    console.error(`pi-daddy setup: ${node.output}`);
+    return 1;
+  }
+  try {
+    readEcosystemConfig();
+  } catch (error) {
+    console.error(`pi-daddy setup: ${String(error)}`);
+    return 1;
+  }
 
   if (!options.skipInstall) {
-    const piCheck = probeCmd("pi", ["--version"]);
+    const piCheck = checkPi();
     if (!piCheck.ok) {
-      console.error("pi-daddy setup: `pi` CLI not found on PATH. Install @earendil-works/pi-coding-agent first.");
+      console.error(`pi-daddy setup: ${piCheck.output}. Install or update @earendil-works/pi-coding-agent.`);
       return 1;
     }
-    const pins: Record<string, string> = release.publicVersions;
+    // src/products and dist/products are both two directories below the launcher's installed package.
+    const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    const pins: Record<string, string> = { ...release.publicVersions, "pi-daddy": version };
     for (const name of release.normalCliInstalls) {
       const pkg = `npm:${name}@${pins[name]}`;
       console.log(`  installing ${pkg}...`);
@@ -85,16 +145,29 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
       }
     }
   }
-  console.log("\nSetup complete! Start `pi` in any git repo and run `/dashboard split` or `pi-daddy panel`.");
+  try {
+    // Installation can take a while. Keep edits made by the operator while it was running.
+    const config = applyPreset(readEcosystemConfig() ?? {}, preset);
+    const file = saveEcosystemConfig(config);
+    console.log(`pi-daddy setup: wrote ${file} (preset: ${config.setupPreset?.name})`);
+    console.log(`Effective models: ${tiers.map((tier) => `${tier}=${resolveEcosystemModelTier(tier)}`).join(", ")}`);
+  } catch (error) {
+    console.error(`pi-daddy setup: ${String(error)}`);
+    return 1;
+  }
+  console.log(
+    options.skipInstall
+      ? "Preset settings saved. Package installation skipped."
+      : "\nSetup complete! Start `pi` in any git repo and run `/dashboard split` or `pi-daddy panel`.",
+  );
   return 0;
 }
 
 export function runEcosystemDoctor(): number {
-  const nodeMajor = Number(process.versions.node.split(".")[0]);
   const checks: Array<{ name: string; ok: boolean; detail?: string; output?: string; optional?: boolean }> = [
     { name: "Platform", ok: true, detail: `${process.platform}/${process.arch}` },
-    { name: "Node.js", ok: nodeMajor >= 22, detail: `v${process.versions.node} (recommended >=24 for SQLite FTS5)` },
-    { name: "pi CLI", ...probeCmd("pi", ["--version"]) },
+    { name: "Node.js", ...checkNode() },
+    { name: "pi CLI", ...checkPi() },
     { name: "git", ...probeCmd("git", ["--version"]) },
     { name: "Docker (optional for open-web Scout)", ...probeCmd("docker", ["--version"]), optional: true },
   ];
@@ -113,9 +186,14 @@ export function runEcosystemDoctor(): number {
   }
   console.log(`  ✓ ${"Terminal auto-split support".padEnd(36)} ${splitters.join(", ") || "manual (`pi-daddy panel`)"}`);
   const cfgPath = ecosystemConfigPath();
-  const cfg = loadEcosystemConfig();
-  console.log(
-    `  ${cfg.models ? "✓" : "○"} ${"Ecosystem config".padEnd(36)} ${cfgPath} (${cfg.models ? "configured" : "not created — run `pi-daddy setup`"})`,
-  );
+  try {
+    const cfg = readEcosystemConfig();
+    console.log(
+      `  ${cfg ? "✓" : "○"} ${"Ecosystem config".padEnd(36)} ${cfgPath} (${cfg ? "present" : "not created — run `pi-daddy setup`"})`,
+    );
+  } catch (error) {
+    console.log(`  ✗ ${"Ecosystem config".padEnd(36)} ${String(error)}`);
+    failed = true;
+  }
   return failed ? 1 : 0;
 }
