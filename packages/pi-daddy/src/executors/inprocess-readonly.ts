@@ -7,7 +7,7 @@
  */
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { resolveEcosystemModelTier } from "../kernel/ecosystem-config.ts";
+import { resolveEcosystemModelCandidates, selectRegistryModel } from "../kernel/ecosystem-config.ts";
 
 export type ReadOnlyRole = "review" | "architect" | "investigate";
 
@@ -65,21 +65,10 @@ export function resolveTierModel(
   explicitOverride?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): { model: unknown; label: string } {
-  const tierEnv =
-    explicitOverride?.trim() || resolveEcosystemModelTier(role === "investigate" ? "fast" : "strong", env);
-  if (tierEnv && typeof registry.find === "function") {
-    const sep = tierEnv.includes("/") ? "/" : ":";
-    const idx = tierEnv.indexOf(sep);
-    if (idx > 0) {
-      const found = registry.find(tierEnv.slice(0, idx).trim(), tierEnv.slice(idx + 1).trim());
-      if (found) return { model: found, label: tierEnv };
-    }
-  }
-  const fb = fallback as { provider?: string; id?: string } | undefined;
-  return {
-    model: fallback,
-    label: fb?.provider && fb?.id ? `${fb.provider}/${fb.id}` : "session-default",
-  };
+  const candidates = explicitOverride?.trim()
+    ? [explicitOverride.trim()]
+    : resolveEcosystemModelCandidates(role === "investigate" ? "fast" : "strong", env);
+  return selectRegistryModel(registry, candidates, fallback);
 }
 
 export async function loadBoundedWorkspaceFiles(

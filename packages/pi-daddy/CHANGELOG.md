@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Provider auto-detect & ordered tier fallbacks (`pi-daddy setup --preset auto`, `modelFallbacks`):** `pi-daddy setup --preset auto` inspects configured Pi providers (`~/.pi/agent/auth.json` key names + env var presence, never reading secrets) to pick working `models.{fast,work,strong}` and populate ordered `modelFallbacks` chains (or `--preset session` when none are detected). Supports `open-weight`, `google`, `openrouter`, `deepseek`, `anthropic`, `openai`, `session`, and `auto`, plus comma-separated fallback specs in `PI_ECO_MODEL_*` env vars.
+- **Ghostty & Kitty `/dashboard split` support:** `/dashboard split` and `pi-daddy doctor` now support Kitty (`kitty @ launch --location=vsplit`) and Ghostty (macOS & Linux) alongside tmux, WezTerm, macOS iTerm2, and Windows Terminal.
 - `pi-daddy setup` and the manual install commands now use the same tested package pins. Previously both installed Pi Daddy 1.0.0, which rejected Principal v6's `build`, `review`, and `debug` agents. For an existing install, apply the pinned `pi install` commands in the quickstart and run `/reload`; no grant changes are needed.
 
 ## 1.0.2 — 2026-11-25
