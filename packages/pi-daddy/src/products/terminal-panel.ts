@@ -62,6 +62,11 @@ export function renderTerminalPanel(state: WebDashboardState, notice = "", width
       `Mode:     ${modeLabel}  |  Auto: ${state.autoEnabled ? "ON" : "OFF"}  |  Turns: ${u.turns}`,
       `CWD:      ${state.cwd}`,
       `Tools:    ${state.activeTools.join(", ") || "(none)"}`,
+      ...(state.harvest
+        ? [
+            `Harvest:  ${state.harvest.savedPath ? `auto-saved ${state.harvest.scenarioId}` : `candidate ${state.harvest.scenarioId} ([h] to save)`} (${Math.round(state.harvest.confidence * 100)}%)`,
+          ]
+        : []),
       hr,
       "LIVE ACTIVITY (latest first):",
     );
@@ -107,7 +112,7 @@ export function renderTerminalPanel(state: WebDashboardState, notice = "", width
 
   lines.push(hr);
   lines.push("Keys: [1-5] tabs  [s] steer  [f] follow-up  [m] mode  [a] auto  [t] think");
-  lines.push("      [o] tools   [e] tiers  [x] escalate   [q] quit");
+  lines.push("      [o] tools   [e] tiers  [x] escalate   [h] harvest  [q] quit");
   if (notice) lines.push(`> ${notice}`);
   return lines.join("\n");
 }
@@ -263,6 +268,8 @@ export async function runTerminalPanel(urlInput?: string, cwd = process.cwd()): 
           });
         } else if (key === "x") {
           void post("/api/escalate", { reason: "terminal-panel" });
+        } else if (key === "h") {
+          void post("/api/harvest", { reason: "terminal-panel" });
         }
       });
     }

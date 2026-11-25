@@ -36,6 +36,13 @@ export interface WebDashboardModelTiers {
   readonly strong: string;
 }
 
+export interface WebDashboardHarvestInfo {
+  readonly scenarioId: string;
+  readonly reason: string;
+  readonly confidence: number;
+  readonly savedPath?: string;
+}
+
 export interface WebDashboardState {
   readonly sessionId: string;
   readonly cwd: string;
@@ -53,6 +60,7 @@ export interface WebDashboardState {
   readonly memoryLines: readonly string[];
   readonly researchLines: readonly string[];
   readonly recentEvents: readonly WebDashboardEvent[];
+  readonly harvest?: WebDashboardHarvestInfo;
 }
 
 export interface WebDashboardConfigUpdate {
@@ -76,6 +84,11 @@ export interface StartWebDashboardOptions {
   readonly onAutoModeChange?: (enabled: boolean) => Promise<void> | void;
   readonly onConfigChange?: (patch: WebDashboardConfigUpdate) => Promise<void> | void;
   readonly onEscalate?: (reason?: string) => Promise<void> | void;
+  readonly onHarvest?: (
+    reason?: string,
+  ) =>
+    | Promise<{ saved: boolean; path?: string; scenarioId?: string }>
+    | { saved: boolean; path?: string; scenarioId?: string };
 }
 
 function tokenMatches(supplied: string | null, expected: string): boolean {
@@ -149,6 +162,7 @@ function renderHtml(token: string): string {
       <button class="primary" onclick="sendSteer('steer')">Steer Now</button>
       <button onclick="sendSteer('followUp')">Queue Follow-up</button>
       <button onclick="escalate()">Escalate to Strong</button>
+      <button onclick="harvestEval()">Harvest Eval</button>
       <span id="steer-msg" class="msg"></span>
     </div>
   </div>
@@ -266,6 +280,10 @@ async function escalate() {
   const r = await post('/api/escalate', { reason: 'operator-requested' });
   document.getElementById('steer-msg').textContent = r.ok ? 'Escalation requested.' : (r.data.error || 'Failed');
 }
+async function harvestEval() {
+  const r = await post('/api/harvest', { reason: 'web-panel' });
+  document.getElementById('steer-msg').textContent = r.ok ? ('Harvested: ' + (r.data.scenarioId || 'saved')) : (r.data.error || 'Failed');
+}
 async function applyMode(mode) {
   const emphases = mode === 'ambitious' ? [...document.querySelectorAll('.emp:checked')].map(e => e.value) : [];
   const r = await post('/api/work-mode', { mode, emphases, scope: 'session' });
@@ -372,6 +390,13 @@ export async function startWebDashboard(options: StartWebDashboardOptions): Prom
             if (!options.onEscalate) throw new Error("Escalation unavailable");
             const reason = typeof data.reason === "string" ? data.reason.slice(0, 200) : undefined;
             await options.onEscalate(reason);
+          } else if (parsed.pathname === "/api/harvest") {
+            if (!options.onHarvest) throw new Error("Harvest unavailable");
+            const reason = typeof data.reason === "string" ? data.reason.slice(0, 200) : undefined;
+            const out = await options.onHarvest(reason);
+            broadcast();
+            jsonReply(res, 200, { ok: true, ...out });
+            return;
           } else {
             jsonReply(res, 404, { error: "Not found" });
             return;

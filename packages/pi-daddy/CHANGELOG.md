@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- **Bucket 4 — 2-Stage Classifier-Driven Auto-Harvesting (`session-harvest.ts`, `[h]` panel hotkey, `POST /api/harvest`):** After a turn settles, a free Stage-1 signal filter checks for thrash, escalation, Cold Diff Review blockers, live user steering, or tool-failure + edit recovery; qualifying turns are triaged by `models.fast` (Stage-2 structured JSON classifier at `reasoning: "off"` over a secret-redacted digest) and auto-saved (`harvest.mode: "auto"`, default; configurable to `"suggest"` or `"off"`) into `~/.pi/agent/pi-daddy/harvested-evals/<repo>/` with zero project repo pollution. Manual `[h]` harvest hotkey and Web UI button also supported.
+- **Final legacy env cleanup:** Permanently removed the pre-1.0 `PI_GRANTS_*` legacy env adoption table from `env-names.ts`.
+
 ## 1.0.3 - 2026-11-25
 
 - **Complete Herdr removal:** Permanently deleted all 27 Herdr modules, tests, plugin manifest (`herdr-plugin/`), Apache license notice, `PI_DADDY_HERDR*` env vars, `"herdr"` executor enum, `herdrPaneId`/`herdrAgentName` ledger fields, and Herdr lease-close plumbing (~6,000+ LOC removed). Captured subprocess execution (`"process"`) and the standalone 5-tab terminal/web Side Panel are now the sole supported paths.

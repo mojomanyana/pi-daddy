@@ -1073,7 +1073,7 @@ the answer is refused as unrecognised, which is the loud failure rather than a s
 is recorded as `error` and an advisor with nothing to say as `declined`, because a revoked key must not read as an
 opinion-free advisor forever; and the two-second bound is raced rather than merely signalled, since a decider that
 ignores its abort would otherwise run as long as it liked and still be recorded as a timeout. Confirming it
-is the `PI_DADDY_IT_JEV=1` tier, unrun. Until somebody runs it, this adapter's response handling is a reading of
+is retired (experimental JEV integration was removed).
 documentation, not a measurement.
 
 **2026-09-29 — child runtime selection and episode accounting are explicit, attributable session state.** Model

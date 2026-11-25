@@ -65,6 +65,7 @@ function applyPreset(
     ...(modelFallbacks ? { modelFallbacks } : {}),
     dashboard: { ...base.dashboard, ...existing.dashboard },
     escalation: { ...base.escalation, ...existing.escalation },
+    harvest: { ...base.harvest, ...existing.harvest },
     scout: { ...base.scout, ...existing.scout },
     bookie: { ...base.bookie, ...existing.bookie },
   };

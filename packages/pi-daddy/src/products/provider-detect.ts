@@ -14,6 +14,7 @@ export type ProviderPresetName =
 const COMMON_DEFAULTS = {
   dashboard: { autoStart: true, autoSplit: true },
   escalation: { auto: true },
+  harvest: { mode: "auto" as const, minConfidence: 0.75 },
   scout: { directUrls: true },
   bookie: { autoRecall: true, autoDistill: true },
 } as const;

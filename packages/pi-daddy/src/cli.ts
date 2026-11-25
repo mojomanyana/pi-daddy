@@ -24,7 +24,6 @@ import { registeredWorkspaceIds, loadWorkspaceRegistry } from "./kernel/workspac
 import { explainDoubledNamespace } from "./kernel/capability-diagnostics.ts";
 import type { Capability } from "./kernel/resolve.ts";
 import type { RefusedSkill, SkillPackage } from "./kernel/skill-packages.ts";
-import { adoptLegacyEnvironment, legacyEnvironmentWarning } from "./kernel/env-names.ts";
 import {
   activityTimelinePath,
   PI_PROJECT_DIR,
@@ -421,8 +420,6 @@ export async function main(
   argv: string[],
   loadRegistry: typeof loadWorkspaceRegistry = loadWorkspaceRegistry,
 ): Promise<number> {
-  const adoptedLegacy = adoptLegacyEnvironment(process.env);
-  if (adoptedLegacy.length > 0) console.error(legacyEnvironmentWarning(adoptedLegacy));
   const parsed = parseArgs(argv);
 
   if (parsed.command === "version") {

@@ -35,12 +35,18 @@ export interface EcosystemModelFallbacks {
   strong?: string[];
 }
 
+export interface EcosystemHarvestConfig {
+  mode?: "auto" | "suggest" | "off";
+  minConfidence?: number;
+}
+
 export interface EcosystemConfig {
   setupPreset?: { name: string; defaults: EcosystemModelsConfig };
   models?: EcosystemModelsConfig;
   modelFallbacks?: EcosystemModelFallbacks;
   dashboard?: { autoStart?: boolean; autoSplit?: boolean };
   escalation?: { auto?: boolean };
+  harvest?: EcosystemHarvestConfig;
   scout?: { directUrls?: boolean };
   bookie?: { autoRecall?: boolean; autoDistill?: boolean };
 }
@@ -77,8 +83,27 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
   const record = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
   if (!record(parsed)) throw new Error(`Expected a JSON object in ${file}.`);
-  for (const section of ["models", "modelFallbacks", "dashboard", "escalation", "scout", "bookie", "setupPreset"]) {
+  for (const section of [
+    "models",
+    "modelFallbacks",
+    "dashboard",
+    "escalation",
+    "harvest",
+    "scout",
+    "bookie",
+    "setupPreset",
+  ]) {
     if (section in parsed && !record(parsed[section])) throw new Error(`Expected an object for ${section} in ${file}.`);
+  }
+  if (record(parsed.harvest)) {
+    const mode = parsed.harvest.mode;
+    if (mode !== undefined && mode !== "auto" && mode !== "suggest" && mode !== "off") {
+      throw new Error(`Expected harvest.mode to be "auto", "suggest", or "off" in ${file}.`);
+    }
+    const minC = parsed.harvest.minConfidence;
+    if (minC !== undefined && (typeof minC !== "number" || !Number.isFinite(minC) || minC < 0 || minC > 1)) {
+      throw new Error(`Expected harvest.minConfidence to be a number between 0 and 1 in ${file}.`);
+    }
   }
   if (record(parsed.models)) {
     for (const tier of ["fast", "work", "strong"]) {
@@ -187,6 +212,21 @@ export function selectRegistryModel(
 export function panelLocatorPath(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
   const hash = createHash("sha256").update(resolve(cwd), "utf8").digest("hex").slice(0, 20);
   return join(userStateDir(env), "panels", `${hash}.json`);
+}
+
+export function harvestOutputDir(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  const abs = resolve(cwd);
+  const slug =
+    abs
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop()
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "workspace";
+  const hash = createHash("sha256").update(abs, "utf8").digest("hex").slice(0, 8);
+  return join(userStateDir(env), "harvested-evals", `${slug}-${hash}`);
 }
 
 export function writePanelLocator(locator: PanelLocator, env: NodeJS.ProcessEnv = process.env): string {

@@ -70,7 +70,6 @@ import { taskInlineControl } from "./task-inline-control.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
-import { legacyEnvironmentWarning } from "../src/kernel/env-names.ts";
 import { importLegacyLedger } from "../src/governance/ledger.ts";
 import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/project-paths.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
@@ -127,8 +126,6 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     await session.ensureDefinitions?.();
   });
   pi.on("session_start", async (event, ctx) => {
-    if (session.adoptedLegacyEnv.length > 0)
-      ctx.ui.notify(legacyEnvironmentWarning(session.adoptedLegacyEnv), "warning");
     // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
     // isolated; it cannot carry state into another extension instance.
     const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
