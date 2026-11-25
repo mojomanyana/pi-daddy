@@ -79,6 +79,30 @@ test("modelFallbacks validate strictly and resolve in priority order across env,
     { model: sessionModel, label: "anthropic/claude-sonnet" },
   );
 
+  // selectRegistryModel skips catalogued primary lacking auth and picks authenticated fallback
+  const unauthedFireworks = { provider: "fireworks", id: "glm-fast" };
+  const authAwareRegistry = {
+    find: (p: string, id: string) => {
+      if (p === "fireworks" && id === "glm-fast") return unauthedFireworks;
+      if (p === "google" && id === "gemini-3.5-flash-lite") return googleModel;
+      return undefined;
+    },
+    hasConfiguredAuth: (model: unknown) => model === googleModel,
+  };
+  assert.deepEqual(selectRegistryModel(authAwareRegistry, resolveEcosystemModelCandidates("fast", env), sessionModel), {
+    model: googleModel,
+    label: "google/gemini-3.5-flash-lite",
+  });
+  // Also skips via getAvailable() when hasConfiguredAuth is absent
+  const availableOnlyRegistry = {
+    find: authAwareRegistry.find,
+    getAvailable: () => [googleModel],
+  };
+  assert.deepEqual(
+    selectRegistryModel(availableOnlyRegistry, ["fireworks/glm-fast", "google/gemini-3.5-flash-lite"], sessionModel),
+    { model: googleModel, label: "google/gemini-3.5-flash-lite" },
+  );
+
   // Malformed modelFallbacks fails closed
   writeFileSync(join(dir, "ecosystem.json"), JSON.stringify({ modelFallbacks: { fast: "not-an-array" } }));
   assert.throws(() => readEcosystemConfig(env), /Expected an array of non-empty strings for modelFallbacks\.fast/);

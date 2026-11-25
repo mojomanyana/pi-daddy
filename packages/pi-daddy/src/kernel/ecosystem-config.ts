@@ -191,16 +191,29 @@ export function resolveEcosystemModelTier(
 }
 
 export function selectRegistryModel(
-  registry: { find?(provider: string, modelId: string): unknown } | undefined,
+  registry:
+    | {
+        find?(provider: string, modelId: string): unknown;
+        hasConfiguredAuth?(model: unknown): boolean;
+        getAvailable?(): ReadonlyArray<{ provider?: string; id?: string }>;
+      }
+    | undefined,
   candidates: readonly string[],
   fallback: unknown,
 ): { model: unknown; label: string } {
+  const hasAuth = (model: unknown, provider: string, modelId: string): boolean => {
+    if (typeof registry?.hasConfiguredAuth === "function") return Boolean(registry.hasConfiguredAuth(model));
+    if (typeof registry?.getAvailable === "function") {
+      return registry.getAvailable().some((m) => m?.provider === provider && m?.id === modelId);
+    }
+    return true;
+  };
   for (const candidate of candidates) {
     if (candidate === "session") break;
     const parsed = parseModelSpec(candidate);
     if (!parsed || typeof registry?.find !== "function") continue;
     const found = registry.find(parsed.provider, parsed.modelId);
-    if (found) return { model: found, label: candidate };
+    if (found && hasAuth(found, parsed.provider, parsed.modelId)) return { model: found, label: candidate };
   }
   const fb = fallback as { provider?: string; id?: string } | undefined;
   return {
