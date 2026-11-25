@@ -15,6 +15,7 @@ import {
 } from "../src/products/web-dashboard.ts";
 import {
   loadEcosystemConfig,
+  readEcosystemConfig,
   removePanelLocator,
   resolveEcosystemModelTier,
   saveEcosystemConfig,
@@ -181,40 +182,36 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   };
 
   const applyConfig = (patch: WebDashboardConfigUpdate) => {
-    if (patch.thinking !== undefined) {
-      if (!THINKING_ALLOWED.has(patch.thinking)) throw new Error("Unsupported thinking level");
-      if (typeof (pi as { setThinkingLevel?: (l: string) => void }).setThinkingLevel === "function") {
-        (pi as { setThinkingLevel: (l: string) => void }).setThinkingLevel(patch.thinking);
-        record("config", `thinking=${patch.thinking}`);
-      }
-    }
+    if (patch.thinking !== undefined && !THINKING_ALLOWED.has(patch.thinking))
+      throw new Error("Unsupported thinking level");
+    if (patch.toggleTool && !(OPTIONAL_TOOLS as readonly string[]).includes(patch.toggleTool.name))
+      throw new Error("Unknown toggleable tool");
     if (patch.modelTiers) {
-      const cfg = loadEcosystemConfig();
-      const nextModels = { ...(cfg.models ?? {}) };
-      const applyTier = (tier: "fast" | "work" | "strong", envKey: string, val: string | undefined) => {
-        if (val === undefined) return;
-        const clean = val.trim();
-        if (!clean) {
-          delete process.env[envKey];
-          delete nextModels[tier];
-        } else {
-          process.env[envKey] = clean.slice(0, 200);
-          nextModels[tier] = clean.slice(0, 200);
-        }
-      };
-      applyTier("fast", "PI_ECO_MODEL_FAST", patch.modelTiers.fast);
-      applyTier("work", "PI_ECO_MODEL_WORK", patch.modelTiers.work);
-      applyTier("strong", "PI_ECO_MODEL_STRONG", patch.modelTiers.strong);
-      try {
-        saveEcosystemConfig({ ...cfg, models: nextModels });
-      } catch {
-        /* Best-effort persistence. */
+      const cfg = readEcosystemConfig() ?? {};
+      const models = { ...cfg.models };
+      const overrides = new Map<string, string>();
+      for (const tier of ["fast", "work", "strong"] as const) {
+        const value = patch.modelTiers[tier];
+        if (value === undefined) continue;
+        const clean = value.trim().slice(0, 200);
+        if (clean) models[tier] = clean;
+        else delete models[tier];
+        overrides.set(`PI_ECO_MODEL_${tier.toUpperCase()}`, clean);
+      }
+      saveEcosystemConfig({ ...cfg, models });
+      for (const [key, value] of overrides) {
+        if (value) process.env[key] = value;
+        else delete process.env[key];
       }
       record("config", "updated model tiers");
     }
+    const thinkingApi = pi as { setThinkingLevel?: (level: string) => void };
+    if (patch.thinking !== undefined && typeof thinkingApi.setThinkingLevel === "function") {
+      thinkingApi.setThinkingLevel(patch.thinking);
+      record("config", `thinking=${patch.thinking}`);
+    }
     if (patch.toggleTool && typeof pi.getActiveTools === "function" && typeof pi.setActiveTools === "function") {
       const { name, enabled } = patch.toggleTool;
-      if (!(OPTIONAL_TOOLS as readonly string[]).includes(name)) throw new Error("Unknown toggleable tool");
       const next = new Set(pi.getActiveTools());
       if (enabled) next.add(name);
       else next.delete(name);
