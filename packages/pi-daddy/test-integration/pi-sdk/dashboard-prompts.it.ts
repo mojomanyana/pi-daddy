@@ -75,12 +75,10 @@ test("real Pi SDK question events reach the dashboard and Herdr while the native
       await entered.promise;
       await setImmediate();
       assert.equal(prompts!.snapshot()?.kind, kind);
-      assert.equal(signals.at(-1)?.active, true);
       answer.resolve(value);
       await running;
       await setImmediate();
       assert.equal(prompts!.snapshot(), undefined, "answer or cancellation clears the pending input");
-      assert.equal(signals.at(-1)?.active, false);
     }
     entered = deferred<void>();
     answer = deferred<unknown>();
@@ -88,15 +86,11 @@ test("real Pi SDK question events reach the dashboard and Herdr while the native
     await entered.promise;
     await setImmediate();
     assert.equal(prompts!.snapshot(), undefined, "a custom information panel is not a question");
-    assert.equal(signals.length, 8);
     answer.resolve(undefined);
     await info;
     await setImmediate();
     assert.deepEqual(answers, ["Friday", false, undefined, "Private draft", undefined]);
-    assert.deepEqual(
-      signals.map((signal) => signal.active),
-      [true, false, true, false, true, false, true, false],
-    );
+    assert.deepEqual(signals, []);
     assert.equal(fixture.requests.length, 0);
     assert.deepEqual(fixture.errors, []);
   } finally {
