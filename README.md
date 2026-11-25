@@ -22,7 +22,7 @@ pi install npm:pi-bookie@1.0.2
 pi install npm:pi-daddy@1.0.3
 pi install npm:principal-pi-skills@6.0.2
 pi install npm:pi-scout-research@1.0.2
-pi install npm:skill-harness@1.0.2
+pi install npm:skill-harness@1.0.3
 
 # Optional on a fresh profile without ecosystem.json: initialize the open-weight preset (or use --preset google).
 # npx pi-daddy@1.0.3 setup --skip-install --preset open-weight
