@@ -1,5 +1,25 @@
 # Changelog — pi-daddy
 
+## 1.0.2 — 2026-11-25
+
+- Updated `README.md`, `packages/pi-daddy/README.md`, `packages/pi-daddy/CHANGELOG.md`, and `.github/beta-release.json` to document the v1.0 cross-OS Herdr-free architecture, 5-tab side-panel dashboard, `pi-daddy setup`/`doctor`, `ecosystem.json`, `portable-child`, `delegate_tournament`, Smart Auto-Escalation, and `principal-pi-skills@6.x` binding.
+
+## 1.0.1 — 2026-11-25
+
+- Accepted `principal-pi-skills@6.x` 3-phase `principal-agents.json` binding manifests (`build`, `review`, `debug`) alongside legacy v5 manifests so `build`, `review`, and `debug` load cleanly with zero warnings.
+
+## 1.0.0 — 2026-11-24
+
+- **5-Tab Interactive Terminal & Web Side-Panel Dashboard (Herdr-free):** `pi-daddy panel` auto-attaches via per-project locator; `/dashboard split` auto-splits tmux, WezTerm, macOS iTerm2, and Windows Terminal; includes live token/cache%/cost readout, `[s]` steer, `[f]` follow-up, tool toggles, model-tier persistence to `~/.pi/agent/ecosystem.json`, and `[x]` manual escalation.
+- **Cross-OS Child Runner (`portable-child.ts`):** enables `delegate` natively on macOS (Apple Silicon & Intel) and Windows while preserving the hardened Linux x64 worker on Linux.
+- **Smart Auto-Escalation:** listens for `principal:thrash-detected:v1` (and manual `[x]` escalation) to run 1 surgical rescue analysis pass on `models.strong`.
+- **Single Config & CLI Onboarding:** added `~/.pi/agent/ecosystem.json`, `pi-daddy setup`, and `pi-daddy doctor`.
+- Removed `herdr-plugin` from published npm `files[]` and coerced empty `context: { mode: "files" }` to `"none"`.
+
+## 0.66.1 — 2026-11-24
+
+- Shipped Herdr-free default localhost dashboard, parallel worktree tournaments (`delegate_tournament`), Tier-1 in-process `quick_review`, fast Cold Diff Review, Windows named pipes, macOS `O_EXCL` `portable-lease.ts`, non-Linux `bounded-read-sync.ts`, `.gitattributes`, and OIDC `publish.yml`.
+
 ## 0.64.0 — 2026-11-21
 
 - Reserving a working copy for a delegated writer now stores only the session ID and folder. A task with a bound live session can dispatch Scout or Build without a circular-object save error.

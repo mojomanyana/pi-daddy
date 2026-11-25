@@ -1,5 +1,5 @@
 {
-  "piSdk": "1.5.2",
+  "piSdk": "1.6.0",
   "normalCliInstalls": [
     "pi-bookie",
     "pi-daddy",
@@ -8,11 +8,11 @@
     "skill-harness"
   ],
   "publicVersions": {
-    "pi-bookie": "0.9.0",
-    "pi-daddy": "0.63.0",
-    "principal-pi-skills": "4.19.1",
-    "pi-scout-research": "0.4.0",
-    "skill-harness": "0.37.0"
+    "pi-bookie": "1.0.0",
+    "pi-daddy": "1.0.0",
+    "principal-pi-skills": "6.0.0",
+    "pi-scout-research": "1.0.0",
+    "skill-harness": "1.0.0"
   },
   "freshProfile": true
 }
