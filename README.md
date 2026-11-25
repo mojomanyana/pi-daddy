@@ -17,11 +17,11 @@ Or install the pinned package versions directly into Pi (see [the release manife
 
 <!-- verified-beta-install:start -->
 ```bash
-pi install npm:pi-bookie@1.0.1
-pi install npm:pi-daddy@1.0.2
-pi install npm:principal-pi-skills@6.0.1
-pi install npm:pi-scout-research@1.0.1
-pi install npm:skill-harness@1.0.1
+pi install npm:pi-bookie@1.0.0
+pi install npm:pi-daddy@1.0.0
+pi install npm:principal-pi-skills@6.0.0
+pi install npm:pi-scout-research@1.0.0
+pi install npm:skill-harness@1.0.0
 ```
 <!-- verified-beta-install:end -->
 
