@@ -40,22 +40,17 @@ function fixture() {
   };
 }
 
-test("actual native questions appear only while open and one start/end reaches Herdr", () => {
+test("actual native questions appear only while open", () => {
   for (const kind of ["select", "confirm", "input", "editor"]) {
     const f = fixture();
     f.event("ui_prompt_start", kind, "Choose the next task");
     f.event("ui_prompt_start", kind, "Choose the next task"); // duplicated observation
     assert.equal(f.view.snapshot()?.label, "Choose the next task");
-    assert.deepEqual(f.emitted, [{ active: true, label: "Choose the next task" }]);
     f.event("ui_prompt_end", kind, "Another title");
     assert(f.view.snapshot());
     f.event("ui_prompt_end", kind, "Choose the next task"); // answer, Escape, timeout or UI failure
     f.event("ui_prompt_end", kind, "Choose the next task");
     assert.equal(f.view.snapshot(), undefined);
-    assert.deepEqual(
-      f.emitted.map((x) => x.active),
-      [true, false],
-    );
   }
 });
 
@@ -71,19 +66,14 @@ test("custom information, print, RPC and a different owner never become an actio
     sessionManager: { getSessionId: () => "session-b" },
   });
   assert.equal(f.view.snapshot(), undefined);
-  assert.deepEqual(f.emitted, []);
 });
 
-test("new session, reload replacement and shutdown clear only our pending Herdr signal", () => {
+test("new session, reload replacement and shutdown clear pending prompt snapshots", () => {
   const f = fixture();
   f.event("ui_prompt_start", "input", "Name");
   f.replace({ sessionId: "session-b", cwd: "/other" });
   assert.equal(f.view.snapshot(), undefined);
   f.event("ui_prompt_start", "input", "Old callback");
-  assert.deepEqual(
-    f.emitted.map((x) => x.active),
-    [true, false],
-  );
   f.replace({ sessionId: "session-a", cwd: "/work" });
   f.event("ui_prompt_start", "input", "New question");
   f.handlers.get("session_shutdown")?.({}, { ...f.ctx, sessionManager: { getSessionId: () => "old-session" } });
@@ -94,10 +84,6 @@ test("new session, reload replacement and shutdown clear only our pending Herdr 
   f.view.close();
   assert.equal(f.view.snapshot(), undefined);
   assert.equal(f.handlers.size, 0);
-  assert.deepEqual(
-    f.emitted.map((x) => x.active),
-    [true, false, true, false, true, false],
-  );
 });
 
 test("display only bounds and cleans the prompt title and never accepts supplied answers", () => {
