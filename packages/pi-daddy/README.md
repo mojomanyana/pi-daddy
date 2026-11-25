@@ -12,8 +12,8 @@ This file is the product description, present tense. If code and this file disag
 
 ## v1.0 Highlights (Cross-OS, Herdr-Free)
 
-- **One-command setup & diagnostics:** `pi-daddy setup [--preset open-weight|google]` installs all 5 ecosystem packages and writes `~/.pi/agent/ecosystem.json`; `pi-daddy doctor` checks Node, `pi`, `git`, Docker, terminal split support, and config.
-- **5-Tab Terminal & Web Side-Panel Dashboard:** run `/dashboard split` inside Pi (auto-splits tmux, WezTerm, macOS iTerm2, or Windows Terminal) or bare `pi-daddy panel` in a second pane (auto-attaches via per-project locator; zero Herdr dependency).
+- **One-command setup & diagnostics:** `pi-daddy setup [--preset auto|open-weight|google|openrouter|deepseek|anthropic|openai|session]` installs all 5 ecosystem packages and writes `~/.pi/agent/ecosystem.json` (with optional ordered `modelFallbacks` chains); `pi-daddy doctor` checks Node, `pi`, `git`, Docker, detected providers, terminal split support, and config.
+- **5-Tab Terminal & Web Side-Panel Dashboard:** run `/dashboard split` inside Pi (auto-splits tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, or Windows Terminal) or bare `pi-daddy panel` in a second pane (auto-attaches via per-project locator; zero Herdr dependency).
 - **Cross-OS `delegate` (`portable-child.ts` + `inprocess-readonly.ts`):** native sub-agent execution on macOS, Windows, and Linux x64, plus sub-150ms in-process `quick_review`.
 - **Parallel Worktree Tournaments (`delegate_tournament`) & Smart Auto-Escalation:** parallel isolated git-worktree candidates with cold-judge selection, plus 1-shot strong-model rescue on `principal:thrash-detected:v1` or manual `[x]` panel escalation.
 - **`principal-pi-skills@6.x` binding:** validates both v6 3-phase (`build`, `review`, `debug`) and legacy v5 manifests in `principal-agents.json`.

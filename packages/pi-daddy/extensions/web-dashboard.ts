@@ -1,7 +1,7 @@
 /**
  * Standalone /dashboard command + auto-attach locator + Pi TUI live footer (zero Herdr required).
  * Supports 5-tab Terminal Side Panel (`pi-daddy panel`) & Web UI, live steering, usage/cost,
- * Bookie/Scout observations, auto-split (tmux, WezTerm, macOS iTerm2, Windows Terminal), and Escalation.
+ * Bookie/Scout observations, auto-split (tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, Windows Terminal), and Escalation.
  */
 import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -13,6 +13,7 @@ import {
   type WebDashboardState,
   type WebDashboardTask,
 } from "../src/products/web-dashboard.ts";
+import { openTerminalSplit } from "../src/products/terminal-split.ts";
 import {
   loadEcosystemConfig,
   readEcosystemConfig,
@@ -30,45 +31,6 @@ const MAX_EVENTS = 60;
 const MAX_TASKS = 30;
 const OPTIONAL_TOOLS = ["delegate_tournament", "quick_review", "delegate_all", "delegate_chain"] as const;
 const THINKING_ALLOWED = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
-function openTerminalSplit(url: string): boolean {
-  const cmd = `pi-daddy panel ${JSON.stringify(url)}`;
-  try {
-    if (process.env.TMUX) {
-      spawn("tmux", ["split-window", "-h", "-l", "48", cmd], { detached: true, stdio: "ignore" }).unref();
-      return true;
-    }
-    if (process.env.WEZTERM_PANE) {
-      spawn("wezterm", ["cli", "split-pane", "--right", "--percent", "38", "--", "pi-daddy", "panel", url], {
-        detached: true,
-        stdio: "ignore",
-      }).unref();
-      return true;
-    }
-    if (process.platform === "darwin" && process.env.TERM_PROGRAM === "iTerm.app") {
-      const script = [
-        'tell application "iTerm2"',
-        "  tell current session of current window",
-        `    split vertically with default profile command ${JSON.stringify(cmd)}`,
-        "  end tell",
-        "end tell",
-      ].join("\n");
-      spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
-      return true;
-    }
-    if (process.platform === "win32" && process.env.WT_SESSION) {
-      spawn("wt", ["-w", "0", "sp", "-V", "-s", "0.38", "pi-daddy", "panel", url], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      }).unref();
-      return true;
-    }
-  } catch {
-    /* Fall back to printing command. */
-  }
-  return false;
-}
 
 function openInBrowser(url: string): void {
   try {

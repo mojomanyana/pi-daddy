@@ -1,0 +1,105 @@
+/**
+ * Cross-OS terminal split planner & launcher for `/dashboard split` and `pi-daddy doctor`
+ * (Layer 3: products). Supports tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, and Windows Terminal.
+ */
+import { spawn } from "node:child_process";
+
+export type TerminalSplitKind = "tmux" | "wezterm" | "kitty" | "ghostty" | "iterm2" | "wt";
+
+export interface TerminalSplitPlan {
+  readonly kind: TerminalSplitKind;
+  readonly command: string;
+  readonly args: string[];
+  readonly windowsHide?: boolean;
+}
+
+export function planTerminalSplit(
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): TerminalSplitPlan | undefined {
+  const cmd = `pi-daddy panel ${JSON.stringify(url)}`;
+  if (env.TMUX) {
+    return { kind: "tmux", command: "tmux", args: ["split-window", "-h", "-l", "48", cmd] };
+  }
+  if (env.WEZTERM_PANE) {
+    return {
+      kind: "wezterm",
+      command: "wezterm",
+      args: ["cli", "split-pane", "--right", "--percent", "38", "--", "pi-daddy", "panel", url],
+    };
+  }
+  if (env.KITTY_WINDOW_ID || env.KITTY_LISTEN_ON) {
+    const toArgs = env.KITTY_LISTEN_ON ? ["--to", env.KITTY_LISTEN_ON] : [];
+    return {
+      kind: "kitty",
+      command: "kitty",
+      args: ["@", ...toArgs, "launch", "--type=window", "--location=vsplit", "--cwd=current", "pi-daddy", "panel", url],
+    };
+  }
+  if (platform === "darwin" && env.TERM_PROGRAM === "iTerm.app") {
+    const script = [
+      'tell application "iTerm2"',
+      "  tell current session of current window",
+      `    split vertically with default profile command ${JSON.stringify(cmd)}`,
+      "  end tell",
+      "end tell",
+    ].join("\n");
+    return { kind: "iterm2", command: "osascript", args: ["-e", script] };
+  }
+  if (env.TERM_PROGRAM === "ghostty" || env.GHOSTTY_RESOURCES_DIR) {
+    if (platform === "darwin") {
+      return {
+        kind: "ghostty",
+        command: "open",
+        args: ["-na", "Ghostty", "--args", "-e", "pi-daddy", "panel", url],
+      };
+    }
+    return { kind: "ghostty", command: "ghostty", args: ["-e", "pi-daddy", "panel", url] };
+  }
+  if (platform === "win32" && env.WT_SESSION) {
+    return {
+      kind: "wt",
+      command: "wt",
+      args: ["-w", "0", "sp", "-V", "-s", "0.38", "pi-daddy", "panel", url],
+      windowsHide: true,
+    };
+  }
+  return undefined;
+}
+
+export function openTerminalSplit(
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const plan = planTerminalSplit(url, env, platform);
+  if (!plan) return false;
+  try {
+    spawn(plan.command, plan.args, {
+      detached: true,
+      stdio: "ignore",
+      ...(plan.windowsHide ? { windowsHide: true } : {}),
+    }).unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function detectSupportedSplitters(
+  probe: (cmd: string, args: string[]) => boolean,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const splitters: string[] = [];
+  if (env.TMUX || probe("tmux", ["-V"])) splitters.push("tmux");
+  if (env.WEZTERM_PANE || probe("wezterm", ["--version"])) splitters.push("wezterm");
+  if (env.KITTY_WINDOW_ID || env.KITTY_LISTEN_ON || probe("kitty", ["--version"])) splitters.push("kitty");
+  if (env.TERM_PROGRAM === "ghostty" || env.GHOSTTY_RESOURCES_DIR || probe("ghostty", ["--version"])) {
+    splitters.push("ghostty");
+  }
+  if (platform === "darwin") splitters.push("iTerm2 (osascript)");
+  if (platform === "win32" && probe("where", ["wt"])) splitters.push("Windows Terminal (wt)");
+  return splitters;
+}

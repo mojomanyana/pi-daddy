@@ -21,15 +21,24 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { agentDir, userStateDir } from "./project-paths.ts";
 
+export type EcosystemModelTier = "fast" | "work" | "strong";
+
 export interface EcosystemModelsConfig {
   fast?: string;
   work?: string;
   strong?: string;
 }
 
+export interface EcosystemModelFallbacks {
+  fast?: string[];
+  work?: string[];
+  strong?: string[];
+}
+
 export interface EcosystemConfig {
   setupPreset?: { name: string; defaults: EcosystemModelsConfig };
   models?: EcosystemModelsConfig;
+  modelFallbacks?: EcosystemModelFallbacks;
   dashboard?: { autoStart?: boolean; autoSplit?: boolean };
   escalation?: { auto?: boolean };
   scout?: { directUrls?: boolean };
@@ -68,13 +77,22 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
   const record = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
   if (!record(parsed)) throw new Error(`Expected a JSON object in ${file}.`);
-  for (const section of ["models", "dashboard", "escalation", "scout", "bookie", "setupPreset"]) {
+  for (const section of ["models", "modelFallbacks", "dashboard", "escalation", "scout", "bookie", "setupPreset"]) {
     if (section in parsed && !record(parsed[section])) throw new Error(`Expected an object for ${section} in ${file}.`);
   }
   if (record(parsed.models)) {
     for (const tier of ["fast", "work", "strong"]) {
       if (tier in parsed.models && typeof parsed.models[tier] !== "string") {
         throw new Error(`Expected a string for models.${tier} in ${file}.`);
+      }
+    }
+  }
+  if (record(parsed.modelFallbacks)) {
+    for (const tier of ["fast", "work", "strong"]) {
+      if (!(tier in parsed.modelFallbacks)) continue;
+      const list = parsed.modelFallbacks[tier];
+      if (!Array.isArray(list) || !list.every((item) => typeof item === "string" && item.trim().length > 0)) {
+        throw new Error(`Expected an array of non-empty strings for modelFallbacks.${tier} in ${file}.`);
       }
     }
   }
@@ -108,16 +126,62 @@ export function saveEcosystemConfig(config: EcosystemConfig, env: NodeJS.Process
   return file;
 }
 
+export function parseModelSpec(spec: string): { provider: string; modelId: string } | undefined {
+  const trimmed = spec.trim();
+  const idx = trimmed.search(/[/:]/);
+  if (idx < 1) return undefined;
+  const provider = trimmed.slice(0, idx).trim();
+  const modelId = trimmed.slice(idx + 1).trim();
+  return provider && modelId ? { provider, modelId } : undefined;
+}
+
+export function resolveEcosystemModelCandidates(
+  tier: EcosystemModelTier,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const envKey = tier === "fast" ? "PI_ECO_MODEL_FAST" : tier === "work" ? "PI_ECO_MODEL_WORK" : "PI_ECO_MODEL_STRONG";
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (raw: string | undefined) => {
+    const clean = raw?.trim();
+    if (!clean || seen.has(clean)) return;
+    seen.add(clean);
+    out.push(clean);
+  };
+  const fromEnv = env[envKey]?.trim();
+  if (fromEnv) {
+    for (const part of fromEnv.split(",")) push(part);
+  }
+  const cfg = loadEcosystemConfig(env);
+  push(cfg.models?.[tier]);
+  for (const fb of cfg.modelFallbacks?.[tier] ?? []) push(fb);
+  return out;
+}
+
 export function resolveEcosystemModelTier(
-  tier: "fast" | "work" | "strong",
+  tier: EcosystemModelTier,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const envKey = tier === "fast" ? "PI_ECO_MODEL_FAST" : tier === "work" ? "PI_ECO_MODEL_WORK" : "PI_ECO_MODEL_STRONG";
-  const fromEnv = env[envKey]?.trim();
-  if (fromEnv) return fromEnv;
-  const cfg = loadEcosystemConfig(env);
-  const fromFile = cfg.models?.[tier]?.trim();
-  return fromFile || undefined;
+  return resolveEcosystemModelCandidates(tier, env).find((entry) => entry !== "session");
+}
+
+export function selectRegistryModel(
+  registry: { find?(provider: string, modelId: string): unknown } | undefined,
+  candidates: readonly string[],
+  fallback: unknown,
+): { model: unknown; label: string } {
+  for (const candidate of candidates) {
+    if (candidate === "session") break;
+    const parsed = parseModelSpec(candidate);
+    if (!parsed || typeof registry?.find !== "function") continue;
+    const found = registry.find(parsed.provider, parsed.modelId);
+    if (found) return { model: found, label: candidate };
+  }
+  const fb = fallback as { provider?: string; id?: string } | undefined;
+  return {
+    model: fallback,
+    label: fb?.provider && fb?.id ? `${fb.provider}/${fb.id}` : "session-default",
+  };
 }
 
 export function panelLocatorPath(cwd: string, env: NodeJS.ProcessEnv = process.env): string {

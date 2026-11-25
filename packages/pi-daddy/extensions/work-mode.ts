@@ -17,7 +17,12 @@ import {
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
 import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
-import { loadEcosystemConfig, resolveEcosystemModelTier } from "../src/kernel/ecosystem-config.ts";
+import {
+  loadEcosystemConfig,
+  resolveEcosystemModelCandidates,
+  resolveEcosystemModelTier,
+  selectRegistryModel,
+} from "../src/kernel/ecosystem-config.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
 
 export const WORK_MODE_ENTRY = "pi-daddy:work-mode:v1";
@@ -278,16 +283,7 @@ async function runColdDiffReview(
     const trimmed = await collectReviewDiff(ctx.cwd);
     if (!trimmed) return { pass: true };
     const registry = (ctx as any).modelRegistry;
-    let model = (ctx as any).model;
-    const strongSpec = resolveEcosystemModelTier("strong");
-    if (strongSpec && typeof registry?.find === "function") {
-      const sep = strongSpec.includes("/") ? "/" : ":";
-      const idx = strongSpec.indexOf(sep);
-      if (idx > 0) {
-        const found = registry.find(strongSpec.slice(0, idx), strongSpec.slice(idx + 1));
-        if (found) model = found;
-      }
-    }
+    const { model } = selectRegistryModel(registry, resolveEcosystemModelCandidates("strong"), (ctx as any).model);
     if (!model || typeof registry?.streamSimple !== "function") return { pass: true };
     const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
     const reviewPrompt = [
