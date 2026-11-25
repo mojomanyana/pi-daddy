@@ -5,8 +5,10 @@ import { realpath } from "node:fs/promises";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { resolve } from "./resolve.ts";
 import type { DefinitionSource } from "./definition-sources.ts";
+const v6Phases = ["build", "review", "debug"];
 const requiredPhases = ["plan", "build", "review", "debug", "investigate"];
 const phases = [...requiredPhases, "test-review"];
+const validPhaseSets = [v6Phases, requiredPhases, phases];
 const hash = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
 const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const exact = (x: Record<string, unknown>, keys: string[]) =>
@@ -44,7 +46,7 @@ export async function principalBinding(
     manifest.version !== 1 ||
     manifest.package !== "principal-pi-skills" ||
     !object(manifest.bindings) ||
-    !exact(manifest.bindings, Object.hasOwn(manifest.bindings, "test-review") ? phases : requiredPhases)
+    !validPhaseSets.some((set) => exact(manifest.bindings as Record<string, unknown>, set))
   )
     throw Error("invalid Principal binding manifest");
   for (const name of Object.keys(manifest.bindings)) {

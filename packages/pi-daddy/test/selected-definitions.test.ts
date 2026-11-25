@@ -198,3 +198,21 @@ test("selected test-review must have its own exact manifest binding and verified
   assert.equal(result.definitions.size, 0);
   assert.match(result.skips.join(" "), /hash mismatch/);
 });
+
+test("principal-pi-skills v6 3-phase binding manifest (build, review, debug) loads without warnings", async () => {
+  const v6Phases = ["build", "review", "debug"];
+  const { root } = await fixture(v6Phases);
+  const commands = v6Phases.map((phase) => ({
+    source: "skill",
+    name: `skill:${phase}`,
+    sourceInfo: { path: join(root, phase, "SKILL.md") },
+  }));
+  const result = await selectedDefinitions(commands);
+  assert.deepEqual(result.skips, []);
+  assert.deepEqual([...result.definitions.keys()].sort(), ["build", "debug", "review"]);
+  for (const phase of v6Phases) {
+    const def = result.definitions.get(phase)!;
+    assert.equal(def.body, `  EXACT DELEGATED ${phase}  \n`);
+    assert.equal(def.source, join(root, "agents", `principal-${phase}.md`));
+  }
+});
