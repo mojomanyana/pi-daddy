@@ -122,7 +122,6 @@ import {
 } from "../src/products/activity-timeline.ts";
 import { ENV_GOVERNANCE, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
 export { ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
-import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
 /** The activity timeline's per-child observation identity, handed to the kernel through `childEnv` (ADR-0076). */
 export function activityChildEnv(activity: { rootId: string; path: string; taskId?: string } | undefined) {
@@ -156,8 +155,6 @@ export interface GrantsSession extends NativeSessionHost {
   autoModeFailure?: string;
   /** Reconciled from the actual owner root on reload; captured call owners stay immutable. */
   publicEvidence?: PublicEvidenceOwner;
-  /** Legacy PI_GRANTS_* names adopted at construction (ADR-0076 PR 3b); the session-start warning names them. */
-  readonly adoptedLegacyEnv: readonly string[];
   /** False only for the explicit PI_DADDY_GOVERNANCE opt-out; otherwise roots are observed-bound. */
   governed: boolean;
   /** The upper bound handed down by the delegator, before this session's own tools are observed. */
@@ -576,9 +573,6 @@ export function createGrantsSession(
   observerExtensionPath?: string,
   discovery: SessionDiscovery = {},
 ): GrantsSession {
-  // ADR-0076 PR 3b: legacy PI_GRANTS_* names are adopted BEFORE the first environment read and before the
-  // reload snapshot, or an operator on the old names would get an ungoverned wildcard root (review finding).
-  const adoptedLegacyEnv = adoptLegacyEnvironment(process.env);
   const started = lifecycle ? undefined : beginExtensionLifecycle();
   const activeLifecycle = lifecycle ?? started!.lifecycle;
   const environment = lifecycle ? process.env : started!.environment;
@@ -616,7 +610,6 @@ export function createGrantsSession(
   const emptyCatalog = makeCatalog([]);
   const capacityState = capacityForLifecycle(activeLifecycle, environment[ENV_FANOUT]);
   const session: GrantsSession = {
-    adoptedLegacyEnv,
     governed,
     inherited,
     depth,

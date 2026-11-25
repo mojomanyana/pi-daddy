@@ -10,10 +10,18 @@ import {
   type WebDashboardConfigUpdate,
   type WebDashboardEvent,
   type WebDashboardHandle,
+  type WebDashboardHarvestInfo,
   type WebDashboardState,
   type WebDashboardTask,
 } from "../src/products/web-dashboard.ts";
 import { openTerminalSplit } from "../src/products/terminal-split.ts";
+import {
+  classifyHarvestCandidate,
+  createTurnHarvestTracker,
+  hasHarvestSignal,
+  saveHarvestedEval,
+  type HarvestClassifierRegistry,
+} from "../src/products/session-harvest.ts";
 import {
   loadEcosystemConfig,
   readEcosystemConfig,
@@ -77,6 +85,8 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   let cacheReadTokens = 0;
   let costUsd = 0;
   let turns = 0;
+  let harvestInfo: WebDashboardHarvestInfo | undefined;
+  const harvestTracker = createTurnHarvestTracker();
   const recent: WebDashboardEvent[] = [];
   const tasks: WebDashboardTask[] = [];
 
@@ -117,6 +127,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       memoryLines,
       researchLines,
       recentEvents: recent,
+      ...(harvestInfo ? { harvest: harvestInfo } : {}),
     };
   };
 
@@ -195,6 +206,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         const send = (pi as { sendUserMessage?: (c: string, o?: { deliverAs?: "steer" | "followUp" }) => void })
           .sendUserMessage;
         if (typeof send !== "function") throw new Error("Pi sendUserMessage unavailable");
+        if (deliverAs === "steer") harvestTracker.markUserSteer();
         send(message, { deliverAs });
         record(deliverAs, message);
       },
@@ -205,9 +217,32 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       },
       onConfigChange: applyConfig,
       onEscalate: (reason) => {
+        harvestTracker.markEscalated();
         recordTask("escalate", "requested", reason ?? "manual escalation");
         pi.events?.emit("pi-daddy:escalate-request:v1", { reason: reason ?? "panel" });
         record("escalate", reason ?? "manual escalation");
+      },
+      onHarvest: (reason) => {
+        const cwd = lastCtx?.cwd ?? session.cwd;
+        const sessionFile = (
+          lastCtx as { sessionManager?: { getSessionFile?: () => string | undefined } } | undefined
+        )?.sessionManager?.getSessionFile?.();
+        const saved = saveHarvestedEval({
+          cwd,
+          scenarioId: harvestInfo?.scenarioId || "manual-session-harvest",
+          signals: harvestTracker.snapshot(),
+          reason: reason ?? harvestInfo?.reason,
+          sessionFile,
+        });
+        harvestInfo = {
+          scenarioId: saved.scenarioId,
+          reason: harvestInfo?.reason ?? reason ?? "operator-harvested",
+          confidence: harvestInfo?.confidence ?? 1,
+          savedPath: saved.path,
+        };
+        recordTask("harvest", "saved", `${saved.scenarioId} (${saved.via})`);
+        record("harvest", saved.path ?? saved.scenarioId);
+        return saved;
       },
     });
     const cwd = lastCtx?.cwd ?? session.cwd;
@@ -250,6 +285,15 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
     }
   });
+  pi.events?.on?.("principal:thrash-detected:v1", (payload: unknown) => {
+    const p = payload as { command?: string; signature?: string } | undefined;
+    harvestTracker.markThrash(`${p?.command ?? "check"}: ${p?.signature ?? "thrash"}`);
+  });
+  pi.events?.on?.("pi-daddy:escalate-request:v1", () => harvestTracker.markEscalated());
+  pi.events?.on?.("pi-daddy:review-blocker:v1", (payload: unknown) => {
+    harvestTracker.markReviewBlocker((payload as { feedback?: string } | undefined)?.feedback);
+  });
+  pi.on("before_agent_start", (ev) => harvestTracker.reset(String((ev as { prompt?: string }).prompt ?? "")));
   pi.on("agent_start", (_ev, ctx) => {
     busy = true;
     record("agent", "run started", ctx);
@@ -274,13 +318,16 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     }
   });
   pi.on("tool_execution_start", (ev, ctx) => {
-    const name = String((ev as { toolName?: string }).toolName ?? "tool");
+    const row = ev as { toolName?: string; args?: Record<string, unknown> };
+    const name = String(row.toolName ?? "tool");
+    harvestTracker.observeToolStart(name, row.args);
     if (name.startsWith("delegate") || name === "quick_review") recordTask(name, "running", "dispatched");
     record("tool:start", name, ctx);
   });
   pi.on("tool_execution_end", (ev, ctx) => {
     const row = ev as { toolName?: string; isError?: boolean };
     const name = row.toolName ?? "tool";
+    harvestTracker.observeToolEnd(row.isError);
     if (name.startsWith("delegate") || name === "quick_review") {
       recordTask(name, row.isError ? "error" : "done", row.isError ? "failed" : "completed");
     }
@@ -289,6 +336,47 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   pi.on("agent_settled", (_ev, ctx) => {
     busy = false;
     record("agent", "settled", ctx);
+    if (session.depth !== 0) return;
+    const cfg = loadEcosystemConfig();
+    const mode = cfg.harvest?.mode ?? "auto";
+    if (mode === "off") return;
+    const signals = harvestTracker.snapshot();
+    if (!hasHarvestSignal(signals)) return;
+    const registry = (ctx as unknown as { modelRegistry?: HarvestClassifierRegistry }).modelRegistry;
+    const fallbackModel = (ctx as unknown as { model?: unknown }).model;
+    const sessionFile = (
+      ctx as unknown as { sessionManager?: { getSessionFile?: () => string | undefined } }
+    ).sessionManager?.getSessionFile?.();
+    void classifyHarvestCandidate({
+      signals,
+      registry,
+      fallbackModel,
+      minConfidence: cfg.harvest?.minConfidence ?? 0.75,
+    })
+      .then((decision) => {
+        if (!decision.harvest) return;
+        if (mode === "auto") {
+          const saved = saveHarvestedEval({
+            cwd: ctx.cwd,
+            scenarioId: decision.scenarioId,
+            signals,
+            reason: decision.reason,
+            sessionFile,
+          });
+          harvestInfo = {
+            scenarioId: saved.scenarioId,
+            reason: decision.reason,
+            confidence: decision.confidence,
+            savedPath: saved.path,
+          };
+          recordTask("harvest", "auto-saved", `${saved.scenarioId} (${Math.round(decision.confidence * 100)}%)`);
+          record("harvest", `auto-saved ${saved.scenarioId}`, ctx);
+        } else {
+          harvestInfo = { scenarioId: decision.scenarioId, reason: decision.reason, confidence: decision.confidence };
+          record("harvest", `candidate ${decision.scenarioId} — press [h] to save`, ctx);
+        }
+      })
+      .catch(() => {});
   });
   pi.on("session_shutdown", async () => {
     const current = handle;

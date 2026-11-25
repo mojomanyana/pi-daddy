@@ -343,6 +343,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     );
     const send = (pi as any).sendUserMessage;
     if (!verdict.pass && verdict.feedback && typeof send === "function") {
+      pi.events?.emit?.("pi-daddy:review-blocker:v1", { feedback: verdict.feedback.slice(0, 400) });
       send(
         `[Strong-model escalation (${strongSpec}) — ${reason}]:\n\n${verdict.feedback}\n\nApply this fix directly and re-verify.`,
         { deliverAs: "steer", expandPromptTemplates: false },

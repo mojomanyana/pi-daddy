@@ -35,7 +35,7 @@ import {
   dashboardSessionRequest,
   type DashboardSessionSnapshot,
 } from "./dashboard-session-client.ts";
-import { adoptLegacyEnvironment, ENV_LEDGER, legacyEnvironmentWarning } from "../kernel/env-names.ts";
+import { ENV_LEDGER } from "../kernel/env-names.ts";
 import { projectLedgerPath } from "../kernel/project-paths.ts";
 import {
   activityDashboardItems,
@@ -349,8 +349,6 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 export async function runDashboard(argv = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const adoptedLegacy = adoptLegacyEnvironment(env);
-  if (adoptedLegacy.length > 0) console.error(legacyEnvironmentWarning(adoptedLegacy));
   const cli = parseArgs(argv);
   const cwd = process.cwd();
   const ledgerPath = cli.ledgerPath ?? (env[ENV_DASHBOARD_LEDGER]?.trim() || undefined);

@@ -1,15 +1,8 @@
 /**
- * Every environment variable this package reads or writes, in one place (ADR-0076 PR 3b).
+ * Every environment variable this package reads or writes, in one place (ADR-0076).
  *
- * Two namespaces existed before: `PI_GRANTS_*` for governance and `PI_DADDY_*` for products. Everything is
- * `PI_DADDY_*` now. The kernel's `childEnv` hook used to refuse product-supplied keys by prefix; with one
- * prefix it refuses by the closed list below, so the list must name every variable that shapes governance.
- * `test/env-names.test.ts` forces that: every key the planner writes into a child's environment must be in
- * GOVERNANCE_ENV_KEYS, and no `PI_GRANTS_` literal may survive anywhere except the legacy table here.
- *
- * Legacy names are adopted once per process (`adoptLegacyEnvironment`) so an operator's `export
- * PI_GRANTS_HERDR=1` keeps working for one minor release with a visible warning; the new name always wins
- * when both are set. Children are spawned with the new names only.
+ * Everything uses `PI_DADDY_*`. `test/env-names.test.ts` enforces that every key the planner
+ * writes into a child's environment is in `GOVERNANCE_ENV_KEYS` and no retired prefix survives.
  */
 
 // Governance state pushed at a child by the spawn plan. Stripped from the parent's environment first, so a
@@ -140,53 +133,3 @@ export const GOVERNANCE_ENV_KEYS: readonly string[] = Object.freeze([
   ENV_ADVISOR_MODEL,
   ENV_ADVISOR_TASK_EGRESS,
 ]);
-
-/**
- * The names retired by ADR-0076 PR 3b, old → new. Read for one minor release, never written. Test-tier
- * switches (`PI_GRANTS_IT_MODEL`, `PI_GRANTS_KEEP_TMP`) are included so an operator's shell keeps working.
- */
-export const LEGACY_ENV_NAMES: Readonly<Record<string, string>> = Object.freeze({
-  PI_GRANTS_GRANT: ENV_GRANT,
-  PI_GRANTS_DEPTH: ENV_DEPTH,
-  PI_GRANTS_MAX_DEPTH: ENV_MAX_DEPTH,
-  PI_GRANTS_GATED: ENV_GATED,
-  PI_GRANTS_LEDGER: ENV_LEDGER,
-  PI_GRANTS_APPROVED: ENV_APPROVED,
-  PI_GRANTS_FANOUT: ENV_FANOUT,
-  PI_GRANTS_PARENT_ID: ENV_PARENT_ID,
-  PI_GRANTS_EXECUTION_ID: ENV_EXECUTION_ID,
-  PI_GRANTS_CHILD_TIMEOUT: ENV_CHILD_TIMEOUT,
-  PI_GRANTS_APPROVAL_TIMEOUT: ENV_APPROVAL_TIMEOUT,
-  PI_GRANTS_ALLOW_UNRESOLVED_MODELS: ENV_ALLOW_UNRESOLVED_MODELS,
-  PI_GRANTS_WORKSPACE_REGISTRY: ENV_WORKSPACE_REGISTRY,
-  PI_GRANTS_WORKSPACE_LEASE_DIR: ENV_WORKSPACE_LEASE_DIR,
-  PI_GRANTS_EXECUTION_ARCHIVE: ENV_EXECUTION_ARCHIVE,
-  PI_GRANTS_NATIVE_SESSION_ROOT: ENV_NATIVE_SESSION_ROOT,
-  PI_GRANTS_RETAIN_NATIVE_SESSIONS: ENV_RETAIN_NATIVE_SESSIONS,
-  PI_GRANTS_IT_MODEL: "PI_DADDY_IT_MODEL",
-  PI_GRANTS_KEEP_TMP: "PI_DADDY_KEEP_TMP",
-});
-
-/**
- * Copy each legacy variable to its new name when the new name is absent. Returns the legacy names adopted,
- * so the caller can warn once. Never overwrites a value set under the new name, and never deletes the old
- * one (a sibling process of an older release may still read it).
- */
-export function adoptLegacyEnvironment(env: NodeJS.ProcessEnv): string[] {
-  const adopted: string[] = [];
-  for (const [legacy, current] of Object.entries(LEGACY_ENV_NAMES)) {
-    if (env[legacy] !== undefined && env[current] === undefined) {
-      env[current] = env[legacy];
-      adopted.push(legacy);
-    }
-  }
-  return adopted;
-}
-
-/** The one-line warning shown when legacy names were adopted. */
-export function legacyEnvironmentWarning(adopted: readonly string[]): string {
-  return (
-    `pi-daddy: ${adopted.join(", ")} ${adopted.length === 1 ? "is" : "are"} deprecated since ADR-0076 PR 3b; ` +
-    `rename to ${adopted.map((n) => LEGACY_ENV_NAMES[n]).join(", ")}. Legacy names are read for one minor release only.`
-  );
-}

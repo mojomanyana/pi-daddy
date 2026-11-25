@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { REFUSAL_CODES } from "../src/kernel/refusals.ts";
-import { GOVERNANCE_ENV_KEYS, LEGACY_ENV_NAMES } from "../src/kernel/env-names.ts";
+import { GOVERNANCE_ENV_KEYS } from "../src/kernel/env-names.ts";
 import { ENV_ACTIVITY_CONTENT, ENV_ACTIVITY_TIMELINE } from "../src/products/activity-timeline.ts";
 
 /**
@@ -150,9 +150,6 @@ test("every environment variable the documents name is a current one, and no leg
     "PI_DADDY_IT_MODEL",
     "PI_DADDY_NATIVE_SESSION_PACKAGE",
     "PI_DADDY_KEEP_TMP",
-    "PI_DADDY_IT_JEV",
-    // The handoff probe's corpus. A test-tier switch like the others: it governs no behaviour and is read
-    // only by `test-integration/pruned-handoff-probe.it.ts`.
     "PI_DADDY_PROBE_SESSIONS",
   ]);
   const unknown: string[] = [];
@@ -160,7 +157,7 @@ test("every environment variable the documents name is a current one, and no leg
   for (const doc of await documents()) {
     for (const match of doc.checked.matchAll(/\bPI_(?:DADDY|GRANTS)_[A-Z_]+\b/g)) {
       const name = match[0];
-      if (Object.hasOwn(LEGACY_ENV_NAMES, name)) legacy.push(`${doc.name}: ${name}`);
+      if (name.startsWith("PI_GRANTS_")) legacy.push(`${doc.name}: ${name}`);
       else if (!current.has(name)) unknown.push(`${doc.name}: ${name}`);
     }
   }

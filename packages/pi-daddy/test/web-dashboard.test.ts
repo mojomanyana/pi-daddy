@@ -15,6 +15,7 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
   let thinking = "low";
   const steered: Array<{ message: string; deliverAs: string }> = [];
   const escalations: string[] = [];
+  const harvests: string[] = [];
   const activeTools = new Set(["read", "bash", "edit", "write", "delegate"]);
   const modelTiers = { fast: "", work: "", strong: "" };
 
@@ -66,6 +67,10 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
     onEscalate: (reason) => {
       escalations.push(reason ?? "manual");
     },
+    onHarvest: (reason) => {
+      harvests.push(reason ?? "manual");
+      return { saved: true, scenarioId: "auth-fix", path: "/tmp/spec.yaml" };
+    },
   });
   try {
     assert.equal((await fetch(`http://127.0.0.1:${handle.port}/api/state`)).status, 403);
@@ -97,10 +102,15 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
     );
     assert.equal((await post("/api/escalate", { reason: "thrash" })).status, 200);
     assert.deepEqual(escalations, ["thrash"]);
+    const harvestResp = await post("/api/harvest", { reason: "panel" });
+    assert.equal(harvestResp.status, 200);
+    assert.equal(((await harvestResp.json()) as { scenarioId?: string }).scenarioId, "auth-fix");
+    assert.deepEqual(harvests, ["panel"]);
 
-    // Verify all 5 terminal side-panel tabs render cleanly
+    // Verify all 5 terminal side-panel tabs render cleanly (including [h] harvest key)
     const s = makeState();
     assert.match(renderTerminalPanel(s, "ok", 80, 1), /\$0\.0123.*75% cache/);
+    assert.match(renderTerminalPanel(s, "ok", 80, 1), /\[h\] harvest/);
     assert.match(renderTerminalPanel(s, "ok", 80, 2), /delegate_tournament/);
     assert.match(renderTerminalPanel(s, "ok", 80, 3), /Bookie memory/);
     assert.match(renderTerminalPanel(s, "ok", 80, 4), /Scout brief/);
