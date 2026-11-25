@@ -154,8 +154,6 @@ const LIFECYCLE_FIELDS = [
   "exportedEnvironment",
   "definitionHash",
   "definitionPackageVersion",
-  "herdrPaneId",
-  "herdrAgentName",
   "exitCode",
   "signal",
   "timedOut",
@@ -499,10 +497,8 @@ test("every v3 builder emits explicit execution identity, including a running He
     parentExecutionId: null,
     childId: "d0.1",
     state: "running",
-    executor: "herdr",
+    executor: "process",
     deadlineAt: "2026-08-28T12:10:00.000Z",
-    herdrPaneId: "w1:p2",
-    herdrAgentName: "review-d0-1",
     now,
   });
   for (const event of [decision, lease, costGate, lifecycle]) {

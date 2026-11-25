@@ -20,7 +20,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GovernanceRefusal, refusal } from "../kernel/refusals.ts";
 import type { ValidatedWorkspace, WorkspaceAccess } from "../kernel/workspace.ts";
-import { assertCloseBounds, HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
+import { HELPER_SOURCE, LEASE_READY, unrefStream } from "./lease-helper.ts";
 import { acquirePortableWriterLease } from "./portable-lease.ts";
 import { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
 export { ENV_WORKSPACE_LEASE_DIR } from "../kernel/env-names.ts";
@@ -74,17 +74,7 @@ export async function acquireWorkspaceLease(input: {
   signal?: AbortSignal;
   flockCommand?: string;
   acquisitionTimeoutMs?: number;
-  /**
-   * Bound on how long ONE `herdr tab close` attempt may take before it counts as failed (R-146). A hung
-   * herdr is not a failed herdr: without this the attempt never returns and the retry bound below is
-   * unreachable.
-   */
-  herdrCloseTimeoutMs?: number;
-  /** Bound on the helper's `herdr tab close` retries before it releases the lock anyway (R-102). */
-  herdrCloseAttempts?: number;
 }): Promise<WorkspaceLease> {
-  // Before the read-lease return, so both paths are validated (R-152).
-  assertCloseBounds(input);
   if (input.access === "read") {
     return {
       workspace: input.workspace,
@@ -93,13 +83,9 @@ export async function acquireWorkspaceLease(input: {
       recovered: false,
       attachProcess: () => {},
       attachCapturedWorker: async () => {},
-      attachHerdrTab: () => {},
-      // A read lease took no kernel lock, so there is nothing to keep: `not-held` is the same answer
-      // `release()` gives, and it is the truth rather than a retention that never happened (R-152).
       markRetained: async () => "not-held" as const,
       readCloseFailure: async () => null,
       lost: new Promise(() => {}),
-      // No kernel lock was ever taken, so there is no handover to claim (R-105, release side).
       release: async () => "not-held",
     };
   }
@@ -136,8 +122,6 @@ export async function acquireWorkspaceLease(input: {
       env: {
         ...process.env,
         PI_DADDY_LEASE_MARKER: paths.marker,
-        PI_DADDY_LEASE_CLOSE_ATTEMPTS: String(input.herdrCloseAttempts ?? 10),
-        PI_DADDY_LEASE_CLOSE_TIMEOUT_MS: String(input.herdrCloseTimeoutMs ?? 15_000),
       },
       // Own process group, for two reasons. It lets teardown kill `flock` AND the helper holding the lock
       // file descriptor as one unit even before the helper has reported its pid (R-99), and it stops a
@@ -308,7 +292,7 @@ export async function acquireWorkspaceLease(input: {
     if (!releasing) lose(lostError());
   });
   if (holder.exitCode !== null || holder.signalCode !== null) queueMicrotask(() => lose(lostError()));
-  const attach = (value: { process_pid: number } | { herdr_tab: string }) => {
+  const attach = (value: { process_pid: number }) => {
     if (releasing || holder.exitCode !== null || holder.signalCode !== null || !holder.stdin?.writable) {
       throw new GovernanceRefusal(
         refusal(
@@ -348,9 +332,6 @@ export async function acquireWorkspaceLease(input: {
     },
     attachProcess(pid) {
       attach({ process_pid: pid });
-    },
-    attachHerdrTab(tabId) {
-      attach({ herdr_tab: tabId });
     },
     lost,
     async markRetained(reason = "retained") {
@@ -426,7 +407,7 @@ export async function acquireWorkspaceLease(input: {
     },
     async readCloseFailure() {
       try {
-        return JSON.parse(await readFile(paths.marker, "utf8")) as { reason: string; herdr_tab?: string };
+        return JSON.parse(await readFile(paths.marker, "utf8")) as { reason: string };
       } catch {
         return null;
       }

@@ -60,7 +60,7 @@ export interface LedgerReport {
    * `unknown` counts pre-0.16 lines, which have no such field. Reported rather than folded into `process`,
    * because "written before the executor was recorded" and "ran as a subprocess" are different facts.
    */
-  executors: { herdr: number; process: number; unknown: number };
+  executors: { process: number; unknown: number };
   /**
    * Every distinct set of instructions this ledger saw run, with how many spawns used it (R-51).
    *
@@ -208,7 +208,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         retired: 0,
         corrupt: [],
         escalationAttempts: 0,
-        executors: { herdr: 0, process: 0, unknown: 0 },
+        executors: { process: 0, unknown: 0 },
         definitions: [],
         approvals: {
           bySource: { prompt: 0, session: 0, persisted: 0, inherited: 0, auto: 0 },
@@ -242,7 +242,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   const lifecycle = { starting: 0, running: 0, completed: 0, failed: 0 };
   let retired = 0;
   let escalationAttempts = 0;
-  const executors = { herdr: 0, process: 0, unknown: 0 };
+  const executors = { process: 0, unknown: 0 };
   const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0, auto: 0 };
   // `capability@subject` seen per source, so the report can state a bound as well as a raw count.
   const distinct: Record<ApprovalSource, Set<string>> = {
@@ -319,8 +319,7 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
       events += 1;
       if (isEscalationAttempt(parsed)) escalationAttempts += 1;
       const executor = (parsed as { executor?: unknown }).executor;
-      if (executor === "herdr") executors.herdr += 1;
-      else if (executor === "process") executors.process += 1;
+      if (executor === "process") executors.process += 1;
       else executors.unknown += 1;
       if (parsed.humanDenied) {
         humanDenied += 1;

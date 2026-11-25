@@ -36,7 +36,6 @@ import {
   withObservedUsage,
 } from "../src/executors/child-usage.ts";
 import { childUsageReport, registerChildUsageReport } from "../extensions/child-usage-report.ts";
-import { ENV_HERDR } from "../src/executors/executor.ts";
 import { appendRecord } from "../src/governance/record.ts";
 import { buildChildLifecycleEvent, type ChildUsageTotals } from "../src/governance/ledger-events.ts";
 import { ENV_CHILD_IDLE_TIMEOUT, ENV_CHILD_TIMEOUT } from "../src/kernel/run-child.ts";
@@ -626,7 +625,6 @@ const KEYS = [
   ENV_GATED,
   ENV_LEDGER,
   ENV_FANOUT,
-  ENV_HERDR,
   ENV_CHILD_TIMEOUT,
   ENV_REPLAY_RETRY,
 ];
@@ -649,7 +647,6 @@ async function harness(script: string, env: Record<string, string> = {}) {
   for (const key of KEYS) delete process.env[key];
   const ledger = join(dir, "grants.jsonl");
   Object.assign(process.env, {
-    [ENV_HERDR]: "0",
     [ENV_GRANT]: "tool:read,tool:delegate",
     [ENV_FANOUT]: "4",
     [ENV_LEDGER]: ledger,

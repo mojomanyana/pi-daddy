@@ -77,7 +77,7 @@ test("real session Auto ON/OFF audit writes remain valid ledger history without 
     assert.equal(report.events, 2);
     assert.equal(report.records, 0);
     assert.equal(report.retired, 0);
-    assert.deepEqual(report.executors, { herdr: 0, process: 0, unknown: 0 });
+    assert.deepEqual(report.executors, { process: 0, unknown: 0 });
     assert.deepEqual(report.lifecycle, { starting: 0, running: 0, completed: 0, failed: 0 });
     assert.ok(Object.values(report.approvals.bySource).every((count) => count === 0));
     assert.ok(Object.values(report.approvals.distinctBySource).every((count) => count === 0));

@@ -55,7 +55,6 @@ const REPO_SEGMENTS = new Set([
   "packages",
   "docs",
   "hooks",
-  "herdr-plugin",
   ".github",
 ]);
 

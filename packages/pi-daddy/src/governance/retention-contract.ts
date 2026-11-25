@@ -38,7 +38,7 @@ export const RETENTION_SCHEMA = freeze({
       parentExecutionId: nullable(string()),
       childId: string(),
       toolCallId: nullable(string()),
-      executor: { enum: ["process", "herdr", "check"] },
+      executor: { enum: ["process", "check"] },
       taskDigest: nullable(hash),
       definitionDigest: nullable(hash),
       configurationDigest: hash,
@@ -54,7 +54,7 @@ export const RETENTION_SCHEMA = freeze({
       branchLeafId: nullable(string(128)),
     }),
     nativeSession: closed({
-      source: { enum: [null, "herdr-id", "herdr-path", "pi-session-file", "pi-session-manager", "pi-captured-final"] },
+      source: { enum: [null, "pi-session-file", "pi-session-manager", "pi-captured-final"] },
       status: { enum: ["missing", "verified", "invalid", "changed", "truncated", "unsupported"] },
       sessionId: nullable(uuid),
       sessionPath: nullable(string(4096)),

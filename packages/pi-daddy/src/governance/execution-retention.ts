@@ -37,7 +37,7 @@ export interface RetentionIdentity {
   parentExecutionId: string | null;
   childId: string;
   toolCallId: string | null;
-  executor: "process" | "herdr" | "check";
+  executor: "process" | "check";
   taskDigest: string | null;
   definitionDigest: string | null;
   configurationDigest: string;
@@ -156,7 +156,7 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
   let nativeTask: Promise<void> | undefined;
   let nextNative:
     | {
-        source: "herdr-id" | "herdr-path" | "pi-session-file" | "pi-session-manager" | "pi-captured-final";
+        source: "pi-session-file" | "pi-session-manager" | "pi-captured-final";
         value: string;
         manager?: NativeSessionManager;
         capturedBranch?: CapturedSessionBranch;
@@ -246,25 +246,14 @@ export function beginExecutionRetention(identity: RetentionIdentity, directory =
         while (nextNative) {
           const current = nextNative;
           nextNative = undefined;
-          const captured: NativeSessionCapture =
-            current.source === "herdr-id"
-              ? {
-                  observation: {
-                    ...missingNativeSession(),
-                    source: current.source,
-                    status: "missing" as const,
-                    sessionId: current.value,
-                    reason: "native-session-path-unavailable",
-                  },
-                }
-              : await readNativeSession({
-                  path: current.value,
-                  source: current.source,
-                  manager: current.manager,
-                  capturedBranch: current.capturedBranch,
-                  expectedSessionId: pinnedSessionId,
-                  expectedFile: pinnedFile,
-                });
+          const captured: NativeSessionCapture = await readNativeSession({
+            path: current.value,
+            source: current.source,
+            manager: current.manager,
+            capturedBranch: current.capturedBranch,
+            expectedSessionId: pinnedSessionId,
+            expectedFile: pinnedFile,
+          });
           if (captured.observation.sessionId && captured.fileIdentity) pinnedFile ??= captured.fileIdentity;
           let observation = captured.observation;
           if (pinnedSessionId && observation.sessionId && pinnedSessionId !== observation.sessionId) {

@@ -137,9 +137,6 @@ export interface ChildLifecycleEvent extends LedgerEventBase {
   executor: ExecutorKind;
   /** Bound after which a non-terminal start is known to be incomplete. */
   deadlineAt?: string;
-  /** Herdr runtime identity is observational and never an enforcement boundary. */
-  herdrPaneId?: string;
-  herdrAgentName?: string;
   exitCode?: number | null;
   signal?: ChildProcessSignal | null;
   timedOut?: true;
@@ -365,8 +362,6 @@ export function buildChildLifecycleEvent(args: {
   executor: ExecutorKind;
   deadlineAt?: string;
   idleTimeoutMs?: number;
-  herdrPaneId?: string;
-  herdrAgentName?: string;
   exitCode?: number | null;
   signal?: ChildProcessSignal | null;
   timedOut?: boolean;
@@ -403,8 +398,6 @@ export function buildChildLifecycleEvent(args: {
     executor: args.executor,
     ...(args.deadlineAt ? { deadlineAt: args.deadlineAt } : {}),
     ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
-    ...(args.herdrPaneId ? { herdrPaneId: args.herdrPaneId } : {}),
-    ...(args.herdrAgentName ? { herdrAgentName: args.herdrAgentName } : {}),
     ...(args.exitCode !== undefined ? { exitCode: args.exitCode } : {}),
     ...(args.signal !== undefined ? { signal: args.signal } : {}),
     ...(args.timedOut ? { timedOut: true } : {}),

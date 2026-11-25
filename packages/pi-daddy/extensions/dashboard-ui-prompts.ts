@@ -35,7 +35,7 @@ export function registerDashboardPrompts(pi: ExtensionAPI, current: () => Dashbo
     ordinal = 0;
   const publish = (active: boolean, label?: string) => {
     try {
-      pi.events?.emit?.("herdr:blocked", { active, ...(label ? { label } : {}) });
+      // No-op: standalone dashboard reads blocked state directly from session hooks.
     } catch {
       /* Display failure cannot change a dialog or its permission result. */
     }

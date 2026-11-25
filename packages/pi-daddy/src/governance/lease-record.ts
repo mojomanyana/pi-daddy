@@ -41,7 +41,6 @@ export interface WorkspaceLease {
   attachProcess(pid: number): void;
   /** Persist exact gated-worker ownership before its command may execute. */
   attachCapturedWorker(identity: CapturedWorkerIdentity): Promise<void>;
-  attachHerdrTab(tabId: string): void;
   /** Resolves only when the kernel-lock helper exits before explicit release. */
   lost: Promise<Error>;
   /**
@@ -65,8 +64,7 @@ export interface WorkspaceLease {
    * fact `lost`, and a lease already settled by `release()` keeps the outcome it had.
    */
   markRetained(reason?: string): Promise<LeaseReleaseOutcome>;
-  /** Reads the give-up marker the helper leaves when it could not close a herdr writer tab. */
-  readCloseFailure(): Promise<{ reason: string; herdr_tab?: string } | null>;
+  readCloseFailure(): Promise<{ reason: string } | null>;
 }
 
 /**

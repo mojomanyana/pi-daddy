@@ -39,7 +39,7 @@ import { DELEGATE_CAPABILITY, type DelegationContext } from "../src/kernel/deleg
 import { capacityForLifecycle } from "./session-capacity.ts";
 import type { CapacityAllocator } from "../src/kernel/capacity.ts";
 import type { StructuredRefusal } from "../src/kernel/refusals.ts";
-import { chooseExecutor, ENV_HERDR, type ExecutorChoice } from "../src/executors/executor.ts";
+import { chooseExecutor, type ExecutorChoice } from "../src/executors/executor.ts";
 import { WILDCARD } from "../src/kernel/pi-tools.ts";
 import {
   childEnv,
@@ -114,27 +114,14 @@ export interface SessionDiscovery extends CatalogLoaders {
  * The table itself is a pure function in `src/executors/executor.ts`; re-exported here because this is where every
  * other `PI_DADDY_*` name lives and a reader looking for it will look here.
  */
-export { ENV_HERDR } from "../src/executors/executor.ts";
-/**
- * herdr workspace for spawned panes — re-exported from where it is actually READ.
- *
- * It was declared here and read nowhere: `resolveWorkspace` reads the string literal, so the constant and the
- * literal could drift with nothing binding them. Re-exporting the single definition keeps this the place a reader
- * looks for a `PI_DADDY_*` name without letting two spellings exist.
- *
- * Omitting the variable no longer means "let herdr choose": it falls back to the parent's own
- * `HERDR_WORKSPACE_ID`, because a child in a different workspace from the session that spawned it makes switching
- * to it a workspace hop (ADR-0032). This name is the operator's explicit override.
- */
-export { ENV_HERDR_WORKSPACE } from "../src/executors/herdr-cli.ts";
 import {
   ENV_ACTIVITY_PARENT_TASK,
   ENV_ACTIVITY_PATH,
   ENV_ACTIVITY_ROOT,
   ENV_ACTIVITY_TASK,
 } from "../src/products/activity-timeline.ts";
-import { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
-export { ENV_HERDR_KEEP_PANE, ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
+import { ENV_GOVERNANCE, ENV_EPISODE_ID } from "../src/kernel/env-names.ts";
+export { ENV_GOVERNANCE } from "../src/kernel/env-names.ts";
 import { adoptLegacyEnvironment } from "../src/kernel/env-names.ts";
 
 /** The activity timeline's per-child observation identity, handed to the kernel through `childEnv` (ADR-0076). */
@@ -653,7 +640,7 @@ export function createGrantsSession(
     // The un-probed reading. `resolveExecutor` replaces it at session start; until then a `1` already reads as
     // a refusal, which is the safe direction — a delegation that somehow ran before the probe would refuse
     // rather than quietly use the wrong executor.
-    executor: chooseExecutor(environment[ENV_HERDR], null),
+    executor: chooseExecutor(),
     // `ownSpawnId` comes from the parent (F8), so ids form one tree across process boundaries instead of
     // every level restarting at `d0` and the ledger becoming unjoinable.
     ownSpawnId: environment[ENV_PARENT_ID]?.trim() || `d${depth}`,
@@ -728,7 +715,7 @@ export function createGrantsSession(
         definitions: session.definitions,
         // Plan the real terminal invocation explicitly; the captured backend remains one-shot JSON.
         // Read the selected executor at dispatch, after its live qualification completes.
-        interactive: session.executor.kind === "herdr",
+        interactive: false,
         ...(approved ? { approved } : {}),
       };
     },

@@ -146,8 +146,8 @@ function elapsed(child: ChildProgress, now: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export function renderProgress(children: ChildProgress[], executorKind: "herdr" | "process", now: number): string {
-  const where = executorKind === "herdr" ? "herdr panes" : "captured subprocesses";
+export function renderProgress(children: ChildProgress[], _executorKind: "process", now: number): string {
+  const where = "captured subprocesses";
   const lines = [`${children.length} ${children.length === 1 ? "child" : "children"} · ${where}`, ""];
 
   for (const child of children) {

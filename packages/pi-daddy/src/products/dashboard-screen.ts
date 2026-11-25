@@ -170,7 +170,6 @@ export function ledgerDashboardItems(projection: DashboardProjection): Dashboard
         ? [`Workspace: ${node.workspace.id} (${node.workspace.access})`, `Root: ${node.workspace.root}`]
         : ["Workspace binding: none recorded"]),
       `Last lifecycle event: ${node.updatedAt}`,
-      ...(node.runtime?.herdrPaneId ? [`Pane: ${node.runtime.herdrPaneId}`] : []),
       ...(node.correlation?.phase ? [`Phase: ${node.correlation.phase}`] : []),
       ...(node.executor ? [`Executor: ${node.executor}`] : []),
     ],

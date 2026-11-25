@@ -92,7 +92,7 @@ export interface SessionFacts {
   /** The automatic retry of replay-safe children is on (`PI_DADDY_REPLAY_RETRY`); omitted means on. */
   replayRetry?: boolean;
   /** Where children run: Herdr panes are never retried (2026-11-17). Omitted means the process executor. */
-  executor?: "process" | "herdr";
+  executor?: "process";
 }
 
 /**

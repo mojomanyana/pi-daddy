@@ -164,18 +164,8 @@ export * from "./governance/lease-record.ts";
 export * from "./governance/file-lock.ts";
 export * from "./governance/init.ts";
 export * from "./executors/executor.ts";
-export * from "./executors/herdr-cli.ts";
-export * from "./executors/herdr-name.ts";
-export * from "./executors/herdr-pi-lifecycle.ts";
-export * from "./executors/herdr-poll.ts";
-export * from "./executors/herdr-stage.ts";
-export * from "./executors/herdr-start.ts";
 export * from "./executors/native-session-target.ts";
-export * from "./executors/pane-reaper.ts";
-export * from "./executors/run-herdr.ts";
 export * from "./products/dashboard-display-controls.ts";
-export * from "./products/dashboard-handshake.ts";
-export * from "./products/dashboard-herdr.ts";
 export * from "./products/activity-timeline.ts";
 export { runDashboard, dashboardFrame, DASHBOARD_PROTOCOL_VERSION } from "./products/dashboard-cli.ts";
 

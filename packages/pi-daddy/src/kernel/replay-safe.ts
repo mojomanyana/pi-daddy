@@ -106,8 +106,7 @@ export interface ReplayRetryFacts {
    * an otherwise eligible failure is then marked replayable for the operation's owner, never retried here.
    */
   operation: boolean;
-  /** A Herdr pane is operable by a human, so a stop there cannot be told from a person's. */
-  executor: "process" | "herdr";
+  executor: "process";
   /** The parent tool call's own abort signal. */
   parentAborted: boolean;
   /** An upstream controller's veto is an answer, not a fault. */
@@ -175,8 +174,7 @@ export function replayRetryDecision(
  * What the operator is told beside the replay-safe mark (startup summary, `/grants`): exactly when this session
  * does not retry. Every case the decision refuses for the whole session is named; per-attempt guards are not.
  */
-export function replayRetryNotice(enabled: boolean, executor: "process" | "herdr"): string {
+export function replayRetryNotice(enabled: boolean, _executor: "process"): string {
   if (!enabled) return `not retried or marked replayable: switched off by ${ENV_REPLAY_RETRY}`;
-  if (executor !== "process") return "not retried or marked replayable under the Herdr executor";
   return "retried once automatically if it fails without answering; with operation_id, marked replayable for the coordinator to retry instead";
 }

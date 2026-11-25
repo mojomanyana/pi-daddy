@@ -144,7 +144,6 @@ ${managedInit.stderr}`);
       // consumer's machine.
       `import { parseSkillDefinition, ceilingForDefinition } from "pi-daddy";`,
       `import { splitBudget, childSpawnId } from "pi-daddy";`,
-      `import { splitSystemPrompt } from "pi-daddy";`,
       `import { PI_BUILTIN_TOOLS, WILDCARD } from "pi-daddy";`,
       `import { planInit, withPlaceholder } from "pi-daddy";`,
       `import { discoverSkillPackages } from "pi-daddy";`,
@@ -170,7 +169,6 @@ ${managedInit.stderr}`);
       `const ceiling = ceilingForDefinition(def);`,
       `if (ceiling.capabilities.join(",") !== "tool:grep,tool:read") throw new Error("ceiling wrong: " + ceiling.capabilities);`,
       `if (!splitBudget(8, 2).ok || childSpawnId("d0", 0) !== "d0.1") throw new Error("fanout export broken");`,
-      `if (splitSystemPrompt(["--append-system-prompt", "x", "--append-system-prompt", "y"]).systemPrompts.join() !== "x,y") throw new Error("run-herdr export broken");`,
       `if (!PI_BUILTIN_TOOLS.includes("read") || WILDCARD !== "tool:*") throw new Error("pi-tools export broken");`,
       `if (withPlaceholder("---\\nname: x\\ndescription: d\\n---\\nb", false).includes("\\nallowed-tools:")) throw new Error("init invented a ceiling");`,
       `const pkgs = await discoverSkillPackages(process.cwd());`,

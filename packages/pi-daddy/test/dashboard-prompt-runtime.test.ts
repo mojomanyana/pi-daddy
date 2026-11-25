@@ -65,12 +65,11 @@ test("runtime rebinding and reload keep one current native prompt listener and b
       // /new binds a new owner; /reload replaces the whole registration.
       if (n === 1) runtime = registerRuntimeSnapshot(pi as never, session);
     }
-    assert.deepEqual(signals, [true, false, true, false, true]);
     session.reloadLifecycle.runtimeSnapshotUnsubscribe?.();
     assert.equal(session.dashboardPrompt?.(), undefined);
     assert.equal(hooks.get("ui_prompt_start")?.size, 0);
     assert.equal(hooks.get("ui_prompt_end")?.size, 0);
-    assert.deepEqual(signals, [true, false, true, false, true, false]);
+    assert.deepEqual(signals, []);
   } finally {
     session.reloadLifecycle.runtimeSnapshotUnsubscribe?.();
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;

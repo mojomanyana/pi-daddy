@@ -9,14 +9,12 @@ import {
   readNativeSession,
   parseNativeSessionBytes,
   ENV_NATIVE_SESSION_ROOT,
-  herdrSessionReference,
 } from "../src/governance/native-session.ts";
 import {
   beginExecutionRetention,
   drainExecutionRetention,
   parseExecutionRetentionManifest,
 } from "../src/governance/execution-retention.ts";
-import { runHerdrPane } from "../src/executors/run-herdr.ts";
 import { executePlannedChild } from "../extensions/execute-child.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import { pathToFileURL } from "node:url";
@@ -29,7 +27,7 @@ const identity = {
   parentExecutionId: "exec:parent",
   childId: "reused",
   toolCallId: "call:exact",
-  executor: "herdr" as const,
+  executor: "process" as const,
   taskDigest: "a".repeat(64),
   definitionDigest: null,
   configurationDigest: "b".repeat(64),
@@ -121,20 +119,20 @@ test("missing, partial, invalid-parent and duplicate native bytes stay explicitl
     raw = await readFile(f.path);
   const missing = await readNativeSession({
     path: join(f.root, "absent.jsonl"),
-    source: "herdr-path",
+    source: "pi-session-file",
     allowedRoot: f.root,
   });
   assert.equal(missing.observation.status, "missing");
   assert.equal(missing.bytes, undefined);
   const interruptedUtf8 = Buffer.concat([raw, Buffer.from('{"type":"message","text":"'), Buffer.from([0xe4, 0xbd])]);
-  const interrupted = parseNativeSessionBytes(interruptedUtf8, { path: f.path, source: "herdr-path" });
+  const interrupted = parseNativeSessionBytes(interruptedUtf8, { path: f.path, source: "pi-session-file" });
   assert.deepEqual(
     interrupted.bytes,
     interruptedUtf8,
     "a valid native header admits the interrupted raw bytes without lossy decoding",
   );
   assert.equal(interrupted.observation.status, "truncated");
-  const partial = parseNativeSessionBytes(raw.subarray(0, -2), { path: f.path, source: "herdr-path" });
+  const partial = parseNativeSessionBytes(raw.subarray(0, -2), { path: f.path, source: "pi-session-file" });
   assert.equal(partial.observation.status, "truncated");
   assert.equal(partial.observation.branchLeafId, null);
   assert.ok(partial.bytes);
@@ -143,14 +141,15 @@ test("missing, partial, invalid-parent and duplicate native bytes stay explicitl
       JSON.stringify({ type: "message", id: "new", parentId: "absent", timestamp: new Date().toISOString() }) +
       "\n",
   );
-  assert.equal(parseNativeSessionBytes(bad, { path: f.path, source: "herdr-path" }).observation.status, "invalid");
+  assert.equal(parseNativeSessionBytes(bad, { path: f.path, source: "pi-session-file" }).observation.status, "invalid");
   const duplicate = raw.toString().replace('"version":3', '"version":2,"version":3');
   assert.equal(
-    parseNativeSessionBytes(Buffer.from(duplicate), { path: f.path, source: "herdr-path" }).bytes,
+    parseNativeSessionBytes(Buffer.from(duplicate), { path: f.path, source: "pi-session-file" }).bytes,
     undefined,
   );
   assert.equal(
-    parseNativeSessionBytes(raw, { path: f.path, source: "herdr-path", expectedSessionId: "other" }).observation.status,
+    parseNativeSessionBytes(raw, { path: f.path, source: "pi-session-file", expectedSessionId: "other" }).observation
+      .status,
     "changed",
   );
 });
@@ -159,21 +158,24 @@ test("private-root restrictions reject session aliases and do not harvest arbitr
   const f = await native();
   const outside = await tempDir("outside-session-");
   assert.equal(
-    (await readNativeSession({ path: f.path, source: "herdr-path", allowedRoot: outside })).observation.status,
+    (await readNativeSession({ path: f.path, source: "pi-session-file", allowedRoot: outside })).observation.status,
     "unsupported",
   );
   const alias = join(f.root, "alias.jsonl");
   await symlink(f.path, alias);
   assert.equal(
-    (await readNativeSession({ path: alias, source: "herdr-path", allowedRoot: f.root })).observation.status,
+    (await readNativeSession({ path: alias, source: "pi-session-file", allowedRoot: f.root })).observation.status,
     "unsupported",
   );
   const auth = join(f.root, "not-a-session.jsonl");
   await writeFile(auth, '{"access_token":"fixture-not-a-real-credential"}\n');
-  assert.equal((await readNativeSession({ path: auth, source: "herdr-path", allowedRoot: f.root })).bytes, undefined);
+  assert.equal(
+    (await readNativeSession({ path: auth, source: "pi-session-file", allowedRoot: f.root })).bytes,
+    undefined,
+  );
   await chmod(f.root, 0o755);
   assert.equal(
-    (await readNativeSession({ path: f.path, source: "herdr-path", allowedRoot: f.root })).observation.status,
+    (await readNativeSession({ path: f.path, source: "pi-session-file", allowedRoot: f.root })).observation.status,
     "unsupported",
   );
 });
@@ -185,14 +187,14 @@ test("replaced native files quarantine the current reference while retaining pre
   process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
   try {
     const h = beginExecutionRetention(identity, archive);
-    h.observeSession({ source: "herdr-path", value: f.path });
+    h.observeSession({ source: "pi-session-file", value: f.path });
     const firstPath = (await h.flush()).manifestPath!;
     const first = parseExecutionRetentionManifest(await readFile(firstPath, "utf8"));
     assert.equal(first.nativeSession.status, "verified");
     const bytes = await readFile(f.path);
     await rename(f.path, f.path + ".historical");
     await writeFile(f.path, bytes);
-    h.observeSession({ source: "herdr-path", value: f.path });
+    h.observeSession({ source: "pi-session-file", value: f.path });
     h.finish(outcome);
     await h.flush();
     const second = parseExecutionRetentionManifest(await readFile(firstPath, "utf8"));
@@ -213,7 +215,7 @@ test("native observation detaches queued references and explicitly records coale
   process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
   try {
     const h = beginExecutionRetention(identity, archive),
-      reference = { source: "herdr-path" as const, value: f.path };
+      reference = { source: "pi-session-file" as const, value: f.path };
     h.observeSession(reference);
     reference.value = join(f.root, "absent.jsonl");
     h.finish(outcome);
@@ -225,8 +227,8 @@ test("native observation detaches queued references and explicitly records coale
       "later caller mutation cannot redirect an already-observed reference",
     );
     const dropped = beginExecutionRetention(identity, archive);
-    dropped.observeSession({ source: "herdr-path", value: join(f.root, "absent.jsonl") });
-    dropped.observeSession({ source: "herdr-path", value: f.path });
+    dropped.observeSession({ source: "pi-session-file", value: join(f.root, "absent.jsonl") });
+    dropped.observeSession({ source: "pi-session-file", value: f.path });
     dropped.finish(outcome);
     const d = parseExecutionRetentionManifest(await readFile((await dropped.flush()).manifestPath!, "utf8"));
     assert.ok(d.coverage.losses.includes("native-session-reference-coalesced"));
@@ -316,70 +318,6 @@ test("deterministic capture then append: terminal/verified is not the final-byte
     const settled = await drainExecutionRetention(final.status());
     const latest = parseExecutionRetentionManifest(await readFile(settled.manifestPath!, "utf8"));
     assert.deepEqual(await readFile(join(settled.manifestPath!, "..", latest.content.session.path!)), after);
-  } finally {
-    prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : (process.env[ENV_NATIVE_SESSION_ROOT] = prior);
-  }
-});
-
-test("existing Herdr native replies bind session bytes to the exact pane and execution", async () => {
-  const f = await native(),
-    archive = await tempDir("herdr-native-archive-");
-  const prior = process.env[ENV_NATIVE_SESSION_ROOT];
-  process.env[ENV_NATIVE_SESSION_ROOT] = f.root;
-  try {
-    const h = beginExecutionRetention(identity, archive);
-    const calls: string[] = [];
-    let gets = 0;
-    const info = {
-      pane_id: "w1:p2",
-      agent: "pi",
-      agent_session: { agent: "pi", source: "fixture-native-integration", kind: "path", value: f.path },
-    };
-    assert.equal(herdrSessionReference(info, "different-pane"), null);
-    assert.equal(
-      herdrSessionReference({ ...info, agent_session: { ...info.agent_session, agent: "other" } }, "w1:p2"),
-      null,
-    );
-    const run = await runHerdrPane({
-      args: ["--no-session"],
-      prompt: "fixture",
-      env: {},
-      cwd: f.root,
-      name: "same-name",
-      keepPane: true,
-      onSessionReference: (ref) => h.observeSession(ref),
-      exec: async (args) => {
-        const verb = args.slice(0, 2).join(" ");
-        calls.push(verb);
-        const result =
-          verb === "tab create"
-            ? { root_pane: { pane_id: "w1:p2", tab_id: "w1:t2" } }
-            : verb === "agent start"
-              ? { agent: { ...info, state_change_seq: 1 } }
-              : verb === "agent get"
-                ? {
-                    agent: {
-                      ...info,
-                      state_change_seq: ++gets + 1,
-                      agent_status: "idle",
-                      screen_detection_skipped: true,
-                    },
-                  }
-                : verb === "agent read"
-                  ? { output: "output" }
-                  : { ok: true };
-        return { code: 0, stdout: JSON.stringify({ result }), stderr: "" };
-      },
-    });
-    assert.equal(run.code, 0);
-    h.finish(outcome);
-    const path = (await h.flush()).manifestPath!;
-    const m = parseExecutionRetentionManifest(await readFile(path, "utf8"));
-    assert.equal(m.native.sessionId, f.manager.getSessionId());
-    assert.equal(m.identity.toolCallId, "call:exact");
-    assert.equal(m.native.branchLeafId, null);
-    assert.equal(m.content.session.status, "retained");
-    assert.deepEqual(calls, ["tab create", "agent start", "agent get", "agent prompt", "agent get", "agent read"]);
   } finally {
     prior === undefined ? delete process.env[ENV_NATIVE_SESSION_ROOT] : (process.env[ENV_NATIVE_SESSION_ROOT] = prior);
   }

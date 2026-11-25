@@ -19,8 +19,7 @@ function node(overrides: Partial<DashboardNode> = {}): DashboardNode {
     durationMs: 65_000,
     effectiveGrant: ["tool:read"],
     denied: [],
-    executor: "herdr",
-    runtime: { herdrPaneId: "w1:p2", herdrAgentName: "review-d0-1" },
+    executor: "process",
     correlation: {
       run_id: "run-1",
       policy_label: "principal-feature",
@@ -66,13 +65,12 @@ test("dashboard shows the editable session model table and read-only episode cos
   assert.match(rendered, /reported episode cost \$1\.25 \(coverage partial\)/);
 });
 
-test("the compact tree shows workflow label, agent, state, elapsed time, pane and provenance", () => {
+test("the compact tree shows workflow label, agent, state, elapsed time and provenance", () => {
   const rendered = renderDashboard(projection([node()]), { color: false, width: 100 });
   assert.match(rendered, /PI-DADDY/);
   assert.match(rendered, /◆ principal-feature · critical · declared/);
   assert.match(rendered, /● review\s+running\s+1:05/);
   assert.match(rendered, /plan/);
-  assert.match(rendered, /pane w1:p2/);
   assert.match(rendered, /P planned · O observed inline · V controller-validated · E enforced child/);
   assert.match(rendered, /depth 1 · 1 active/);
 });
@@ -177,7 +175,7 @@ test("expanded details show governance identifiers but never task text or child 
 
   assert.match(rendered, /grant tool:read/);
   assert.match(rendered, /workspace staging · read/);
-  assert.match(rendered, /executor herdr/);
+  assert.match(rendered, /executor process/);
   assert.match(rendered, /correlation run-1/);
   assert.match(rendered, /line 9: field task is forbidden/);
   assert.doesNotMatch(rendered, /SECRET/);

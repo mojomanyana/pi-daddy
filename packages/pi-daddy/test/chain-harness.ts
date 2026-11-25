@@ -16,7 +16,6 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import grantsExtension from "../extensions/grants.ts";
-import { ENV_HERDR } from "../src/executors/executor.ts";
 import { ENV_ACTIVITY_TIMELINE } from "../src/products/activity-timeline.ts";
 import {
   ENV_APPROVED,
@@ -40,7 +39,6 @@ const KEYS = [
   ENV_LEDGER,
   ENV_FANOUT,
   ENV_PARENT_ID,
-  ENV_HERDR,
   ENV_ACTIVITY_TIMELINE,
 ];
 const saved = new Map<string, string | undefined>();
@@ -104,7 +102,7 @@ export async function harness(env: Record<string, string>, existingDir?: string,
   const dir = existingDir ?? (await tempDir("grants-chain-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
-  Object.assign(process.env, { [ENV_HERDR]: "0", ...env });
+  Object.assign(process.env, { ...env });
 
   const tools = new Map<string, ToolSpec>(),
     activeTools = new Set(["read", "grep", "write", "bash"]);

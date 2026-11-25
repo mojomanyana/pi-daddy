@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
 import grantsExtension from "../extensions/grants.ts";
 import { bindDescribedDefinitions, registerDefinitionDescribe } from "../extensions/definition-describe.ts";
-import { ENV_HERDR, ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
+import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { GRANT_ENV_KEYS } from "../src/kernel/propagation.ts";
 import { selectedDefinitions } from "../src/kernel/selected-definitions.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
@@ -36,7 +36,7 @@ import { toolSources } from "./tool-sources-fixture.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
-const KEYS = [...GRANT_ENV_KEYS, ENV_HERDR, "PATH", "PI_CODING_AGENT_DIR", "PI_DADDY_GATED"];
+const KEYS = [...GRANT_ENV_KEYS, "PATH", "PI_CODING_AGENT_DIR", "PI_DADDY_GATED"];
 const saved = new Map<string, string | undefined>();
 afterEach(() => {
   for (const [key, value] of saved) value === undefined ? delete process.env[key] : (process.env[key] = value);
@@ -107,7 +107,6 @@ async function harness(env: Record<string, string> = {}) {
   Object.assign(process.env, {
     PATH: `${bin}:${saved.get("PATH")}`,
     PI_CODING_AGENT_DIR: dir, // a private existing root, so the durable operation owner binds
-    [ENV_HERDR]: "0",
     PI_DADDY_GRANT: "tool:read,tool:bash,tool:delegate,agent:build,agent:review,agent:notes,agent:shell",
     PI_DADDY_LEDGER: ledger,
     ...env,
