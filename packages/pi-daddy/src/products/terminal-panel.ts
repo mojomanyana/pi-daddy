@@ -3,7 +3,7 @@
  *
  * Tabs: [1] Overview  [2] Tasks  [3] Memory  [4] Research  [5] Settings
  * Works in ANY terminal (iTerm2, Ghostty, WezTerm, Kitty, Windows Terminal, tmux, VS Code)
- * on macOS, Linux, and Windows — zero Herdr required. Supports zero-copy-paste auto-attach
+ * on macOS, Linux, and Windows. Supports zero-copy-paste auto-attach
  * when run as bare `pi-daddy panel` inside the active workspace.
  */
 import { createInterface } from "node:readline";

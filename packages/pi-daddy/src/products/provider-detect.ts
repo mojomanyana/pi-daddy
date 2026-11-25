@@ -9,7 +9,7 @@ import { agentDir } from "../kernel/project-paths.ts";
 import type { EcosystemConfig, EcosystemModelFallbacks, EcosystemModelsConfig } from "../kernel/ecosystem-config.ts";
 
 export type ProviderPresetName =
-  "open-weight" | "google" | "openrouter" | "deepseek" | "anthropic" | "openai" | "session";
+  "open-weight" | "google" | "openrouter" | "deepseek" | "anthropic" | "openai-codex" | "openai" | "session";
 
 const COMMON_DEFAULTS = {
   dashboard: { autoStart: true, autoSplit: true },
@@ -60,6 +60,14 @@ export const PROVIDER_PRESETS: Record<ProviderPresetName, EcosystemConfig & { mo
     },
     ...COMMON_DEFAULTS,
   },
+  "openai-codex": {
+    models: {
+      fast: "openai-codex/gpt-5.6-sol",
+      work: "openai-codex/gpt-5.6-sol",
+      strong: "openai-codex/gpt-5.6-sol",
+    },
+    ...COMMON_DEFAULTS,
+  },
   openai: {
     models: {
       fast: "openai/gpt-4.1-mini",
@@ -95,11 +103,12 @@ const PROVIDER_PROBES: ReadonlyArray<{
     authKeys: ["google", "google-gemini-cli", "gemini"],
   },
   { preset: "anthropic", label: "anthropic", envKeys: ["ANTHROPIC_API_KEY"], authKeys: ["anthropic"] },
+  { preset: "openai-codex", label: "openai-codex", envKeys: [], authKeys: ["openai-codex"] },
   {
     preset: "openai",
     label: "openai",
     envKeys: ["OPENAI_API_KEY"],
-    authKeys: ["openai", "openai-codex"],
+    authKeys: ["openai"],
   },
 ];
 

@@ -163,3 +163,46 @@ test("pi-daddy setup --preset auto writes detected primary + fallback chain or s
   assert.equal(autoCfg.models.fast, "google/gemini-3.5-flash-lite");
   assert.deepEqual(autoCfg.modelFallbacks.fast, ["anthropic/claude-haiku-4-5", "session"]);
 });
+
+test("Issue #3: Codex-only OAuth auth.json selects openai-codex subscription model rather than metered openai API", (t) => {
+  const dir = tempAgent(t);
+  const savedEnv = { ...process.env };
+  const nodeDesc = Object.getOwnPropertyDescriptor(process.versions, "node")!;
+  Object.defineProperty(process.versions, "node", { ...nodeDesc, value: `${release.minimumRuntime.nodeMajor}.0.0` });
+  const envKeys = [
+    "PI_CODING_AGENT_DIR",
+    "FIREWORKS_API_KEY",
+    "OPENROUTER_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+  ];
+  t.after(() => {
+    Object.defineProperty(process.versions, "node", nodeDesc);
+    for (const k of envKeys) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+  for (const k of envKeys) delete process.env[k];
+  process.env.PI_CODING_AGENT_DIR = dir;
+  t.mock.method(console, "log", () => {});
+
+  writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { access: "synthetic-codex-oauth" } }));
+  const detected = detectConfiguredProviders({ PI_CODING_AGENT_DIR: dir });
+  assert.deepEqual(detected, [{ preset: "openai-codex", label: "openai-codex", source: "auth.json" }]);
+
+  assert.equal(runEcosystemSetup({ preset: "auto", skipInstall: true }), 0);
+  const cfg = JSON.parse(readFileSync(join(dir, "ecosystem.json"), "utf8"));
+  assert.equal(cfg.setupPreset.name, "openai-codex");
+  assert.equal(cfg.models.fast, "openai-codex/gpt-5.6-sol");
+  assert.equal(cfg.models.work, "openai-codex/gpt-5.6-sol");
+  assert.equal(cfg.models.strong, "openai-codex/gpt-5.6-sol");
+
+  // Direct OPENAI_API_KEY stays distinct from openai-codex OAuth
+  const apiDir = tempAgent(t);
+  const apiDetected = detectConfiguredProviders({ PI_CODING_AGENT_DIR: apiDir, OPENAI_API_KEY: "synthetic-api-key" });
+  assert.deepEqual(apiDetected, [{ preset: "openai", label: "openai", source: "env" }]);
+});

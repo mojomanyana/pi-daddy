@@ -2,7 +2,7 @@
  * Standalone Multi-Tab Side-Panel Server (Layer 3: products).
  *
  * Powers BOTH the 5-tab interactive Terminal Side Panel (`pi-daddy panel`) AND the Browser UI
- * (`/dashboard open`) across macOS, Linux, and Windows with zero Herdr dependency.
+ * (`/dashboard open`) across macOS, Linux, and Windows.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";

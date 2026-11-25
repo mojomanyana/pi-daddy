@@ -13,6 +13,12 @@ export interface TerminalSplitPlan {
   readonly windowsHide?: boolean;
 }
 
+export interface TerminalSplitResult {
+  readonly ok: boolean;
+  readonly kind?: TerminalSplitKind;
+  readonly error?: string;
+}
+
 export function planTerminalSplit(
   url: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -68,23 +74,57 @@ export function planTerminalSplit(
   return undefined;
 }
 
+/**
+ * Launch the planned terminal split safely. Attaches an async `'error'` listener before returning
+ * so missing binaries (`ENOENT`) or immediate non-zero launch failures never crash the Pi host.
+ */
 export function openTerminalSplit(
   url: string,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
-): boolean {
+  settleWindowMs = 200,
+): Promise<TerminalSplitResult> {
   const plan = planTerminalSplit(url, env, platform);
-  if (!plan) return false;
-  try {
-    spawn(plan.command, plan.args, {
-      detached: true,
-      stdio: "ignore",
-      ...(plan.windowsHide ? { windowsHide: true } : {}),
-    }).unref();
-    return true;
-  } catch {
-    return false;
-  }
+  if (!plan) return Promise.resolve({ ok: false });
+
+  return new Promise<TerminalSplitResult>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: TerminalSplitResult) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+
+    let child;
+    try {
+      child = spawn(plan.command, plan.args, {
+        detached: true,
+        stdio: "ignore",
+        env,
+        ...(plan.windowsHide ? { windowsHide: true } : {}),
+      });
+    } catch (error) {
+      finish({ ok: false, kind: plan.kind, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    child.once("error", (error) => {
+      finish({ ok: false, kind: plan.kind, error: error instanceof Error ? error.message : String(error) });
+    });
+
+    child.once("exit", (code, signal) => {
+      if (code === 0) finish({ ok: true, kind: plan.kind });
+      else finish({ ok: false, kind: plan.kind, error: `${plan.command} exited (${signal ?? code ?? "unknown"})` });
+    });
+
+    child.once("spawn", () => {
+      child.unref();
+      timer = setTimeout(() => finish({ ok: true, kind: plan.kind }), settleWindowMs);
+      timer.unref?.();
+    });
+  });
 }
 
 export function detectSupportedSplitters(
