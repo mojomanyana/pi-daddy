@@ -254,7 +254,28 @@ ${managedInit.stderr}`);
   if (!dashboardOut.includes("No governed executions recorded yet")) {
     throw new Error(`installed dashboard bin did not run:\n${dashboardOut}`);
   }
-  const doctorOut = run(join(work, "node_modules", ".bin", "pi-daddy"), ["doctor"], work);
+  const installedRelease = JSON.parse(
+    readFileSync(join(work, "node_modules", "pi-daddy", "src", "products", "ecosystem-release.json"), "utf8"),
+  );
+  const nodeMinimum = installedRelease.minimumRuntime.nodeMajor;
+  const nodeSupported = Number(process.versions.node.split(".")[0]) >= nodeMinimum;
+  const doctor = spawnSync(join(work, "node_modules", ".bin", "pi-daddy"), ["doctor"], {
+    cwd: work,
+    encoding: "utf8",
+    env: { ...process.env, PI_CODING_AGENT_DIR: join(work, ".agent-home") },
+  });
+  const doctorOut = doctor.stdout ?? "";
+  if (doctor.error || doctor.signal || doctor.status !== (nodeSupported ? 0 : 1)) {
+    throw new Error(`installed doctor returned an unexpected result:\n${doctorOut}\n${doctor.stderr}`, {
+      cause: doctor.error,
+    });
+  }
+  if (!nodeSupported && !doctorOut.includes(`ecosystem requires Node.js ${nodeMinimum}+`)) {
+    throw new Error(`installed doctor did not explain the ecosystem runtime requirement:\n${doctorOut}`);
+  }
+  if (doctorOut.split(/\r?\n/).some((line) => line.includes("✗") && !line.includes("Node.js"))) {
+    throw new Error(`installed doctor found an unexpected prerequisite failure:\n${doctorOut}`);
+  }
   if (!doctorOut.includes("Ecosystem Health Check")) {
     throw new Error(`installed doctor bin did not run:\n${doctorOut}`);
   }

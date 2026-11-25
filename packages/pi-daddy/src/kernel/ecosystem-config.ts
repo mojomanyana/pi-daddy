@@ -4,8 +4,20 @@
  *
  * Explicit environment variables always take precedence over `ecosystem.json`.
  */
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { agentDir, userStateDir } from "./project-paths.ts";
 
@@ -16,6 +28,7 @@ export interface EcosystemModelsConfig {
 }
 
 export interface EcosystemConfig {
+  setupPreset?: { name: string; defaults: EcosystemModelsConfig };
   models?: EcosystemModelsConfig;
   dashboard?: { autoStart?: boolean; autoSplit?: boolean };
   escalation?: { auto?: boolean };
@@ -35,12 +48,42 @@ export function ecosystemConfigPath(env: NodeJS.ProcessEnv = process.env): strin
   return join(agentDir(env), "ecosystem.json");
 }
 
-export function loadEcosystemConfig(env: NodeJS.ProcessEnv = process.env): EcosystemConfig {
+/** Distinguish a fresh profile from unreadable settings before making any changes. */
+export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): EcosystemConfig | undefined {
   const file = ecosystemConfigPath(env);
-  if (!existsSync(file)) return {};
+  let text: string;
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as EcosystemConfig) : {};
+    text = readFileSync(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT" && !lstatSync(file, { throwIfNoEntry: false }))
+      return undefined;
+    throw new Error(`Cannot read ecosystem config at ${file}.`, { cause: err });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid JSON in ${file}. Correct the existing file before saving settings.`);
+  }
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  if (!record(parsed)) throw new Error(`Expected a JSON object in ${file}.`);
+  for (const section of ["models", "dashboard", "escalation", "scout", "bookie", "setupPreset"]) {
+    if (section in parsed && !record(parsed[section])) throw new Error(`Expected an object for ${section} in ${file}.`);
+  }
+  if (record(parsed.models)) {
+    for (const tier of ["fast", "work", "strong"]) {
+      if (tier in parsed.models && typeof parsed.models[tier] !== "string") {
+        throw new Error(`Expected a string for models.${tier} in ${file}.`);
+      }
+    }
+  }
+  return parsed as EcosystemConfig;
+}
+
+export function loadEcosystemConfig(env: NodeJS.ProcessEnv = process.env): EcosystemConfig {
+  try {
+    return readEcosystemConfig(env) ?? {};
   } catch {
     return {};
   }
@@ -48,8 +91,20 @@ export function loadEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
 
 export function saveEcosystemConfig(config: EcosystemConfig, env: NodeJS.ProcessEnv = process.env): string {
   const file = ecosystemConfigPath(env);
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  const target = readEcosystemConfig(env) === undefined ? file : realpathSync(file);
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  const fd = openSync(temporary, "wx", 0o600);
+  try {
+    try {
+      writeFileSync(fd, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporary, target);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
   return file;
 }
 

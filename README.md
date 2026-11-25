@@ -4,30 +4,38 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 ## Start here
 
-**Works natively on macOS (Apple Silicon & Intel), Linux, and Windows** with Pi 1.6.0+ and Node 24+ (no Herdr required).
+**Works natively on macOS (Apple Silicon & Intel), Linux, and Windows.** Herdr is optional. The install block below lists the supported runtimes and tested Pi version.
 
-### One-command ecosystem setup
+### Install the ecosystem
 
-```bash
-npx pi-daddy@1.0.2 setup --preset open-weight   # installs all 5 packages + writes ~/.pi/agent/ecosystem.json
-npx pi-daddy@1.0.2 doctor                       # verifies Node, pi, git, Docker, terminal split support & config
-```
+**Fresh profile:** Check `npx pi-daddy@latest --version`. For 1.0.0 through 1.0.2, use the five explicit install commands below. Those CLI releases select an older Daddy that rejects Principal v6's agents. Once the corrected CLI ships, run `npx pi-daddy@latest setup --preset open-weight`. Setup installs the Daddy extension matching the launcher's exact version and the four [qualified companion releases](packages/pi-daddy/src/products/ecosystem-release.json). Run `pi list` to see the installed versions.
 
-Or install the pinned package versions directly into Pi (see [the release manifest](.github/beta-release.json); to install only `pi-daddy`, see [Install and first run](#install-and-first-run)):
+**Repair or reproduce an install:** Use the explicit pins below. Run `pi list` in the affected project first. Update each package in its original scope with `pi install --local` for project-local entries and `pi install` for user entries.
 
 <!-- verified-beta-install:start -->
+Requires Node 24+ and stable Pi 1.6.0+. Tested with Pi 1.6.0.
+
 ```bash
-pi install npm:pi-bookie@1.0.0
-pi install npm:pi-daddy@1.0.0
-pi install npm:principal-pi-skills@6.0.0
-pi install npm:pi-scout-research@1.0.0
-pi install npm:skill-harness@1.0.0
+pi install npm:pi-bookie@1.0.1
+pi install npm:pi-daddy@1.0.2
+pi install npm:principal-pi-skills@6.0.1
+pi install npm:pi-scout-research@1.0.1
+pi install npm:skill-harness@1.0.1
+
+# Optional on a fresh profile without ecosystem.json: initialize the open-weight preset (or use --preset google).
+# npx pi-daddy@1.0.2 setup --skip-install --preset open-weight
+# Optional: put the matching standalone CLI on PATH for /dashboard split and pi-daddy panel.
+# npm install -g pi-daddy@1.0.2
 ```
 <!-- verified-beta-install:end -->
 
+Maintainers can refresh the published reproduction set from npm with `node packages/pi-daddy/scripts/beta-start.mjs --refresh`. The public install workflow checks both the packed candidate with its four companions and the five published reproduction pins. The weekly check flags new companion releases. When only Daddy advances, fresh setup already uses its new version; the check reports how to refresh the reproduction pins. Existing profiles keep their installed pins until you upgrade them.
+
+In an open Pi session, run `/reload`, then `/grants`: `build`, `review`, and `debug` should be listed, even if they need your approval. To install Daddy alone, see [Install and first run](#install-and-first-run).
+
 ### Interactive 5-Tab Side-Panel Dashboard (Herdr-Free)
 
-Start `pi` in any git repository. `pi-daddy` automatically starts a token-authenticated localhost control plane and writes a per-project auto-attach locator so you can steer and configure Pi from a split pane or browser:
+`pi install` updates the extension, not your shell's `pi-daddy` binary. For a split pane, use the matching standalone CLI above and check `pi-daddy --version`. Start Pi in the repository. Run `/dashboard split` to start and open the dashboard, or run `/dashboard` first and then `pi-daddy panel` from another terminal in the same directory. With `dashboard.autoStart` enabled, the manual start is unnecessary.
 
 ```bash
 /dashboard split          # inside Pi: auto-splits tmux, WezTerm, macOS iTerm2, or Windows Terminal
@@ -44,35 +52,17 @@ Tabs & hotkeys: `[1] Overview` (live tokens, prompt cache %, cost, events) · `[
 - **Fast Cold Diff Review & Smart Auto-Escalation:** lightweight `reasoning: "low"` diff review in `work-mode` plus automatic 1-shot strong-model rescue when `principal:thrash-detected:v1` fires (or on manual `[x]` escalation).
 - **Single Config (`~/.pi/agent/ecosystem.json`):** shared `models.{fast,work,strong}`, `escalation`, `bookie`, and `scout` settings across all 5 packages (env vars override when set).
 
-**Try a quick verification task.** Create and enter an empty folder, run `git init` and `git -c user.name=Demo -c user.email=demo@example.invalid commit --allow-empty -m setup`, then start `pi` there in Standard work mode:
+**Try a quick verification task.** Create and enter an empty folder, run `git init` and `git -c user.name=Demo -c user.email=demo@example.invalid commit --allow-empty -m setup`, then start `pi` there in Standard work mode. Run `/bookie-task enable` and approve memory access for this workspace so Pi can save the checkpoint.
 
-> Build a public notice exporter in this folder. I should be able to pipe one JSON object into `node public-notice.cjs`. Print just its `message` on one line, even if the object also contains a staff-only note. A missing message should exit with an error and print no public output. Show me what actually happened when you tried it, then save and read back a short “Public notice” checkpoint with the result. Leave the work local.
+> Build a public notice exporter in this folder. I should be able to pipe one JSON object into `node public-notice.cjs`. Print its nonempty string `message` unchanged followed by one line ending, even if the object also contains a staff-only note. For malformed JSON, a missing, empty or non-string message, or a message containing a carriage return or newline, exit with a nonzero status and leave stdout empty. Show me what actually happened when you tried it, then save and read back a short “Public notice” checkpoint with the result. Leave the work local.
 
-**Check the delivery yourself.** From the project folder, run this in a shell. It calls the same command a user would run, with a fresh input and a missing-message case. Both the exit status and the public output must match.
+**Check the delivery yourself.** Download [verify-public-notice.mjs](packages/pi-daddy/scripts/verify-public-notice.mjs) using GitHub's **Download raw file** button and save it alongside `public-notice.cjs`. From that folder run:
 
-```bash
-node --input-type=module <<'JS'
-import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-
-function run(notice) {
-  const result = spawnSync(process.execPath, ['public-notice.cjs'], {
-    input: JSON.stringify(notice), encoding: 'utf8', timeout: 5000
-  })
-  if (result.error) throw result.error
-  assert.equal(result.signal, null)
-  return result
-}
-
-const valid = run({ message: 'Library opens at ten.', staffNote: 'demo-only' })
-assert.equal(valid.status, 0)
-assert.equal(valid.stdout, 'Library opens at ten.\n')
-const missing = run({ staffNote: 'demo-only' })
-assert.ok(Number.isInteger(missing.status) && missing.status !== 0)
-assert.equal(missing.stdout, '')
-console.log('Passed both public-output checks.')
-JS
+```sh
+node verify-public-notice.mjs
 ```
+
+The verifier pipes fresh notices and invalid inputs into the exporter and checks its exit status and exact public output. A successful run prints `Passed all public-notice checks.`.
 
 **Come back to it.** Type `/new` in the same folder. Type `/bookie-task enable` again and approve recall for the workspace. Ask:
 

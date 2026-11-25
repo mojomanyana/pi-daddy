@@ -1,0 +1,22 @@
+{
+  "piSdk": "1.6.0",
+  "minimumRuntime": {
+    "pi": "1.6.0",
+    "nodeMajor": 24
+  },
+  "normalCliInstalls": [
+    "pi-bookie",
+    "pi-daddy",
+    "principal-pi-skills",
+    "pi-scout-research",
+    "skill-harness"
+  ],
+  "publicVersions": {
+    "pi-bookie": "1.0.1",
+    "pi-daddy": "1.0.2",
+    "principal-pi-skills": "6.0.1",
+    "pi-scout-research": "1.0.1",
+    "skill-harness": "1.0.1"
+  },
+  "freshProfile": true
+}
