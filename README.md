@@ -21,7 +21,7 @@ Setup is optional. Install any component directly with Pi, for example `pi insta
 **Reproduce the tested install:** Use the explicit pins below or pass `--pinned` to setup. If a project has its own package declaration, `pi install --local npm:<package>` switches that entry to tracking.
 
 <!-- verified-beta-install:start -->
-Requires Node 24+ and stable Pi 1.6.0+. Tested with Pi 1.6.0.
+Requires Node 24+ and stable Pi 1.6.1+. Tested with Pi 1.6.1.
 
 ```bash
 pi install npm:pi-bookie@1.0.4
