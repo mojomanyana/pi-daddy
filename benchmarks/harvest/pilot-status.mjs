@@ -1,4 +1,5 @@
 import { bookieStatus } from "./bookie-status.mjs";
+import { captureStatus } from "./capture-status.mjs";
 import { getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 
 export function ecosystemStatus(pi) {
@@ -30,7 +31,9 @@ export default function (pi) {
   pi.registerCommand("ecosystem-status", {
     description: "Show registered ecosystem components in this Pi session",
     handler: async (args, ctx) => {
-      if (args.trim() === "bookie") {
+      if (args.trim() === "capture") {
+        ctx.ui.notify(await captureStatus(pi, ctx, getAgentDir()), "info");
+      } else if (args.trim() === "bookie") {
         ctx.ui.notify((await bookieStatus(pi, ctx, { getAgentDir, getPackageDir })).join("\n"), "info");
       } else inspect(ctx);
     },

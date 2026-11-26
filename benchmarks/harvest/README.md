@@ -4,6 +4,8 @@ Should Daddy save this turn as a regression? This experiment compares the produc
 
 ## Verify the local ecosystem
 
+If `/bookie-capture sync` reports `Producer reference unavailable`, use `/ecosystem-status capture` in that Pi session. The pilot checks the first page of Daddy's stored results and requests the latest reference for the current branch, if present. The status shows the producer reply or timeout. Bookie registration is a separate step.
+
 Keep the matching Scout feature checkout beside this repository as `pi-harvest-scout`. Use the two local candidates together until both changes ship. With the Pi ecosystem installed, run the following in WSL from this checkout:
 
 ```sh
