@@ -504,3 +504,19 @@ console.log(JSON.stringify({ skillName: turn.skillName, scenarioId: turn.scenari
     assert.ok(!JSON.stringify(received).includes("synthetic-token-12345"));
   }
 });
+
+test("harvest skips a session model that cannot turn thinking off", async () => {
+  const fallbackModel = { provider: "openai-codex", id: "fixture", reasoning: true, thinkingLevelMap: { off: null } };
+  const result = await classifyHarvestCandidate({
+    signals: baseSignals,
+    fallbackModel,
+    registry: {
+      streamSimple() {
+        throw new Error("unsupported model must never be called");
+      },
+    },
+    env: { PI_CODING_AGENT_DIR: join(tmpdir(), "empty-harvest-fixture"), PI_ECO_MODEL_FAST: "session" },
+  });
+  assert.equal(result.harvest, false);
+  assert.equal(result.reason, "classifier-thinking-off-unavailable");
+});

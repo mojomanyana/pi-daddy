@@ -41,7 +41,7 @@ export interface EcosystemHarvestConfig {
 }
 
 export interface EcosystemConfig {
-  setupPreset?: { name: string; defaults: EcosystemModelsConfig };
+  setupPreset?: { name: string; defaults: EcosystemModelsConfig; fallbacks?: EcosystemModelFallbacks };
   models?: EcosystemModelsConfig;
   modelFallbacks?: EcosystemModelFallbacks;
   dashboard?: { autoStart?: boolean; autoSplit?: boolean };
