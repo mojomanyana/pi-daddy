@@ -46,12 +46,14 @@ await once(registry, "listening");
 const origin = `http://127.0.0.1:${registry.address().port}`;
 try {
   const env = { ...process.env, npm_config_registry: origin, npm_config_cache: join(packageRoot, "..", "npm-cache") };
-  const setup = spawn(process.execPath, [join(packageRoot, "dist", "cli.js"), "setup"], {
+  const setup = spawn(process.execPath, [join(packageRoot, "dist", "cli.js"), "setup", "--preset", "auto"], {
     stdio: "inherit",
     env,
   });
   const [code] = await once(setup, "exit");
   assert.equal(code, 0, "The packed candidate must install successfully");
+  const ecosystem = JSON.parse(readFileSync(join(profile, "ecosystem.json"), "utf8"));
+  assert.equal(ecosystem.setupPreset.name, "session", "The installed Pi catalog must fall back to the session in an empty profile");
   assert.ok(downloaded, "Pi must download the candidate Daddy tarball");
   const configured = JSON.parse(readFileSync(settings, "utf8")).packages;
   assert.ok(configured.some((entry) => entry?.source === "npm:pi-daddy" &&
