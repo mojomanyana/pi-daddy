@@ -34,7 +34,7 @@ for (const name of names) {
   assert.match(originalPins[name], stable);
 }
 
-// Network access is limited to release maintenance. Setup and ordinary PR checks use the recorded pins.
+// Only release maintenance resolves versions for this reproduction manifest.
 let pins = originalPins;
 if (command === "--check-latest" || command === "--refresh") {
   const candidates = await Promise.all(names.map(async (name) => {
@@ -52,10 +52,9 @@ if (command === "--check-latest" || command === "--refresh") {
   const changes = names.filter((name) => originalPins[name] !== pins[name]);
   for (const name of changes) console.log(`${name}: ${originalPins[name]} -> ${pins[name]}`);
   if (changes.length === 0) console.log("The tested ecosystem matches npm latest.");
-  // Fresh setup installs the extension matching its launcher. The manifest's Daddy
-  // pin is the published reproduction baseline and can be refreshed separately.
+  // The manifest records the last qualified reproduction baseline.
   if (command === "--check-latest" && changes.length === 1 && changes[0] === "pi-daddy") {
-    console.log(`Fresh setup uses the launcher-matched Daddy ${pins["pi-daddy"]}. Published reproduction uses ${originalPins["pi-daddy"]}; run beta-start.mjs --refresh to update it.`);
+    console.log(`Published reproduction uses pi-daddy ${originalPins["pi-daddy"]}; run beta-start.mjs --refresh to qualify ${pins["pi-daddy"]}.`);
   } else if (command === "--check-latest" && changes.length) {
     console.error("Prepare a candidate with node packages/pi-daddy/scripts/beta-start.mjs --refresh and run the public install check on its PR.");
     process.exitCode = 1;
@@ -72,8 +71,6 @@ const block = [
   "",
   "# Optional on a fresh profile without ecosystem.json: initialize the open-weight preset (or use --preset google).",
   `# npx ${cli} setup --skip-install --preset open-weight`,
-  "# Optional: put the matching standalone CLI on PATH for /dashboard split and pi-daddy panel.",
-  `# npm install -g ${cli}`,
   "```",
   "",
 ].join("\n");

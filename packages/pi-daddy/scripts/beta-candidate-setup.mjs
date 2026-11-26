@@ -4,13 +4,22 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
+import release from "../src/products/ecosystem-release.json" with { type: "json" };
 
 const [archive, packageRoot] = process.argv.slice(2);
 const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
 assert.equal(pkg.name, "pi-daddy");
+const profile = process.env.PI_CODING_AGENT_DIR;
+assert.ok(profile, "Use a disposable Pi profile for the candidate setup");
+mkdirSync(profile, { recursive: true });
+const settings = join(profile, "settings.json");
+const filters = { extensions: ["extensions/grants.ts"] };
+writeFileSync(settings, JSON.stringify({ packages: [{ source: `npm:pi-daddy@${release.publicVersions["pi-daddy"]}`, ...filters }] }), {
+  flag: "wx",
+});
 const bytes = readFileSync(archive);
 const tarPath = "/pi-daddy/-/candidate.tgz";
 const integrity = "sha512-" + createHash("sha512").update(bytes).digest("base64");
@@ -36,13 +45,20 @@ registry.listen(0, "127.0.0.1");
 await once(registry, "listening");
 const origin = `http://127.0.0.1:${registry.address().port}`;
 try {
+  const env = { ...process.env, npm_config_registry: origin, npm_config_cache: join(packageRoot, "..", "npm-cache") };
   const setup = spawn(process.execPath, [join(packageRoot, "dist", "cli.js"), "setup"], {
     stdio: "inherit",
-    env: { ...process.env, npm_config_registry: origin, npm_config_cache: join(packageRoot, "..", "npm-cache") },
+    env,
   });
   const [code] = await once(setup, "exit");
   assert.equal(code, 0, "The packed candidate must install successfully");
   assert.ok(downloaded, "Pi must download the candidate Daddy tarball");
+  const configured = JSON.parse(readFileSync(settings, "utf8")).packages;
+  assert.ok(configured.some((entry) => entry?.source === "npm:pi-daddy" &&
+    JSON.stringify(entry.extensions) === JSON.stringify(filters.extensions)), "Setup must migrate a filtered pin in place");
+  const update = spawn("pi", ["update", "--extensions"], { stdio: "inherit", env });
+  const [updateCode] = await once(update, "exit");
+  assert.equal(updateCode, 0, "Pi must be able to update the managed ecosystem");
 } finally {
   registry.close();
 }

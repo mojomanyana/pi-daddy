@@ -486,8 +486,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
               assertDiscoveryHealthy(session, lifecycle);
               delegation.refreshSpawnable();
             }),
-          openDashboard: async () =>
-            "Use `/dashboard` or `/dashboard split` (or `pi-daddy panel`) for the standalone Side Panel.",
+          openDashboard: async () => "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.",
           previewDelegation: (name: string) => planWithApprovals(session, { task: "(preview)", agent: name }, {}, null),
           modelInput: (title: string, placeholder?: string) => ctx.ui.input(title, placeholder),
           modelNotify: (message: string, type?: "info" | "warning" | "error") => ctx.ui.notify(message, type),

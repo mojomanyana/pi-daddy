@@ -8,11 +8,17 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 ### Install the ecosystem
 
-**Fresh profile:** Use Pi Daddy 1.0.3 or later. Run `npx pi-daddy@latest setup --preset auto`. Setup installs the Daddy extension matching the launcher's exact version and the four [qualified companion releases](packages/pi-daddy/src/products/ecosystem-release.json). Run `pi list` to see the installed versions.
+With Node and Pi available, install all five ecosystem packages into your Pi profile:
 
-The `auto` preset detects configured providers and builds ordered model fallbacks, including the current Pi session. You can also choose an explicit provider preset or edit model tiers in dashboard Settings or `ecosystem.json`. Run `pi-daddy doctor` to inspect the effective configuration. Bookie skips distillation when the configured fast model is unavailable.
+```bash
+npx --yes pi-daddy@latest setup --preset auto
+```
 
-**Repair or reproduce an install:** Use the explicit pins below. Run `pi list` in the affected project first. Update each package in its original scope with `pi install --local` for project-local entries and `pi install` for user entries.
+This command also replaces existing ecosystem pins in your personal profile with updateable sources. The packages live in Pi's profile. Subsequent updates use `pi update --extensions`. Restart Pi afterward. Run `pi list` to see the configured sources.
+
+Setup is optional. Install any component directly with Pi, for example `pi install npm:pi-daddy`, then start Pi. The `auto` preset is a convenience for configuring provider tiers. Choose a preset later with `npx --yes pi-daddy@latest setup --skip-install --preset auto` or edit the tiers in dashboard Settings. For diagnostics, use `npx --yes pi-daddy@latest doctor`.
+
+**Reproduce the tested install:** Use the explicit pins below or pass `--pinned` to setup. If a project has its own package declaration, `pi install --local npm:<package>` switches that entry to tracking.
 
 <!-- verified-beta-install:start -->
 Requires Node 24+ and stable Pi 1.6.0+. Tested with Pi 1.6.0.
@@ -26,22 +32,20 @@ pi install npm:skill-harness@1.0.4
 
 # Optional on a fresh profile without ecosystem.json: initialize the open-weight preset (or use --preset google).
 # npx pi-daddy@1.1.0 setup --skip-install --preset open-weight
-# Optional: put the matching standalone CLI on PATH for /dashboard split and pi-daddy panel.
-# npm install -g pi-daddy@1.1.0
 ```
 <!-- verified-beta-install:end -->
 
-Maintainers can refresh the published reproduction set from npm with `node packages/pi-daddy/scripts/beta-start.mjs --refresh`. The public install workflow checks both the packed candidate with its four companions and the five published reproduction pins. The weekly check flags new companion releases. When only Daddy advances, fresh setup already uses its new version; the check reports how to refresh the reproduction pins. Existing profiles keep their installed pins until you upgrade them.
+Maintainers can refresh the published reproduction set from npm with `node packages/pi-daddy/scripts/beta-start.mjs --refresh`. The public install workflow checks the packed candidate with its four companions and the five published reproduction pins.
 
 In an open Pi session, run `/reload`, then `/grants`: `build`, `review`, and `debug` should be listed, even if they need your approval. To install Daddy alone, see [Install and first run](#install-and-first-run).
 
 ### Interactive 5-Tab Side-Panel Dashboard
 
-`pi install` updates the extension, not your shell's `pi-daddy` binary. For a split pane, use the matching standalone CLI above and check `pi-daddy --version`. Start Pi in the repository. Run `/dashboard split` to start and open the dashboard, or run `/dashboard` first and then `pi-daddy panel` from another terminal in the same directory. With `dashboard.autoStart` enabled, the manual start is unnecessary.
+Start Pi in the repository. `/dashboard split` opens the panel using the CLI shipped with the loaded extension. `/dashboard open` opens the browser view. `/dashboard` prints the browser URL and a command you can copy into another terminal. With `dashboard.autoStart` enabled, Pi starts the dashboard for you.
 
 ```bash
-/dashboard split          # inside Pi: auto-splits tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, or Windows Terminal
-pi-daddy panel            # from any second terminal pane in the same repo: auto-attaches with zero copy-paste
+/dashboard split          # in Pi, open the terminal panel
+/dashboard open           # in Pi, open the browser dashboard
 ```
 
 Tabs & hotkeys: `[1] Overview` (live tokens, prompt cache %, cost, events, harvest status) · `[2] Tasks` · `[3] Memory` · `[4] Research` · `[5] Settings` · `[s]` live steer · `[f]` follow-up · `[m]` work mode · `[a]` auto · `[t]` thinking · `[o]` toggle optional tools (`delegate_tournament`, `quick_review`) · `[e]` edit `fast`/`work`/`strong` model tiers (persisted to `~/.pi/agent/ecosystem.json`) · `[x]` manual strong-model escalation · `[h]` harvest session eval.
@@ -193,7 +197,7 @@ pi
 Open Pi and start your task. An interactive parent discovers the agents Pi has selected and restores the
 project's saved permissions automatically. Additional agents supplied by extensions become available before
 the first task. In a fresh project the session uses its observed tools and the existing permission gates.
-Run `/dashboard split` or `pi-daddy panel` from a second terminal pane to open the 5-tab side panel alongside Pi.
+Run `/dashboard split` in Pi to open the 5-tab side panel. Run `/dashboard` for the browser URL and the command for a second terminal.
 
 Use `/grants` to inspect access. To explicitly save a different project ceiling and enable the project governance
 ledger, use `/grants init`. It also creates the review copy at `.pi/pi-daddy/settings.json` and stores the enforced
@@ -695,6 +699,9 @@ advisor call or training pipeline is installed. Dataset consent, supported train
 separate qualification.
 
 ## Command-line reference
+
+Use `npx --yes pi-daddy@latest <command>` for standalone commands. For the ledger viewer,
+use `npx --yes --package pi-daddy@latest -- pi-daddy-dashboard`.
 
 ```text
 pi-daddy init [--force] [--dir <path>]

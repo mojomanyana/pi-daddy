@@ -7,34 +7,41 @@ import { test, type TestContext } from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "../extensions/session.ts";
 import { registerWebDashboard } from "../extensions/web-dashboard.ts";
-import { detectSupportedSplitters, openTerminalSplit, planTerminalSplit } from "../src/products/terminal-split.ts";
+import {
+  detectSupportedSplitters,
+  formatPanelCommand,
+  openTerminalSplit,
+  planTerminalSplit,
+} from "../src/products/terminal-split.ts";
 
 const URL = "http://127.0.0.1:45123/?token=abc";
+const cli = planTerminalSplit(URL, { TMUX: "1" })!.args[5];
+const panel = [process.execPath, cli, "panel", URL];
+
+test("terminal split runs the package CLI with the current Node even if PATH has no Daddy command", () => {
+  assert.match(cli, /[\\/]pi-daddy[\\/]dist[\\/]cli\.js$/);
+  assert.deepEqual(planTerminalSplit(URL, { PATH: "", TMUX: "1" }, "linux"), {
+    kind: "tmux",
+    command: "tmux",
+    args: ["split-window", "-h", "-l", "48", ...panel],
+  });
+  assert.ok(formatPanelCommand(URL, "win32").startsWith("& "));
+  assert.ok(formatPanelCommand(URL, "linux").includes(" 'panel' "));
+});
 
 test("planTerminalSplit selects Kitty vsplit with optional KITTY_LISTEN_ON socket", () => {
   const plain = planTerminalSplit(URL, { KITTY_WINDOW_ID: "42" }, "darwin");
   assert.deepEqual(plain, {
     kind: "kitty",
     command: "kitty",
-    args: ["@", "launch", "--type=window", "--location=vsplit", "--cwd=current", "pi-daddy", "panel", URL],
+    args: ["@", "launch", "--type=window", "--location=vsplit", "--cwd=current", ...panel],
   });
 
   const withSocket = planTerminalSplit(URL, { KITTY_WINDOW_ID: "42", KITTY_LISTEN_ON: "unix:/tmp/mykitty" }, "linux");
   assert.deepEqual(withSocket, {
     kind: "kitty",
     command: "kitty",
-    args: [
-      "@",
-      "--to",
-      "unix:/tmp/mykitty",
-      "launch",
-      "--type=window",
-      "--location=vsplit",
-      "--cwd=current",
-      "pi-daddy",
-      "panel",
-      URL,
-    ],
+    args: ["@", "--to", "unix:/tmp/mykitty", "launch", "--type=window", "--location=vsplit", "--cwd=current", ...panel],
   });
 });
 
@@ -42,12 +49,12 @@ test("planTerminalSplit supports Ghostty on macOS and Linux, while preferring tm
   assert.deepEqual(planTerminalSplit(URL, { TERM_PROGRAM: "ghostty" }, "darwin"), {
     kind: "ghostty",
     command: "open",
-    args: ["-na", "Ghostty", "--args", "-e", "pi-daddy", "panel", URL],
+    args: ["-na", "Ghostty", "--args", "-e", ...panel],
   });
   assert.deepEqual(planTerminalSplit(URL, { GHOSTTY_RESOURCES_DIR: "/usr/share/ghostty" }, "linux"), {
     kind: "ghostty",
     command: "ghostty",
-    args: ["-e", "pi-daddy", "panel", URL],
+    args: ["-e", ...panel],
   });
   assert.equal(
     planTerminalSplit(URL, { TMUX: "/tmp/tmux-1000/default,1,0", TERM_PROGRAM: "ghostty" }, "darwin")?.kind,
@@ -58,7 +65,17 @@ test("planTerminalSplit supports Ghostty on macOS and Linux, while preferring tm
 test("planTerminalSplit covers WezTerm, macOS iTerm2, Windows Terminal, and returns undefined when unsupported", () => {
   assert.equal(planTerminalSplit(URL, { WEZTERM_PANE: "7" }, "darwin")?.kind, "wezterm");
   assert.equal(planTerminalSplit(URL, { TERM_PROGRAM: "iTerm.app" }, "darwin")?.kind, "iterm2");
-  assert.equal(planTerminalSplit(URL, { WT_SESSION: "guid-1" }, "win32")?.kind, "wt");
+  assert.deepEqual(planTerminalSplit(URL, { WT_SESSION: "guid-1" }, "win32"), {
+    kind: "wt",
+    command: "wt",
+    args: ["-w", "0", "sp", "-V", "-s", "0.38", ...panel],
+    windowsHide: true,
+  });
+  assert.deepEqual(planTerminalSplit(URL, { WT_SESSION: "guid-1", WSL_DISTRO_NAME: "Test Ubuntu" }, "linux"), {
+    kind: "wt",
+    command: "wt.exe",
+    args: ["-w", "0", "sp", "-V", "-s", "0.38", "wsl.exe", "--distribution", "Test Ubuntu", "--exec", ...panel],
+  });
   assert.equal(planTerminalSplit(URL, {}, "linux"), undefined);
 });
 
@@ -124,8 +141,10 @@ test("Issue #4: Kitty session with no kitty executable on PATH does not crash Pi
     assert.ok(notifications.length >= 1, "expected fallback notification");
     const last = notifications[notifications.length - 1];
     assert.match(last, /http:\/\/127\.0\.0\.1:\d+\/\?token=/, "must show existing dashboard URL fallback");
-    assert.match(last, /pi-daddy panel/, "must show manual terminal panel command");
+    assert.ok(last.includes(formatPanelCommand(last.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=\S+/)![0])));
     assert.doesNotMatch(last, /Opened terminal side panel/, "must not claim split succeeded when kitty is missing");
+    await dashboard.handler("open", ctx);
+    assert.match(notifications.at(-1)!, /Browser: http:\/\/127\.0\.0\.1:/);
   } finally {
     await dashboard.handler("stop", ctx);
   }

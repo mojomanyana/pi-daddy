@@ -15,7 +15,7 @@ import {
   type WebDashboardState,
   type WebDashboardTask,
 } from "../src/products/web-dashboard.ts";
-import { openTerminalSplit } from "../src/products/terminal-split.ts";
+import { formatPanelCommand, openTerminalSplit } from "../src/products/terminal-split.ts";
 import {
   classifyHarvestCandidate,
   createTurnHarvestTracker,
@@ -44,13 +44,15 @@ const THINKING_ALLOWED = new Set(["off", "minimal", "low", "medium", "high", "xh
 
 function openInBrowser(url: string): void {
   try {
-    if (process.platform === "darwin") {
-      spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
-    } else if (process.platform === "win32") {
-      spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-    } else {
-      spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
-    }
+    const command =
+      process.platform === "darwin"
+        ? "open"
+        : process.platform === "win32" || process.env.WSL_DISTRO_NAME
+          ? "explorer.exe"
+          : "xdg-open";
+    const child = spawn(command, [url], { detached: true, stdio: "ignore", windowsHide: true });
+    child.once("error", () => {});
+    child.unref();
   } catch {
     /* Best-effort browser open; URL is always printed. */
   }
@@ -443,9 +445,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
       if (sub === "status") {
         ctx.ui.notify(
-          handle
-            ? `Side panel running: pi-daddy panel  (${handle.url})`
-            : "Side panel stopped. Run /dashboard to start.",
+          handle ? `Side panel running: ${handle.url}` : "Side panel stopped. Run /dashboard to start.",
           "info",
         );
         return;
@@ -461,12 +461,12 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         }
         splitError = split.error;
       }
+      const shell = process.platform === "win32" ? "PowerShell" : "shell";
       ctx.ui.notify(
         `${splitError ? `Terminal auto-split unavailable (${splitError}).\n` : ""}` +
           `Pi Daddy Side Panel:\n` +
-          `  Terminal split (auto-attach): pi-daddy panel\n` +
-          `  Terminal explicit URL:        pi-daddy panel "${started.url}"\n` +
-          `  Browser UI:                   ${started.url}`,
+          `  Browser: ${started.url}\n` +
+          `  Another ${shell}: ${formatPanelCommand(started.url)}`,
         "info",
       );
     },
