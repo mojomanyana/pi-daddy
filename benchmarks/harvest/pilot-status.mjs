@@ -28,14 +28,22 @@ export default function (pi) {
     }).join(" · ");
     ctx.ui.notify(msg + "\nWorkspace: " + ctx.cwd, entries.every(([,v]) => v) ? "info" : "warning");
   };
+  const checkCapture = async (_args, ctx) => {
+    ctx.ui.notify(await captureStatus(pi, ctx, getAgentDir()), "info");
+  };
+  pi.registerCommand("pilot-capture-check", {
+    description: "Check whether Daddy can read a saved result for Bookie in this session",
+    handler: checkCapture,
+  });
   pi.registerCommand("ecosystem-status", {
-    description: "Show registered ecosystem components in this Pi session",
+    description: "Show loaded components, or use bookie or capture for diagnostics",
     handler: async (args, ctx) => {
       if (args.trim() === "capture") {
-        ctx.ui.notify(await captureStatus(pi, ctx, getAgentDir()), "info");
+        await checkCapture(args, ctx);
       } else if (args.trim() === "bookie") {
         ctx.ui.notify((await bookieStatus(pi, ctx, { getAgentDir, getPackageDir })).join("\n"), "info");
-      } else inspect(ctx);
+      } else if (!args.trim()) inspect(ctx);
+      else ctx.ui.notify("Use /ecosystem-status, /ecosystem-status bookie, or /pilot-capture-check.", "warning");
     },
   });
 }
