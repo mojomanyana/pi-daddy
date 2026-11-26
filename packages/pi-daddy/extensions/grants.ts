@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   registerChildUsageReport(pi, session);
   registerTournamentTools(pi, session);
   registerWebDashboard(pi, session);
-  const runtimeSnapshot = registerRuntimeSnapshot(pi, session);
+  let runtimeSnapshot: ReturnType<typeof registerRuntimeSnapshot> | undefined;
   registerDashboardSettings(pi, session);
   const beginWorkMode = registerWorkMode(pi, session);
   const projectMemory = registerProjectMemoryOwner(pi, session);
@@ -124,6 +124,9 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     await session.ensureDefinitions?.();
   });
   pi.on("session_start", async (event, ctx) => {
+    // Pi can load a package during project trust and then select a different copy for the session.
+    // Only the selected copy should listen for Bookie's reads and other runtime requests.
+    runtimeSnapshot ??= registerRuntimeSnapshot(pi, session);
     // Real SDK contexts always supply SessionManager. The fallback keeps lightweight wiring fixtures
     // isolated; it cannot carry state into another extension instance.
     const owner = (ctx as { sessionManager?: object }).sessionManager ?? session;
@@ -286,7 +289,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
   });
 
   pi.on("session_shutdown", async (event, ctx) => {
-    runtimeSnapshot.retireDelivery();
+    runtimeSnapshot?.retireDelivery();
     if (
       event.reason === "new" &&
       ctx.mode === "tui" &&

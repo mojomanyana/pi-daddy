@@ -25,7 +25,7 @@ function explainOwner(pi, cwd, sessionId) {
         if (/^runtime (lock is not a private ordinary file|settlement root must (be private|not contain symlinks))$/.test(reason))
           return finish("Daddy rejected the permissions or location of its runtime storage.");
         if (reason === "runtime settlement requires Linux x64") return finish(reason + ".");
-        if (reason === "runtime owner is not ready") return finish("Daddy has no active session binding and reported no startup error.");
+        if (reason === "runtime owner is not ready") return finish("An unbound Daddy instance replied. Use /reload in this Pi session, then /bookie-capture sync.");
         if (snapshot.sessionId === sessionId && snapshot.cwd === cwd && snapshot.ownerScope)
           return finish("Daddy reported a matching runtime owner on the follow-up check.");
         return finish("Daddy did not establish the runtime owner. The specific cause is unconfirmed.");
