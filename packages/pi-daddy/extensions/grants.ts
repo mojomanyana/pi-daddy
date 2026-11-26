@@ -155,8 +155,10 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       try {
         const nativeId = (owner as { getSessionId?: () => string }).getSessionId?.() ?? session.episodeId;
         await initializeSessionAutoMode(session, reload.environment, nativeId);
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         beginWorkMode(ctx, event?.reason ?? "startup", reload.environment);
       } catch (error) {
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         session.autoModeFailure = `Daddy Auto mode unavailable: ${String(error)}`;
         throw error;
       }
