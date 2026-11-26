@@ -1,12 +1,14 @@
 // Run two actual Pi processes against the local candidates and installed peers. No model requests.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const runFile = promisify(execFile);
 const peers = resolve(process.argv[2] ?? join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "npm", "node_modules"));
 const packages = [join(root,"packages/pi-daddy"),resolve(root,"../pi-harvest-scout"),
   ...["pi-bookie","principal-pi-skills","skill-harness"].map(name=>join(peers,name))].map(path=>{
@@ -24,7 +26,7 @@ console.log("Testing Pi " + sdk + " with " + packages.map(path=>{
 const temp = mkdtempSync(join(tmpdir(),"pi-ecosystem-check-"));
 try {
   const profile = join(temp,"profile"), cwd = join(temp,"workspace"), session = join(temp,"session.jsonl");
-  mkdirSync(profile); mkdirSync(cwd);
+  mkdirSync(profile,{mode:0o700}); mkdirSync(cwd,{mode:0o700});
   writeFileSync(join(profile,"settings.json"),JSON.stringify({packages}));
   const probe = join(temp,"check.mjs"), result = join(temp,"result.json");
   const harnessOut = join(temp,"evaluations");
@@ -43,40 +45,47 @@ import {ecosystemStatus} from ${JSON.stringify(statusPath)};
 import {taskEnrollment,openManagedVault,attestTaskEnrollment} from ${JSON.stringify(bookieModule)};
 export default function(pi) {
   pi.registerCommand('verify-ecosystem-fixture',{description:'Offline fixture',handler:async (_,ctx)=>{
-    const loaded = ecosystemStatus(pi);
-    let enrollment;
-    if (process.platform === "linux") {
-      const dir = ${JSON.stringify(profile)};
-      const before = await taskEnrollment(ctx.cwd,dir);
-      await openManagedVault(ctx.cwd,async()=>{},dir);
-      await attestTaskEnrollment(ctx.cwd,async()=>{},dir);
-      enrollment = {before,after:await taskEnrollment(ctx.cwd,dir)};
-    }
-    let scoutSettings = false;
-    pi.events.emit('scout:model-settings:v1',{report(){scoutSettings=true}});
-    const restored = ctx.sessionManager.getBranch().some(e=>e.type==='message' && e.message.content==='Fixture marker');
-    writeFileSync(${JSON.stringify(result)},JSON.stringify({loaded,scoutSettings,restored,enrollment,id:ctx.sessionManager.getSessionId()}));
-    ctx.shutdown();
+    try {
+      const loaded = ecosystemStatus(pi);
+      let enrollment;
+      if (process.platform === "linux") {
+        const dir = ${JSON.stringify(profile)};
+        const before = await taskEnrollment(ctx.cwd,dir);
+        await openManagedVault(ctx.cwd,async()=>{},dir);
+        await attestTaskEnrollment(ctx.cwd,async()=>{},dir);
+        enrollment = {before,after:await taskEnrollment(ctx.cwd,dir)};
+      }
+      let scoutSettings = false;
+      pi.events.emit('scout:model-settings:v1',{report(){scoutSettings=true}});
+      const restored = ctx.sessionManager.getBranch().some(e=>e.type==='message' && e.message.content==='Fixture marker');
+      writeFileSync(${JSON.stringify(result)},JSON.stringify({loaded,scoutSettings,restored,enrollment,id:ctx.sessionManager.getSessionId()}));
+    } catch (error) {
+      writeFileSync(${JSON.stringify(result)},JSON.stringify({error:String(error)}));
+    } finally { ctx.shutdown(); }
   }});
 }`);
   const cli = join(root,"node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
-  const run = () => {
+  const run = async () => {
     rmSync(result,{force:true});
-    const child = spawnSync(process.execPath,[cli,"--offline","--approve","--mode","rpc","--session",session,"-e",probe],{
+    const done = runFile(process.execPath,[cli,"--offline","--approve","--mode","rpc","--session",session,"-e",probe],{
       cwd,env:{...process.env,PI_CODING_AGENT_DIR:profile,PI_DADDY_AUTO_MODE:"1",PI_OFFLINE:"1",PI_SKIP_VERSION_CHECK:"1"},
-      input:JSON.stringify({id:"inspect",type:"prompt",message:"/verify-ecosystem-fixture"})+"\n",encoding:"utf8",timeout:45000,
+      encoding:"utf8",timeout:45000,
     });
-    assert.equal(child.status,0,child.error?.message ?? child.stderr.slice(-600));
-    assert(existsSync(result),"Pi did not complete the offline inspection: " + (child.error?.message ?? child.stderr.slice(-600)));
+    // Pi treats stdin EOF as shutdown, including while an extension command awaits disk I/O.
+    // Keep the RPC channel open until the probe has saved its result and requested shutdown.
+    done.child.stdin.write(JSON.stringify({id:"inspect",type:"prompt",message:"/verify-ecosystem-fixture"})+"\n");
+    const {stdout,stderr} = await done;
+    assert(existsSync(result),"Pi did not complete the offline inspection: " + stdout.slice(-600) + stderr.slice(-600));
     const state = JSON.parse(readFileSync(result,"utf8"));
+    assert(!state.error,state.error);
     console.log(JSON.stringify(state));
     assert(Object.values(state.loaded).every(Boolean) && state.scoutSettings,"Missing ecosystem registration");
     return state;
   };
-  const first = run();
+  const first = await run();
   const timestamp = new Date().toISOString();
   writeFileSync(session,[{type:"session",version:3,id:first.id,timestamp,cwd},{type:"message",id:"1234abcd",parentId:null,timestamp,message:{role:"user",content:"Fixture marker",timestamp:Date.now()}}].map(x=>JSON.stringify(x)).join("\n")+"\n");
-  const second = run();
+  const second = await run();
   assert.equal(second.id,first.id); assert(second.restored,"Original turn missing after resume");
   if (process.platform === "linux") {
     assert.deepEqual(first.enrollment,{before:"absent",after:"attached"});
