@@ -12,6 +12,7 @@ export interface TerminalSplitPlan {
   readonly command: string;
   readonly args: string[];
   readonly windowsHide?: boolean;
+  readonly waitForExit?: boolean;
 }
 
 export interface TerminalSplitResult {
@@ -29,9 +30,13 @@ function panelArgs(url?: string): string[] {
 export function formatPanelCommand(url?: string, platform: NodeJS.Platform = process.platform): string {
   const args = panelArgs(url);
   if (platform === "win32") {
-    return "& " + args.map((arg) => "'" + arg.replace(/'/g, "''") + "'").join(" ");
+    return "& " + args.map(quotePowerShell).join(" ");
   }
   return args.map((arg) => "'" + arg.replace(/'/g, "'\\''") + "'").join(" ");
+}
+
+function quotePowerShell(arg: string): string {
+  return "'" + arg.replace(/'/g, "''") + "'";
 }
 
 export function planTerminalSplit(
@@ -87,10 +92,36 @@ export function planTerminalSplit(
     };
   }
   if (platform === "linux" && env.WT_SESSION && env.WSL_DISTRO_NAME) {
+    // WSL cannot execute Windows app aliases directly. Windows PowerShell resolves wt.exe on the host.
+    const args = [
+      "-w",
+      "0",
+      "sp",
+      "-V",
+      "-s",
+      "0.38",
+      "wsl.exe",
+      "--distribution",
+      env.WSL_DISTRO_NAME,
+      "--exec",
+      ...panel,
+    ];
+    const data = Buffer.from(JSON.stringify({ argv: args }), "utf8").toString("base64");
+    const command =
+      "$ErrorActionPreference = 'Stop'; " +
+      `$terminalArgs = (ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')))).argv; ` +
+      "& wt.exe @terminalArgs; exit $LASTEXITCODE";
     return {
       kind: "wt",
-      command: "wt.exe",
-      args: ["-w", "0", "sp", "-V", "-s", "0.38", "wsl.exe", "--distribution", env.WSL_DISTRO_NAME, "--exec", ...panel],
+      command: "powershell.exe",
+      args: [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-EncodedCommand",
+        Buffer.from(command, "utf16le").toString("base64"),
+      ],
+      waitForExit: true,
     };
   }
   return undefined;
@@ -142,6 +173,13 @@ export function openTerminalSplit(
     });
 
     child.once("spawn", () => {
+      if (plan.waitForExit) {
+        timer = setTimeout(() => {
+          child.kill();
+          finish({ ok: false, kind: plan.kind, error: "Windows Terminal launch timed out" });
+        }, 5000);
+        return;
+      }
       child.unref();
       timer = setTimeout(() => finish({ ok: true, kind: plan.kind }), settleWindowMs);
       timer.unref?.();
