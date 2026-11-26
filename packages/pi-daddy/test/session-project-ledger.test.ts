@@ -169,7 +169,7 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
   const cwd = await tempDir("grants-reload-lifecycle-"),
     agentDir = await tempDir("grants-reload-lifecycle-agent-");
   const originalCwd = process.cwd(),
-    keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR"] as const;
+    keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR"] as const;
   const original = new Map(keys.map((key) => [key, process.env[key]]));
   const makePi = (sessionManager: object) => {
     const hooks = new Map<string, any>(),
@@ -209,7 +209,6 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
     process.chdir(cwd);
     for (const key of keys) delete process.env[key];
     process.env.PI_CODING_AGENT_DIR = agentDir;
-    process.env.PI_DADDY_HERDR = "0";
     await saveGrant(cwd, ["tool:read", "tool:delegate"]);
     const manager = {},
       root = makePi(manager);

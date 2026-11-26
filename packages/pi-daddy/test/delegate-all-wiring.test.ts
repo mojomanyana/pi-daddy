@@ -92,13 +92,6 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
   const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
-  // `PI_DADDY_HERDR=0` by DEFAULT, and this line is load-bearing rather than tidy-up.
-  //
-  // ADR-0031 made an unset variable mean *probe*, and `resolveExecutor` runs inside `session_start` — which
-  // this harness calls. Leaving it unset would run a real `herdr tab list` against whatever is on the
-  // developer's machine, so this suite would select panes here and subprocesses in CI, from the same source.
-  // A test whose outcome depends on which daemons happen to be running is not a test. `0` skips the probe
-  // entirely; a test that wants the other paths overrides it and says why.
   if (durable && !saved.has("PI_CODING_AGENT_DIR")) saved.set("PI_CODING_AGENT_DIR", process.env.PI_CODING_AGENT_DIR);
   Object.assign(process.env, { ...(durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
 

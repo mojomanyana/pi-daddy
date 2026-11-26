@@ -17,7 +17,7 @@
  * here. It is in the pane while the pane lives, and in the returned result afterwards. **The block is a display
  * and never the result** — conflating the two is R-03 with a new cause.
  *
- * Pure: no pi, no herdr, and no clock. `now` is a parameter so elapsed time is testable.
+ * Pure: no pi runtime and no clock. `now` is a parameter so elapsed time is testable.
  */
 
 /** Lines of context kept per child. Three, because four children of four lines each is already a screenful. */
@@ -65,7 +65,7 @@ export const emptyTail: Tail = { lines: [], open: false };
 export interface ChildProgress {
   /** Definition name, or `delegate` for a `tools:` spawn. */
   label: string;
-  /** herdr agent name, when this child runs in a pane. */
+  /** Optional executor-minted agent display name. */
   agentName?: string;
   paneId?: string;
   state: ChildState;
@@ -117,7 +117,7 @@ export function appendTail(tail: Tail, chunk: string): Tail {
 }
 
 /**
- * Replace a tail wholesale from a pane SNAPSHOT — the herdr path's counterpart to `appendTail`.
+ * Replace a tail wholesale from a bounded snapshot — the snapshot counterpart to `appendTail`.
  *
  * `agent read` returns a snapshot of a bounded terminal, so the right operation is *replace*, not *append*.
  * Appending snapshots is what fabricated text the child never printed: a pane whose bottom line was

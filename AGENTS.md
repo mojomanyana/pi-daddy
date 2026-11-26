@@ -23,7 +23,7 @@ README.md                         — what the product is and how to use it, pre
 packages/pi-daddy/                — the package
   src/kernel/                     — authority and planning; mostly pure, with bounded discovery readers
   src/governance/                 — stores and the ledger: record envelope, ledger events, approvals, grant store, leases, retention
-  src/executors/                  — how a child process is started: captured subprocess or Herdr pane
+  src/executors/                  — how a child process is started: captured subprocess execution
   src/products/                   — activity timeline, dashboard, episode report and outcome derivation
   extensions/                     — composition: the pi extension pi loads (grants.ts) and its helpers
   src/index.ts, src/cli.ts        — composition: the public root export and the `pi-daddy` bin
@@ -71,8 +71,8 @@ no-start proof from this call. Election, digests, terminal IDs, permissions and 
 cd packages/pi-daddy
 npm test                   # unit tests: no pi, no network, about 40s (it spawns real lock helpers)
 npm run typecheck          # src + extensions + tests + integration tests
-npm run test:integration   # against a REAL pi process and a real Herdr server, no model tokens
-npm run test:integration:ci # the model-free, Herdr-free subset CI runs
+npm run test:integration   # against a REAL pi process, no model tokens
+npm run test:integration:ci # the model-free subset CI runs
 npm run test:smoke         # pack, install into a scratch project, import and use it
 npm run contracts:generate # regenerate contracts/ledger-record/v1 from the runtime builders
 PI_DADDY_IT_MODEL=1 npm run test:integration    # adds an end-to-end tier with a real model (costs money)
@@ -106,8 +106,8 @@ and every one of these was something a fresh session had to guess.
 - **The changelog.** `packages/pi-daddy/CHANGELOG.md` is part of the published package, newest first, and a behaviour
   change adds an entry that says what to do about it. A change that is only comments, tests or documents does not.
 - **What CI gates on**, on Node 22.19.0 and 24.x: `format:check`, `typecheck`, `npm test`, `test:integration:ci`, an
-  assertion that the suite left the tree clean, and `test:smoke`. The full `test:integration` tier needs a live Herdr
-  daemon and stays local, as does `PI_DADDY_IT_MODEL=1`.
+  assertion that the suite left the tree clean, and `test:smoke`. The opt-in `PI_DADDY_IT_MODEL=1` tier
+  stays local.
 - **The record.** A decision gets a dated paragraph under "Decisions still in force"; a reversal gets a dated sentence
   beside the original, never an edit of it. A gap in the list below is closed by rewriting its bullet with what was
   measured and when, keeping what the bullet used to claim if that claim turned out to be false.
@@ -306,7 +306,7 @@ with a fixed phrase. `delegate_all` applies this per child and `delegate_chain` 
 continue; the next step's `taskFromExecutionId` names the retry, and a retried later step keeps that provenance.
 `PI_DADDY_REPLAY_RETRY=0` turns the retry (and the `replayable` mark below) off, any value other than `1` or `0`
 also does and is reported at startup, and the replay-safe mark stays. The startup summary and `/grants` say when
-this session does not retry: under the Herdr executor, with the switch off, and for an operation-bound delegation,
+this session does not retry: with the switch off, and for an operation-bound delegation,
 which is marked for its coordinator instead.
 
 Operation-bound delegations (owner's decision, same day: "Principal retries once. Daddy marks the failure as
@@ -318,15 +318,13 @@ the model's version 2 summary, at the same path. It is never set when any other 
 deadline guard, so a wall-clock timeout is not marked), when recording the operation's status failed (a failed
 control step), on a success, a retry or a reused reference. The operation settles exactly as before (settled, or
 not-started when nothing launched), which is what Principal's `retry` accepts; its coordinator rule retries such a
-phase once under a new operation ID, through the ordinary delegation path, and stops and asks after that. The Herdr
-executor stays excluded: no retry and no mark.
+phase once under a new operation ID, through the ordinary delegation path, and stops and asks after that.
 
 Beyond the owner's list, and why. A stable operation is not retried: its admission record is immutable and names one
 execution, and Principal's `complete` requires the settled cleanup to name that execution, so a retry under the
 claim would attribute another execution's final to it, and re-claiming returns the failed operation as a reused
 reference that `delegate` does not report as an error. A delegation with `operation_id` therefore runs and settles
-exactly as before; its owner retries it (above). A Herdr pane is excluded because a person can stop the child there
-and Daddy cannot tell that from a crash; a process child has no per-child stop control, so the only person's stop
+exactly as before; its owner retries it (above). A process child has no per-child stop control, so the only person's stop
 it can see is Esc on the parent tool call. Not only definitions: an ad hoc `delegate({tools: [...]})` whose effective
 tools only read is replay-safe too, a deliberate widening of the owner's "definitions" (the plan, not its source,
 decides what the child can change). A spent approval is not re-spent: a `once` answer
@@ -421,7 +419,7 @@ spawn-failure/truncation flags that are true, a reason bounded to 160 characters
 operation ID, else the execution ID its cleanup names). A settled worker that did not exit normally also keeps its
 receipt's cause when it is not `worker-exit` and a non-zero signal (`cleanup.receipt.reason`,
 `cleanup.receipt.workerSignal`; review of 2026-11-17): without them a helper interrupted by a signal read like an
-exit without a final, a SIGKILLed worker carried no sign of the kill, and a Herdr worker reaped on owner loss read
+exit without a final, a SIGKILLed worker carried no sign of the kill, and a worker reaped on owner loss read
 like a launch that never started. It is computed only from the unchanged version 1 projection, keeps each value at
 its version 1 path, and carries no path, PID, nonce, boot ID, session/message ID or hash. Complete receipts stay in
 result details (kept in the Pi session file when the session is persisted, withheld from providers) and in opt-in
@@ -557,7 +555,7 @@ or a general service manager. Synthetic session-restricted pattern and exact-PID
 property; interruption with worker exit zero still supplies no final, and operation reuse starts no new work.
 
 **2026-11-11 — native questions are live input observations.** Public Pi native select/confirm/input/editor
-start/end events may supply one current input row and a balanced Herdr blocked signal, bound to the current
+start/end events may supply one current input row, bound to the current
 session and canonical folder. Answer, cancellation, session change and disposal clear it. A pending Daddy
 approval takes display priority. Generic custom UI events do not distinguish loading screens from questions,
 so they never infer a user wait; existing explicit producer approvals keep their own state. Do not parse
@@ -568,8 +566,7 @@ the authenticated parent. An explicit save writes the selected option or typed a
 revision. Leaving the picker writes nothing. Recommendations need a reason and supporting evidence. Read-only
 publishers continue to show details. A saved choice never creates a permission or attention request.
 
-**2026-11-09 — first-run initialization is automatic in the interactive parent.** This supersedes the old
-requirement to confirm linking the bundled dashboard on its first verified Herdr startup. Existing disable and
+**2026-11-09 — first-run initialization is automatic in the interactive parent.** Existing disable and
 opt-out choices still win; replacing a different installation needs a separate human choice. Read the currently
 selected agents at open and reconcile Pi's later contributions before first dispatch. Opening a project never
 records a wider grant or opts the project into the governance ledger. Project defaults still bound subsequent
@@ -627,12 +624,6 @@ tier remains on Pi 1.0.4; no broad version range, peer restriction, or global ru
 
 **2026-10-09 — Explicit local diagnostic export.** The offline exporter reads only operator-selected files and one-level retention roots, filters native reasoning/structured environment fields, and records original and transformed hashes separately. Content-addressed output deduplicates bytes; missing evidence stays missing. Exact embedded JSON strings survive when no redaction is required. New private output never grants training/export eligibility or task approval. Free-text secret detection is heuristic, and source reads are individually checked rather than an atomic whole-workspace snapshot. Native child retention observes the final session after execution instead of attempting a predictable pre-spawn read.
 
-- **2026-10-09 — Owned Herdr uses Pi's native viewer.** Supersedes the earlier one-shot JSON-only Herdr display decision. The actual CLI shares its pane terminal while the unchanged pinned native owner gates and settles it; a separate inherited event pipe supplies real Pi lifecycle events to the existing persisted-current-branch validator. The explicit trusted extension consumes user input after session start except Ctrl+O tool expansion and renderer replies, suppresses thinking only in rendered Markdown, and shuts down on native agent settlement. The parent controls work. Descendant permission dialogs stay unavailable; inherited approvals and live Auto retain their existing semantics. Project trust follows prior noninteractive policy without writing a new decision. A startup interruption may still fail a child; terminal appearance never establishes completion. No ambient extension discovery or legacy pane-text completion fallback is introduced.
-
-- **2026-10-09 — Owned Herdr children report their own display lifecycle.** The launcher uses a unique `pi-daddy:` source to publish working state and guarded role metadata to its actual pane. It releases that source after native settlement, including coordinator loss. The coordinator repairs a missing launcher release only after validating the exact cleanup receipt; unknown cleanup remains unknown. Reports are bounded UI observations, never execution or permission authority. Retained tabs contain output, not a live interactive Pi process; no disposable session is registered for resumption.
-
-- **2026-10-09 — Herdr compatibility follows the live CLI contract.** Supersedes the exact product-version/private-protocol pin from initial owned-pane qualification. Require a successful tab-list response and structured running/compatible server status; honor explicit endpoint incompatibility. Release-number differences alone do not refuse. Endpoint compatibility alone does not prove CLI compatibility. The native ownership gate and exact final/cleanup receipts remain authoritative; a positive transport probe does not approve a task.
-
 **2026-10-09 — operator-controlled session Auto and actionable dashboard.** The owning session keeps live Auto
 permission authority. `PI_DADDY_AUTO_MODE` accepts only 0/1 and sets the session default; `/grants auto` and the
 connected dashboard mutate that same owner. Descendants receive a read/admit/wait reference, never the dashboard's
@@ -654,18 +645,7 @@ schema-pinned consumers to re-pin. Child runtime defaults are unchanged and visi
 retention remains an explicit local one-launch option independent of JEV/LoRA consent. Regression tests follow
 Pi's actual lifecycle order and force late approval, expiration, cancellation and consecutive-turn failures.
 
-**2026-10-08 — qualified pane ownership and trusted resume facts.** This reverses the staged Herdr refusal for
-exactly the measured client/server transport matrix. Governed Herdr runs a packaged launcher in an owned pane,
-with a private bounded Unix socket to the coordinator and the same pinned native subreaper as captured execution.
-The parent validates and binds native ownership before releasing the execution gate; daemon environment never
-supplies a child's grant. Coordinator loss cancels through socket loss, and launcher/daemon death closes the native
-owner pipe. Actual Pi CLI scripted-provider tests preserve exact current finals; native receipts and absent worker/
-detached-descendant PIDs verify cancellation, coordinator SIGKILL and independently owned server loss. UI polling
-and pane closure remain non-authoritative. Legacy interactive polling helpers are retained for compatibility but
-are not the governed dispatch path. Both governed backends now use one-shot JSON mode; retained panes have no live
-Pi writer, so private temporary sessions are disposed as on captured execution.
-
-An operator-agent-directory runtime settlement journal is a new control-state store, separate from the unchanged
+**2026-10-08 — runtime settlement journal and trusted resume facts.** An operator-agent-directory runtime settlement journal is a new control-state store, separate from the unchanged
 native ledger contract. It persists no task text, grants or approvals. A held OS lock excludes concurrent session
 owners. Pending launches and exact native identities precede the gate; finish and restart verify original durable
 receipts. Unknown or missing proof and control failure cannot become idle. The versioned same-process event bridge
@@ -714,10 +694,7 @@ not parent death or pane closure, establishes subtree cleanup. Uncertain cleanup
 exclusion; referenced ownership directories are durable evidence. Optional observation/display loss cannot replace
 verified primary work. Native tool results preserve separate work, final, cleanup and observation state.
 
-Amended 2026-10-08: the native pane launcher above qualifies the pinned Herdr matrix; other versions still refuse.
-
-This reverses ADR-0031's runnable Herdr auto-selection until parity is independently qualified: selection remains
-Captured subprocess execution is the sole executor across Linux, macOS, and Windows (Herdr was removed).
+Captured subprocess execution is the sole executor across Linux, macOS, and Windows.
 It also reverses ADR-0033's partial required handoff: oversized complete output blocks the dependent step and stays
 available in the returned result. These are mechanical process/protocol guarantees, not model quality or hostile
 same-user containment claims. Source tests include actual model-free Pi CLI and native phase handoffs.
@@ -765,9 +742,8 @@ trusting the orchestrator (fails silently the moment untrusted content reaches a
 2026-08-12 to add the fan-out budget as a cardinality companion: grant, depth, budget and approvals all shrink downward.
 
 **ADR-0010, ADR-0014, ADR-0021 — approvals are once, session or always; the task is never stored.** A gate is
-answered by a human at the root, because the original governed child ran `--print` with no UI and pi's non-interactive
-`confirm` resolves false. **Amended 2026-09-29:** captured process children still have no UI, while an interactive
-Herdr session may answer a gate for a delegation it executes; otherwise an inherited approval is required. Approvals are inheritable, riding down the subtree intersected with each child's grant,
+answered by a human at the root, because governed children run `--print` with no UI and pi's non-interactive
+`confirm` resolves false, so descendants require an inherited approval. Approvals are inheritable, riding down the subtree intersected with each child's grant,
 because a memory-only non-inheritable model (the pi-fabric shape) would confine gated work to one level below a
 human. `always` persists for a bounded period keyed `capability@subject` and is offered only when the subject is a
 human-authored definition; the model-chosen `tools:` path gets deny, once or session and never writes to disk, and a
@@ -803,9 +779,8 @@ from outside was impossible: its `SpawnOptions` has no `tools` field, its RPC is
 configuration query, `subagents:rpc:spawn` never produces a `tool_call`, its children are in-process sharing one
 `process.env`, and its registry is unreachable by import (probe `g13-subagents-coupling`), so an interceptor
 could refuse or allow but never narrow. The interceptor was therefore demoted to a tripwire and the ported ceiling rules
-deleted; keeping the pi-subagents frontmatter, inventing a format, or keeping the full fence were all rejected. Herdr is
-a supported executor, not the only one; ADR-0031 later changed selection so that an unset executor variable means
-"probe for a reachable Herdr server", never "a binary is on PATH".
+deleted; keeping the pi-subagents frontmatter, inventing a format, or keeping the full fence were all rejected. Captured
+subprocess execution is the sole executor.
 
 **ADR-0017 — a definition is spawnable only when the grant names it.** The catalog emits `agent:<name>` for every
 definition, and this ADR made holding that id (or `tool:*`) a real prerequisite in the planner, so "may spawn
@@ -872,15 +847,13 @@ stopped when `PI_DADDY_CHILD_IDLE_TIMEOUT` seconds (default fifteen minutes; zer
 pass with no activity. Activity is any stdout or stderr byte, a change to the child's pi session file, or, on the
 process executor on Linux, CPU time consumed by the child's process tree or a change in its descendants (read from
 `/proc`). Every child now gets a session file: the plan's `--session` when native retention asked for one, otherwise a
-private temporary file removed on every path after the run, except when the operator keeps a Herdr pane, where the
-interactive pi inside is still writing to it. That means every child's transcript is on disk for the duration of its
+private temporary file removed on every path after the run. That means every child's transcript is on disk for the duration of its
 run, under a 0o700 directory in the temp dir, whether or not retention is on. The session file alone is not enough,
 and the review of this PR is where that was learned: pi persists an entry only when a message or a tool result ends,
 and writes nothing before the first assistant message completes, so one long tool call is silent on the file; the
 process-tree signal covers that case. Not covered: a child whose very first model response takes longer than the
 bound while the model is rate-limited, and a tool call that waits on a remote consuming no CPU; both are stopped as
-idle, and that is the bound's meaning. On the Herdr executor, whose child is started by the daemon, the signals are
-the session file and, when a progress display is attached, the pane text. `PI_DADDY_CHILD_TIMEOUT` keeps its semantics (seconds, inherited, zero or malformed selects the default) but
+idle, and that is the bound's meaning. `PI_DADDY_CHILD_TIMEOUT` keeps its semantics (seconds, inherited, zero or malformed selects the default) but
 its default is six hours and its role is the ceiling for a child that never goes quiet, recorded as `deadlineAt`; the
 inactivity bound is recorded as `idleTimeoutMs` on the starting and running lifecycle events, and a stop is recorded
 with reason `idle-timeout` or `wall-clock`. Rejected: pi's `--mode json` event stream, because it would have moved the
@@ -955,12 +928,10 @@ default on the operator's session corpus. That is not task-success evidence and 
 default. The rule names itself in the ledger so a later advisor can replace the selection without anything else
 changing. Still not established: what a forked child does differently from one given a summary.
 
-Two interactions worth knowing, both found by review rather than by reasoning. pi refuses `--fork` beside
+One interaction worth knowing, found by review rather than by reasoning. pi refuses `--fork` beside
 `--session` or `--no-session`, and PR 3e gives every child a session file for the inactivity deadline; a forked
 child therefore gets `--fork` with `--session-dir` and `--session-id`, and the activity probe watches that
-directory instead of a fixed path. And the Herdr executor stages a system prompt to a file because it refuses a
-multi-line argument — it staged only the FIRST such flag, so the second one this change adds left a fence full of
-newlines inline and every non-fork handoff failed on that executor after the gate had already been answered.
+directory instead of a fixed path.
 
 Path confinement resolves symlinks. Lexical resolution passed a link inside the working directory pointing
 anywhere, which made `context:files` a general read primitive in any checkout containing one; and a path that is
@@ -989,10 +960,8 @@ not the thing the enforcer reads". A grant lives outside the workspace precisely
 session's ceiling; an advisor switch a child could flip would make the operator's next session ship its own
 description to a third party, which is the same self-defeating shape one step sideways. Corrected in 0.35.0: the
 settings block may narrow — a model, a timeout, or `enabled: false` for one project — and can never switch one on.
-Both the switch and the key are stripped from a child spawned by the PROCESS executor. A Herdr pane inherits the
-daemon's environment (R-148), which `mergeChildEnv` never sees, so a daemon started from a shell exporting them
-hands them to every pane child; that is named rather than claimed away, and closing it means stripping in the pane.
-On the process path: review measured it reaching a child granted
+Both the switch and the key are stripped from every spawned child.
+Review measured it reaching a child granted
 `tool:bash` while the constant's own comment claimed it never did, because it had been added to the list the
 `childEnv` hook may not write and not to the list `mergeChildEnv` strips. A credential is not something a child
 inherits by being spawned. Malformed configuration disables the advisor and names the field, rule 8's shape: an
@@ -1090,8 +1059,7 @@ between session and definition. The first delegation asks once to keep or edit d
 same `session_config` event. Lifecycle and advice records carry provider-reported nullable usage; child lifecycle
 also carries resolved model, effective thinking and source, definition hash/package version, and compaction count
 when observable. Children receive episode, definition and execution attribution variables with no authority. Episode
-cost uses provider-reported USD totals, warns at half the configured ceiling and gates at the ceiling; Herdr stops
-rather than pauses. `pi-daddy report` joins grant and activity ledgers; its numeric totals currently map unavailable
+cost uses provider-reported USD totals, warns at half the configured ceiling and gates at the ceiling. `pi-daddy report` joins grant and activity ledgers; its numeric totals currently map unavailable
 provider dimensions to zero.
 
 **2026-09-29 — episode outcomes are derived audit signals, not acceptance.** `pi-daddy outcomes` joins only commits
@@ -1133,8 +1101,7 @@ _About pi:_
   inactivity deadline also watches the child's process tree.
 
 - `--tools` and `--no-tools` hard-enforce, including against tools an `-e`-loaded extension tries to add; this is the
-  enforcement point and why no runtime is needed inside a descendant (`pi-fabric-eval`, probes 9–11; confirmed inside a
-  Herdr pane by `g16-herdr`).
+  enforcement point and why no runtime is needed inside a descendant (`pi-fabric-eval`, probes 9–11; confirmed by `g16`).
 - A child holding `bash` can start an ungoverned pi descendant with the full default tool surface, no ledger line, no
   depth increment and no grant computed; `--tools` is bypassed, not defeated (`g5-bash-escape`).
 - `bash` subsumes the file and search tools, so a grant of `read, bash` is not narrow; subsumption is modelled and
@@ -1143,13 +1110,10 @@ _About pi:_
   file and injected into the prompt before any tool exists, so a `--no-tools` child obeyed the instructions inside an
   arbitrary file; the task is passed with a leading space (`g1-argv`).
 - pi has separate switches per resource class: `--no-extensions` does not disable skills or context files, so a child
-  spawned with only `--tools read` loaded every operator skill and `CLAUDE.md` (`g16-herdr`, findings 4 and 5).
+  spawned with only `--tools read` loaded every operator skill and `CLAUDE.md` (`g16`, findings 4 and 5).
   `--skill` adds to the discovered set unless `--no-skills` is also passed (stated in the former SPEC and pinned by the spawn
   argv; no probe README itemises it).
-- `--append-system-prompt` accepts a file path as readily as literal text, which is how a multi-line definition body
-  reaches a Herdr child (`g16-herdr`, addendum finding 9).
-- `--print` makes pi process one prompt and exit, so it is incompatible with `herdr agent start`, which waits for
-  interactive readiness; the Herdr executor builds an interactive plan (`g16-herdr`, addendum finding 8).
+- `--append-system-prompt` accepts a file path as readily as literal text (`g16`, addendum finding 9).
 - In non-interactive modes pi installs a no-op UI whose `confirm` resolves false, so a `--print` child can never be
   asked anything; approval is structurally a root-only, human-at-the-terminal act, and inheritance is the whole
   mechanism below the root (ADR-0010 facts from pi's source; the three scopes, three kinds of no, persistence and
@@ -1161,35 +1125,12 @@ _About pi:_
   startup summary classifies against the inherited grant before the tool surface is observed (archived session log and
   risk register; no probe directory).
 - pi's built-in tool list drifts between releases (`parallel` appeared unannounced); the pinned list is a modelling
-  input for the catalog and never an authority, because `--tools` is (`g16-herdr`, finding 6).
+  input for the catalog and never an authority, because `--tools` is (`g16`, finding 6).
 - Node refuses to strip TypeScript types under `node_modules`, so library entry points must be compiled; pi's own
   loader reads extension TypeScript from `node_modules` fine (archived review 2026-08-10 finding B-I12 and ADR-0028;
   pinned by the smoke test; no probe directory).
 - pi core has no native subagent tool, only a bundled example extension, and it ships `--fork`, `--session`,
   `ctx.fork()` and `ctx.compact()`, which context handoff builds on (ADR-0016 context and ADR-0076 survey; not a probe).
-
-_About Herdr (the executor):_
-
-- `herdr agent start … -- <args>` delivers argv verbatim, echoed back in the reply, and `--tools` is enforced inside a
-  pane exactly as for a direct spawn; a pane is a terminal, not a runtime or a security boundary (`g16-herdr`).
-- Herdr has no `--env`; the grant goes on the pane's environment, which the shell launching the agent inherits
-  (`g16-herdr`, working run in the addendum). A pane child inherits the Herdr daemon's environment and only what the
-  plan adds, unlike the process executor which strips inherited governance keys first (R-148, measured; no probe
-  directory).
-- `agent start` types argv into a shell and refuses any argument it cannot encode, so a multi-line definition body
-  must be staged to a file and the path passed (`g16-herdr`, addendum finding 9).
-- `agent wait --until idle` matches the state the agent was already in, so settling must wait for `working` first or
-  require the state counter to advance past the value seen at prompt time (`g16-herdr`, finding 7).
-- `herdr agent stop` does not exist: it prints the usage banner and exits zero, which a wrapper reading the exit code
-  records as success; the only way to end a child is `herdr tab close <tab-id>`, and there is no way to stop an agent
-  while keeping its pane (`g16-herdr`, falsification note 2026-08-17).
-- Agent names must match `[a-z][a-z0-9_-]{0,31}`, so hierarchical child ids with dots are rejected and the executor
-  rewrites them (`g16-herdr`, second finding 2026-08-17).
-- A freshly created pane is not yet at a shell prompt (`agent_pane_busy`), so `agent start` is retried on exactly that
-  condition until the deadline; `agent read` returns raw terminal text, not Herdr's JSON envelope (`g16-herdr`,
-  addendum findings 10 and 11).
-- Pane cleanup runs in a `finally` and so does not cover the process being killed between `tab create` and that block;
-  a fan-out that dies mid-flight can leave panes behind (`g16-herdr`, addendum).
 
 _About workspace routing and governed-writer leases:_
 
@@ -1255,15 +1196,14 @@ _About the field (surveyed 2026-09-21, sources in ADR-0076):_
 - **approval** — a human's answer to a gate: once, for the session, or "always" for a bounded period for a named definition; keyed `capability@subject`; the approval store and governance ledger never store raw task text (ADR-0010, ADR-0014, ADR-0021).
 - **approval banking** — recording a dialog's answer so later steps or sessions with the same `capability@subject` do not re-ask; a `once` answer is never banked.
 - **correlation** — caller-supplied metadata (schema version, an assurance scope, external ids) recorded beside a decision and never used as authority.
-- **executor** — the way a child process is started: directly as a `pi` process, or inside a Herdr pane; chosen by probing for a reachable Herdr server, never by a binary on PATH (ADR-0031).
-- **Herdr** — the terminal agent host at herdr.dev used as an executor and as the dashboard's window; not required.
+- **executor** — how a child process is started: captured `pi` subprocess execution across Linux, macOS, and Windows.
 - **tripwire** — a `tool_call` hook that blocks known third-party spawn tools so an ungoverned spawn cannot happen silently.
 - **workspace routing** — starting a child in a registered worktree named by `workspace:<id>`; the id is a capability that attenuates (ADR-0035).
 - **workspace lease** — an exclusive writer lock on a routed workspace directory, a kernel `flock` held by a helper process; an exclusion mechanism among governed children, not shared memory and not confinement (ADR-0034, ADR-0035).
 - **retention (execution retention)** — opt-in storage of a child's stdout, stderr and result bytes with a manifest.
 - **content store** — the content-addressed blob directory `.pi/pi-daddy/content/` shared by retention and activity content, and later an artifact store.
 - **activity timeline** — the default-on local record of parent turns, child lifecycles and runtime-skill reads; it may retain private prompt/final content unless configured for metadata only or disabled.
-- **dashboard** — the ledger projection and session model/thinking control (`pi-daddy-dashboard`, `/grants dashboard` in a Herdr pane); it shows cost read-only and sends model edits and explicit Auto permission choices to the owning session over a private local socket (ADR-0036 amendments).
+- **dashboard** — the ledger projection and session model/thinking control (`pi-daddy-dashboard`, standalone Side Panel via `/dashboard open` or `/dashboard split`); it shows cost read-only and sends model edits and explicit Auto permission choices to the owning session over a private local socket (ADR-0036 amendments).
 - **chain** — `delegate_chain`: a straight line of steps planned as one unit, each step's task composed from the previous step's fenced output (ADR-0033).
 - **handoff fence** — the nonce-delimited, labelled block a prior step's output crosses in; the nonce is generated after the producer has finished.
 - **kernel, governance, executors, advisors, products** — the five source layers with a mechanically enforced import direction; `extensions/`, `src/index.ts` and `src/cli.ts` are composition (ADR-0076).
@@ -1369,10 +1309,6 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   - It is a digest of the PATH, never of the contents. It pins where, not what is there; swapping what lives
     under the canonical root defeats it, which needs `symlink(2)` and so is ADR-0012's scope.
   - A child holding `bash` starts an ungoverned process and none of this applies.
-  - The Herdr pane path rests on one measured fact with no test behind it: `tab create --env VAR=` delivers the
-    variable set-but-empty, which is what makes "a pin exists and you got none of it" distinguishable from "no
-    pin exists" there. If a herdr release ever dropped empty-valued entries, the descendant-mint escalation
-    returns on that path with nothing failing.
   - The pin is authority held in a `globalThis` symbol, readable by any co-loaded `-e` extension, and the owner
     identity it is keyed on falls back to the session object if pi ever made `sessionManager` optional — whose
     failure mode is silent re-minting.
@@ -1423,14 +1359,9 @@ Kept features only. Numbers are dropped except the two that code and rules cite.
   one message naming only the definitions. Fixing it means changing the catalog's error model, which is a
   larger change than this one and does not belong bolted onto it.
 
-- The former Herdr executor passed only plan additions into the daemon environment. **Closed 2026-10-08:** the
-  qualified launcher receives the exact same merged/stripped child environment as captured execution over the
-  private owner socket. The real-pane test checks explicit grant transfer without daemon pane-context inheritance.
 - A relative inherited ledger path resolves inside a routed child's worktree, splitting state and leaving `?? .pi/` in
   `git status`; a `read` lease takes no kernel lock, so a grandchild can take a write lease on a root already held.
-- Pane display cleanup can still fail if Herdr disappears. **Process risk closed 2026-10-08:** native subreaper
-  receipts, rather than the pane reaper or tab-close race, establish governed subtree settlement. Real coordinator
-  SIGKILL and owned-server-stop fixtures check receipt identity and absent worker/detached-descendant PIDs.
+- Native subreaper receipts establish governed subtree settlement across coordinator loss and SIGKILL.
 - The lease helper signals a recorded pid with no start-time identity check; in a narrow window it may signal a
   recycled pid. Accepted, bounded by the parent's uid.
 - One `session` yes on the model-chosen `tools:` path (fixed subject `<delegate>`) pre-authorises the whole subtree

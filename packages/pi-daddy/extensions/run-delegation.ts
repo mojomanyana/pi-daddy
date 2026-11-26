@@ -264,9 +264,7 @@ async function runOneDelegationImplementation(
   signal: AbortSignal | undefined,
   /**
    * Progress for the parent's status block (ADR-0032). Optional, so nothing here depends on being watched.
-   *
-   * One sink for both executors: the herdr path additionally reports a pane id, and the process path never
-   * has one. Every field is display-only — the child's answer is still the returned outcome.
+   * Every field is display-only — the child's answer is still the returned outcome.
    */
   /**
    * The optional tail, as ONE object rather than positional arguments.
@@ -294,10 +292,10 @@ async function runOneDelegationImplementation(
     onProgress?: (update: {
       /** Appended (process executor: a genuine byte stream). */
       chunk?: string;
-      /** Replaces (herdr executor: a snapshot of a bounded terminal). The two are NOT interchangeable. */
+      /** Replaces the tail from a bounded snapshot. The two are NOT interchangeable. */
       snapshot?: string[];
       paneId?: string;
-      /** The name herdr actually knows this child by — minted in `runHerdrPane`, so it cannot be derived. */
+      /** Display agent name minted by the executor, if any. */
       agentName?: string;
       state?: "starting" | "running" | "completed" | "failed";
     }) => void;
@@ -406,16 +404,9 @@ async function runOneDelegationImplementation(
       boundContextId: spec.correlation?.context_id,
     };
 
-    // ADR-0031: herdr was DEMANDED (`PI_DADDY_HERDR=1`) and is not answering. Refused rather than relocated —
-    // the operator chose that over falling back, so the ledger can never name a child that ran somewhere nobody
-    // chose.
-    //
-    // **Decided BEFORE the gate, and the ordering is a fix.** This sat after `planWithApprovals`, which opens the
-    // approval dialog — so with herdr down a human was asked to approve `tool:bash`, answered *Always*, and was
-    // then refused anyway. Measured: the answer still reached `process.env.PI_DADDY_APPROVED`, still wrote a
-    // **30-day project-wide** entry to the persisted store, and still produced a ledger line asserting a human
-    // approved `bash` for a child that never existed. A refused operation must not leave authority behind, and
-    // asking for permission that cannot be used is R-25's fatigue shape with nothing bought.
+    // Executor refusal is checked BEFORE the gate (`planWithApprovals`) so a human is never asked to approve
+    // a capability (and bank a 30-day store entry or ledger line) for a delegation that will be refused anyway.
+    // A refused operation must not leave authority behind, and asking for unusable permission is R-25's fatigue shape.
     //
     // `ctx: null` rather than skipping the plan entirely: the ledger still gets a full, honest record of what was
     // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is

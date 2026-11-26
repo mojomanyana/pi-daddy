@@ -402,8 +402,8 @@ test("a command that does not exist is reported rather than thrown", async () =>
 
 test("ADR-0032: onOutput sees each chunk as it arrives, and the result is still whole", async () => {
   // The production change that breaks this: dropping onOutput, or calling it after `close` — the entire point
-  // is that the parent can render progress BEFORE the child finishes. A delegation was a black box for up to
-  // DEFAULT_TIMEOUT_MS, and this is the half of the fix that works without herdr.
+  // is that the parent can render progress BEFORE the child finishes. A delegation was otherwise a black box
+  // for up to DEFAULT_TIMEOUT_MS.
   const chunks: string[] = [];
   const result = await runChild({
     command: process.execPath,

@@ -91,7 +91,6 @@ async function runTree(tools = "read,delegate", scenario?: "thrown") {
       PI_SKIP_VERSION_CHECK: "1",
       NO_COLOR: "1",
       TERM: "dumb",
-      PI_DADDY_HERDR: "0",
       PI_DADDY_AUTO_MODE: "0",
       PI_DADDY_ACTIVITY_TIMELINE: "off",
       PI_DADDY_LEDGER: ledger,

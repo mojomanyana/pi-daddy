@@ -34,21 +34,6 @@ async function reapLeases() {
 after(reapLeases);
 after(cleanupTempDirs);
 
-/**
- * A stub `herdr` on `PATH`, so a test's outcome never depends on whether a real one is installed.
- *
- * `exec`, not a bare command: `execFile`'s timeout signals only the direct child, so an `sh` wrapper dies and
- * leaves its `sleep` orphaned and reparented — three runs of this file left three of them owned by init, and a
- * mutation sweep that runs the suite once per entry accumulates dozens. `exec` replaces the shell, so the
- * signal lands on the thing that is actually sleeping. (The same shape holds in production: the helper's
- * SIGKILL does not reach a hung `herdr`'s descendants.)
- */
-async function stubHerdr(body: string) {
-  const dir = await tempDir("fake-herdr-");
-  await writeFile(join(dir, "herdr"), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  return dir;
-}
-
 /** Acquire a lease that is released no matter how the test ends. */
 async function trackedLease(input: Parameters<typeof acquireWorkspaceLease>[0]) {
   const lease = await acquireWorkspaceLease(input);
@@ -530,7 +515,7 @@ test("a release outcome maps to the ledger word that means it", () => {
   assert.equal(leaseReleaseLedgerOutcome("released-superseded", "completed"), "released");
   // The lock evaporated under a live writer — NOT the same fact as an operator pressing stop.
   assert.equal(leaseReleaseLedgerOutcome("lost", "cancelled"), "lost");
-  // Kept deliberately because a herdr writer tab would not close; the pane may still be live.
+  // Kept deliberately because the writer could not be confirmed stopped.
   assert.equal(leaseReleaseLedgerOutcome("retained", "failed"), "retained");
   // A read lease never locked, so it never handed anything back.
   assert.equal(leaseReleaseLedgerOutcome("not-held", "completed"), "uncontended");
@@ -605,10 +590,10 @@ test("a clean release leaves the attached process alone", async () => {
  * helper kept node's event loop alive and the parent could never exit. Measured before the fix: `exit=124`
  * (timed out) against `exit=0` for the same sequence ending in `release()`.
  *
- * It is reached in production from the herdr executor when `tab close` fails. **Which hosts it wedged:** only
+ * **Which hosts it wedged:** only
  * those that let the event loop drain — pi's print mode (`dist/main.js` sets `process.exitCode` and returns)
  * and library consumers, i.e. ADR-0034's external controllers. Interactive and rpc mode call `process.exit()`,
- * which ignores pending handles *and* runs `exit` handlers, so there the process still left and the pane sweep
+ * which ignores pending handles *and* runs `exit` handlers, so there the process still left.
  * still ran. An earlier version of this docstring said the sweep was lost generally and cited `src/cli.ts`,
  * which has one subcommand (`init`) and can neither hold a lease nor open a pane — corrected in the source and
  * the register and left standing here, which is the failure this project keeps recording.
@@ -618,7 +603,7 @@ test("a clean release leaves the attached process alone", async () => {
  * rather than wedging the runner the way R-119's lease test did.
  *
  * The second assertion is the reason letting the parent go is safe rather than a leak: on parent exit the
- * helper sees EOF, makes its BOUNDED `herdr tab close` attempts, then releases anyway (R-102 — an
+ * helper sees EOF and releases cleanly (R-102 — an
  * unreleasable lock strands a worktree with no in-product recovery, which is strictly worse than a
  * recorded failure to close). So a successor can still acquire.
  */
@@ -626,12 +611,10 @@ test("a clean release leaves the attached process alone", async () => {
 /**
  * **R-146, second half: a bound on retries is not a bound on time.**
  *
- * The helper's `herdr tab close` had no `timeout`, so a herdr that ACCEPTS the close and never answers
- * never called back — the retry counter never decremented, `giveUp()` never ran, no marker was written, and
- * the kernel lock was held forever. That is R-102's explicitly rejected outcome, and it was masked only by
- * the defect above: while the parent could not exit, EOF never arrived and an operator saw a hung `pi`
- * instead of a silent strand. Measured before the fix, with the `herdr` below: parent `exit=0` in 82ms,
- * `LOCK=HELD` with no marker, indefinitely.
+ * Unbounded helper close attempts never called back — the retry counter never decremented, `giveUp()` never
+ * ran, no marker was written, and the kernel lock was held forever. That is R-102's explicitly rejected
+ * outcome, and it was masked only by the defect above: while the parent could not exit, EOF never arrived
+ * and an operator saw a hung `pi` instead of a silent strand.
  *
  * **The production change that breaks this test** (rule 7): removing the `{timeout, killSignal}` options
  * from the helper's `execFile`. The successor loop then exhausts and the assertion names the strand.
@@ -640,9 +623,8 @@ test("a clean release leaves the attached process alone", async () => {
 /**
  * **R-146: retention is terminal.** `markRetained` did not settle the lease, so a later `release()` ran the
  * whole clean handshake. Measured before the fix: it returned `released`, overwrote the record's
- * `retained:herdr-close-failed` with `completed`, and sent `{release:true}` so the helper exited `clean` and
- * never attempted the close — the pane retention exists to protect was abandoned, and the ledger asserted a
- * clean handover for a lease kept *because* a pane would not close.
+ * `retained:writer-close-failed` with `completed`, and sent `{release:true}` so the helper exited `clean`
+ * and the ledger asserted a clean handover for a retained lease.
  *
  * No in-tree caller does this. `WorkspaceLease` is a public export and `try { … } finally { release() }` is the
  * obvious shape for the ADR-0034 external controllers this fix is for, which is the whole reason it matters.
@@ -666,8 +648,7 @@ test("release() after markRetained answers `retained` and leaves the record alon
  * **R-152: `markRetained` must report what actually happened, because its caller ledgers whatever it says.**
  *
  * `releaseDelegationWorkspace` used to hardcode the word: `(await lease.markRetained(reason), "retained")`. So
- * the ledger asserted *"kept deliberately because a herdr writer tab would not close, so the pane may still be
- * live"* in three situations where that is false — a helper already dead (the lock is gone: the fact is `lost`,
+ * the ledger asserted *"retained"* in three situations where that is false — a helper already dead (the lock is gone: the fact is `lost`,
  * which is the distinction R-103 added the outcome union for), a lease already cleanly released, and a
  * retention whose record could not be written.
  *
@@ -689,13 +670,13 @@ test("markRetained on a dead helper reports `lost`, not a retention", async () =
   await Promise.race([lease.lost, new Promise((r) => setTimeout(r, 5_000))]);
 
   assert.equal(
-    await lease.markRetained("herdr-close-failed"),
+    await lease.markRetained("writer-close-failed"),
     "lost",
-    "the helper is gone and the kernel lock with it — calling that a retention tells the operator a pane may " +
+    "the helper is gone and the kernel lock with it — calling that a retention tells the operator a writer may " +
       "still be live and tells the next owner nothing crashed (R-103)",
   );
   const after = JSON.parse(await readFile(leasePaths(leaseDir, root).metadata, "utf8"));
-  assert.notEqual(after.release_reason, "retained:herdr-close-failed", "a dead lease must not record retention");
+  assert.notEqual(after.release_reason, "retained:writer-close-failed", "a dead lease must not record retention");
 });
 
 test("markRetained after a clean release leaves the record and answers what really happened", async () => {
@@ -706,7 +687,7 @@ test("markRetained after a clean release leaves the record and answers what real
 
   assert.equal(await lease.release("completed"), "released");
   assert.equal(
-    await lease.markRetained("herdr-close-failed"),
+    await lease.markRetained("writer-close-failed"),
     "released",
     "terminality was one-directional: `release()` checked `settled` and `markRetained` did not, so a " +
       "completed handover could be rewritten into a retention — the mirror of the defect R-146 fixed",
@@ -722,7 +703,7 @@ test("markRetained after a clean release leaves the record and answers what real
  * means *the lease went stale* — invites an ADR-0034 controller to retry a call that can never succeed.
  *
  * The upper bound matters as much as the floor and was missed the first time: `setTimeout` truncates to 32
- * bits, so `Number.MAX_SAFE_INTEGER` becomes **1ms** and every `herdr tab close` is SIGKILLed before herdr can
+ * bits, so `Number.MAX_SAFE_INTEGER` becomes **1ms** and every close attempt is SIGKILLed before it can
  * act — the opposite extreme from the unbounded hang, equally silent. Measured: a 3s sleep called back in 3ms.
  *
  * **The production change that breaks this test** (rule 7): deleting a clause from the bound validation, or
@@ -753,7 +734,7 @@ test("a retention whose record could not be written leaves the lease releasable"
 
   await chmod(leaseDir, 0o500);
   try {
-    assert.equal(await lease.markRetained("herdr-close-failed"), "retained", "the lock IS retained");
+    assert.equal(await lease.markRetained("writer-close-failed"), "retained", "the lock IS retained");
   } finally {
     await chmod(leaseDir, 0o700);
   }

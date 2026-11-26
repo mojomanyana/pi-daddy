@@ -8,8 +8,8 @@
  * ignoring `PI_DADDY_REPLAY_RETRY=0`; giving the retry a fresh full deadline; losing the retained retry link or the first
  * attempt's receipt; not telling the model that a retry happened; feeding a chain the first attempt's identity, or
  * dropping a later step's provenance on its retry; letting a retry on the workspace-routed path ask anyone; not
- * marking a stable operation's eligible failure `replayable`, or marking one any other guard refused; telling the
- * operator a Herdr session retries; re-planning a retry without the call's bound definitionId, or without checking it.
+ * marking a stable operation's eligible failure `replayable`, or marking one any other guard refused;
+ * re-planning a retry without the call's bound definitionId, or without checking it.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

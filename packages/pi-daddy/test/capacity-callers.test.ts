@@ -30,7 +30,6 @@ async function harness(t: import("node:test").TestContext, capacity: string, mod
     PI_DADDY_FANOUT: capacity,
     PI_DADDY_GRANT: "tool:read,tool:delegate",
     PI_DADDY_GATED: "",
-    PI_DADDY_HERDR: "0",
     PI_DADDY_MAX_DEPTH: "5",
     PI_CODING_AGENT_DIR: join(root, "agent"),
     PATH: `${bin}:${process.env.PATH}`,

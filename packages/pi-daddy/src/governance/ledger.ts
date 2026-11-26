@@ -170,12 +170,9 @@ export interface GrantRecord extends LedgerEventBase {
   /**
    * WHERE this child ran — ADR-0031.
    *
-   * **Required rather than optional**, which is unusual in this record and deliberate. Before ADR-0031 the
-   * executor was a variable an operator set, so "which one ran?" was answerable from configuration after the
-   * fact. It is now decided by a **runtime probe** at session start, so nothing outside the record preserves
-   * the answer — and the two paths do not produce the same argv, because the herdr plan withholds `--print`
-   * (`delegationContext.interactive`). A trail that cannot say where a child ran cannot be read back
-   * reliably, and reading it back is the only reason it exists.
+   * **Required rather than optional**, which is unusual in this record and deliberate: recording the
+   * executor in the event keeps the audit trail self-contained without needing external configuration to
+   * interpret how the child ran.
    *
    * Written on refusals too, including the tripwire's: the honest value there is the executor the session
    * *would* have used, because a refused spawn has no executor of its own.

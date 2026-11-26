@@ -52,7 +52,6 @@ test("a real reload keeps the described definitionId, a changed body refuses it,
   const agentDir = await mkdtemp(join(tmpdir(), "described-binding-agent-"));
   const env = {
     PI_DADDY_GRANT: "tool:delegate,agent:build,tool:read",
-    PI_DADDY_HERDR: "0",
     PI_CODING_AGENT_DIR: agentDir,
   };
   const old = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));

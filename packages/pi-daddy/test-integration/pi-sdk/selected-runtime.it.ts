@@ -10,7 +10,7 @@ const principal = process.env.PRINCIPAL_CANDIDATE;
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 async function fixture() {
   if (!principal) throw Error("PRINCIPAL_CANDIDATE must name the reviewed generated candidate");
-  const env = { PI_DADDY_GRANT: "tool:delegate,agent:build,tool:read", PI_DADDY_HERDR: "0" };
+  const env = { PI_DADDY_GRANT: "tool:delegate,agent:build,tool:read" };
   const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
   let nextTool = "delegate_describe",

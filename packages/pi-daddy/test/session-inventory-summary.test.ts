@@ -20,7 +20,6 @@ async function fixture() {
   for (const key of Object.keys(process.env)) if (key.startsWith("PI_DADDY_")) delete process.env[key];
   Object.assign(process.env, {
     PI_CODING_AGENT_DIR: agentDir,
-    PI_DADDY_HERDR: "0",
     PI_DADDY_AUTO: "0",
     PI_DADDY_GRANT: "agent:*,tool:delegate,tool:read,tool:write,tool:scout_research",
     PI_DADDY_GATED: "tool:write",

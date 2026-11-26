@@ -24,7 +24,6 @@ export async function pilot() {
   Object.assign(process.env, {
     PI_DADDY_GRANT: "tool:*,agent:*,workspace:*",
     PI_DADDY_GATED: "",
-    PI_DADDY_HERDR: "0",
     PI_DADDY_FANOUT: "2",
   });
   let command = { name: "delegate_describe", args: { agent: "build" } as unknown };

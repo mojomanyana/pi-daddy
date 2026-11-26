@@ -34,7 +34,7 @@ export async function recoveryFixture(options: { childExtension?: string } = {})
   const principal = process.env.PRINCIPAL_CANDIDATE;
   assert.ok(principal, "PRINCIPAL_CANDIDATE is required");
   // Each fixture is a fresh process root; inherited child publication from another test is not its launch policy.
-  const keys = [...new Set([...GRANT_ENV_KEYS, "PI_DADDY_HERDR", "PI_CODING_AGENT_DIR", "PI_DADDY_LEDGER", "PATH"])];
+  const keys = [...new Set([...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_LEDGER", "PATH"])];
   const before = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   let base: Awaited<ReturnType<typeof createFixture>> | undefined;
   let host: AgentSessionRuntime | undefined;
@@ -47,7 +47,6 @@ export async function recoveryFixture(options: { childExtension?: string } = {})
     Object.assign(process.env, {
       PI_DADDY_GRANT: "tool:*,agent:*,context:files",
       PI_DADDY_GATED: "",
-      PI_DADDY_HERDR: "0",
     });
     delete process.env.PI_DADDY_LEDGER;
     const sdkPath = join(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")), "../../package.json");

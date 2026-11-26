@@ -230,10 +230,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
           );
       }
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-      // ADR-0031: probe once, HERE, before anything reports — so the disclosure line can name the executor,
-      // and so a demanded-but-unreachable herdr is reported before the operator's first prompt rather than at
-      // their first delegation. Its own try, because a failure here must not cancel the controls after it
-      // (R-60), and `probeHerdr` is documented as never throwing precisely so this is belt-and-braces.
+      // Resolve the executor once before reporting so the disclosure line can name it before the operator's
+      // first prompt. Its own try, because a failure here must not cancel the controls after it (R-60).
       try {
         await resolveExecutor(session);
         if (session.reloadLifecycle === reload.lifecycle) await runtimeSnapshot.bind(ctx);

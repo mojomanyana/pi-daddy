@@ -78,7 +78,7 @@ function runPiCandidate(input: {
     const child = spawn(resolved.cmd, [...resolved.prefix, ...args], {
       cwd: input.worktree,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PI_DADDY_HERDR: "0", PI_DADDY_ACTIVITY_TIMELINE: "off" },
+      env: { ...process.env, PI_DADDY_ACTIVITY_TIMELINE: "off" },
       ...(resolved.shell ? { shell: true } : {}),
     });
     let stdout = "";

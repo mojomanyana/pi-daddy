@@ -362,8 +362,8 @@ export async function revokeAll(cwd: string): Promise<boolean> {
 async function underLock<T>(cwd: string, onBusy: T, onError: T, work: () => Promise<T>): Promise<T> {
   const path = approvalsPath(cwd);
   // **The discriminant is whether anything was READ, not which error was thrown.** Keying on
-  // `LockTimeoutError` looked right and was not: `EMFILE` — the classic transient, and one a fan-out of
-  // children plus herdr panes produces — happens before the load just as a timeout does, yet took the
+  // `LockTimeoutError` looked right and was not: `EMFILE` — the classic transient under child fan-out —
+  // happens before the load just as a timeout does, yet took the
   // `failed` branch, whose message asserts the approval "is still in effect" about an entry nobody looked
   // for, and blames a path that is perfectly writable. That is the very defect the fourth outcome was
   // added to prevent, one error code to the left.

@@ -27,7 +27,6 @@ async function fixture(run: (a: string, b: string, agent: string) => Promise<voi
     for (const key of keys) delete process.env[key];
     process.chdir(a);
     process.env.PI_CODING_AGENT_DIR = agent;
-    process.env.PI_DADDY_HERDR = "0";
     process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
     await saveGrant(a, ["tool:read"]);
     await saveGrant(b, ["tool:read", "tool:delegate", "workspace:b"]);
