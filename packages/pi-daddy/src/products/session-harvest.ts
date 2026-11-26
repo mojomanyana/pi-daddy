@@ -4,14 +4,16 @@
  * Stage 1 (0ms, $0): Free deterministic signal filter — skips routine clean turns completely.
  * Stage 2 (Option A): Fast-tier structured JSON classifier (`models.fast` via fallback chain at
  * `reasoning: "off"`) inspects a secret-redacted turn digest and decides whether the turn reveals
- * a generalizable regression worth saving as a `skill-harness` `specification.yaml`.
+ * a generalizable regression worth saving as a Harness-validated `specification.yaml`.
  * Mode 2 ("auto", default): saves directly to `~/.pi/agent/pi-daddy/harvested-evals/<repo>/`
  * (zero git repo pollution), with `"suggest"` and `"off"` configurable in `ecosystem.json`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { harvestOutputDir, resolveEcosystemModelCandidates, selectRegistryModel } from "../kernel/ecosystem-config.ts";
+import { agentDir } from "../kernel/project-paths.ts";
 
 export interface TurnHarvestSignals {
   readonly prompt: string;
@@ -38,6 +40,8 @@ export interface HarvestDecision {
 
 export interface HarvestClassifierRegistry {
   find?(provider: string, modelId: string): unknown;
+  hasConfiguredAuth?(model: unknown): boolean;
+  getAvailable?(): ReadonlyArray<{ provider?: string; id?: string }>;
   streamSimple?(
     model: unknown,
     context: { messages: Array<{ role: string; content: Array<{ type: string; text: string }>; timestamp: number }> },
@@ -52,22 +56,93 @@ export function hasHarvestSignal(s: TurnHarvestSignals): boolean {
   );
 }
 
+const QUOTED_SECRET_KEY_VALUE =
+  /((["'])[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|auth|credential)[A-Za-z0-9_.-]*\2\s*:\s*)(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*')/gi;
+
 export function redactHarvestText(input: string): string {
   return input
+    .replace(QUOTED_SECRET_KEY_VALUE, (_m, prefix: string) => `${prefix}"[REDACTED]"`)
     .replace(/-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/g, "[REDACTED_KEY]")
     .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{20,})\b/g, "[REDACTED_SECRET]")
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, "$1[REDACTED_TOKEN]")
-    .replace(/\b(api[_-]?key|token|secret|password)\s*[:=]\s*["']?[^\s"'`]{8,}["']?/gi, "$1=[REDACTED]");
+    .replace(/\b(Basic\s+)[A-Za-z0-9+/=]{12,}/gi, "$1[REDACTED_TOKEN]")
+    .replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)([^/\s@]+)(@)/gi, "$1[REDACTED]$3")
+    .replace(
+      /\b([A-Z0-9_]*(?:API[_-]?KEY|ACCESS[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL)[A-Z0-9_]*)\s*([:=])\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s"'`;,}\]]+)/gi,
+      "$1$2[REDACTED]",
+    );
 }
 
-function slugify(raw: string): string {
+function slugify(raw: string, maxLen = 48): string {
   return (
     raw
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || "harvested-regression"
+      .slice(0, maxLen) || "harvested-regression"
   );
+}
+
+function yamlStr(value: string): string {
+  return JSON.stringify(value);
+}
+
+function allocateUniqueSkillName(outRoot: string, baseId: string): string {
+  // Always reserve 9 chars (`-` + 8 hex chars) so 48-char IDs never truncate away uniqueness.
+  const prefix = slugify(baseId, 38);
+  for (let attempt = 0; attempt < 32; attempt++) {
+    const candidate = `${prefix}-${randomBytes(4).toString("hex")}`;
+    if (!existsSync(join(outRoot, candidate))) return candidate;
+  }
+  return `${prefix}-${randomBytes(6).toString("hex")}`;
+}
+
+function resolveCmdShimScript(shimPath: string): string | undefined {
+  try {
+    const text = readFileSync(shimPath, "utf8");
+    const m = /"(?:%~?dp0|%dp0%)\\([^"]+\.(?:m|c)?js)"/i.exec(text);
+    if (!m?.[1]) return undefined;
+    const script = resolve(dirname(shimPath), m[1].replace(/\\/g, "/"));
+    return existsSync(script) ? script : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolve the installed `skill-harness` executable cleanly across POSIX and Windows.
+ * On Windows, unwraps npm `.cmd` shims to their underlying JS entry script and runs via
+ * `process.execPath` with `shell: false` so turn data never passes through `cmd.exe`.
+ */
+export function resolveHarnessCliCommand(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): { cmd: string; argsPrefix: string[] } | undefined {
+  const pathVar = env.PATH ?? env.Path ?? "";
+  for (const dir of pathVar.split(delimiter)) {
+    if (!dir) continue;
+    if (platform === "win32") {
+      const exe = join(dir, "skill-harness.exe");
+      if (existsSync(exe)) return { cmd: exe, argsPrefix: [] };
+      const shim = join(dir, "skill-harness.cmd");
+      if (existsSync(shim)) {
+        const script = resolveCmdShimScript(shim);
+        if (script) return { cmd: process.execPath, argsPrefix: [script] };
+      }
+    } else {
+      const bin = join(dir, "skill-harness");
+      if (existsSync(bin)) return { cmd: bin, argsPrefix: [] };
+    }
+  }
+  // Also check Pi's managed npm package directory (`~/.pi/agent/npm/node_modules/skill-harness/bin.js`).
+  const piBinJs = join(agentDir(env), "npm", "node_modules", "skill-harness", "bin.js");
+  if (existsSync(piBinJs)) return { cmd: process.execPath, argsPrefix: [piBinJs] };
+  const piCmdShim = join(agentDir(env), "npm", "node_modules", ".bin", "skill-harness.cmd");
+  if (platform === "win32" && existsSync(piCmdShim)) {
+    const script = resolveCmdShimScript(piCmdShim);
+    if (script) return { cmd: process.execPath, argsPrefix: [script] };
+  }
+  return undefined;
 }
 
 export async function classifyHarvestCandidate(input: {
@@ -93,17 +168,26 @@ export async function classifyHarvestCandidate(input: {
   const picked = selectRegistryModel(input.registry, candidates, input.fallbackModel);
   if (!picked.model || typeof input.registry?.streamSimple !== "function") return skip("classifier-unavailable");
 
-  const digest = redactHarvestText(
-    [
-      `Prompt: ${input.signals.prompt.slice(0, 800)}`,
-      `Signals: thrash=${input.signals.thrashDetected} escalated=${input.signals.escalated}` +
-        ` blockers=${input.signals.reviewBlockers} steered=${input.signals.userSteered}` +
-        ` toolFailEdit=${input.signals.toolFailedAndEdited}`,
-      `Edited files: ${input.signals.editedFiles.slice(0, 10).join(", ") || "(none)"}`,
-      `Verify cmds: ${input.signals.verifyCommands.slice(0, 5).join(" ; ") || "(none)"}`,
-      `Failure summary: ${input.signals.failureSummary.slice(0, 900) || "(none)"}`,
-    ].join("\n"),
-  );
+  const redactedPrompt = redactHarvestText(input.signals.prompt).slice(0, 800);
+  const redactedEdits = input.signals.editedFiles
+    .slice(0, 10)
+    .map((f) => redactHarvestText(f))
+    .join(", ");
+  const redactedVerify = input.signals.verifyCommands
+    .slice(0, 5)
+    .map((c) => redactHarvestText(c))
+    .join(" ; ");
+  const redactedFailure = redactHarvestText(input.signals.failureSummary).slice(0, 900);
+
+  const digest = [
+    `Prompt: ${redactedPrompt}`,
+    `Signals: thrash=${input.signals.thrashDetected} escalated=${input.signals.escalated}` +
+      ` blockers=${input.signals.reviewBlockers} steered=${input.signals.userSteered}` +
+      ` toolFailEdit=${input.signals.toolFailedAndEdited}`,
+    `Edited files: ${redactedEdits || "(none)"}`,
+    `Verify cmds: ${redactedVerify || "(none)"}`,
+    `Failure summary: ${redactedFailure || "(none)"}`,
+  ].join("\n");
 
   const instruction = [
     "You triage completed coding-agent turns for a regression benchmark suite (`skill-harness`).",
@@ -127,8 +211,9 @@ export async function classifyHarvestCandidate(input: {
   } catch {
     return skip("classifier-error");
   }
-  if (input.signal?.aborted || (message?.stopReason && message.stopReason !== "stop"))
+  if (input.signal?.aborted || (message?.stopReason && message.stopReason !== "stop")) {
     return skip("classifier-incomplete");
+  }
 
   const text = (message?.content ?? [])
     .filter((c) => c?.type === "text" && typeof c.text === "string")
@@ -160,6 +245,80 @@ export async function classifyHarvestCandidate(input: {
   return { harvest, category, confidence, scenarioId, reason, modelUsed: picked.label };
 }
 
+function invokeHarnessCli(options: {
+  readonly outRoot: string;
+  readonly scenarioId: string;
+  readonly uniqueSkill: string;
+  readonly prompt: string;
+  readonly editedFiles: readonly string[];
+  readonly verifyCommands: readonly string[];
+  readonly reason: string;
+  readonly sessionLabel?: string;
+  readonly sawColdReviewBlocker: boolean;
+  readonly sawThrashHint: boolean;
+  readonly env: NodeJS.ProcessEnv;
+  readonly cliCommand?: string;
+  readonly cliArgsPrefix?: readonly string[];
+}): { specPath: string; scenarioId: string } | undefined {
+  const resolved = options.cliCommand
+    ? { cmd: options.cliCommand, argsPrefix: [...(options.cliArgsPrefix ?? [])] }
+    : resolveHarnessCliCommand(options.env);
+  if (!resolved) return undefined;
+
+  // Hand the exact classified turn as structured sanitized JSON on stdin:
+  // avoids re-reading raw session files, handles prompts starting with `--`, and keeps text off argv/shells.
+  const payload = JSON.stringify({
+    scenarioId: options.scenarioId,
+    skillName: options.uniqueSkill,
+    prompt: options.prompt,
+    editedFiles: options.editedFiles,
+    verifyCommands: options.verifyCommands,
+    ...(options.reason ? { notes: options.reason } : {}),
+    ...(options.sessionLabel ? { sessionLabel: options.sessionLabel } : {}),
+    sawColdReviewBlocker: options.sawColdReviewBlocker,
+    sawThrashHint: options.sawThrashHint,
+  });
+
+  const cliArgs = [
+    ...resolved.argsPrefix,
+    "harvest",
+    "--turn-json",
+    "-",
+    "--out",
+    options.outRoot,
+    "--unique",
+    "--json",
+  ];
+  const res = spawnSync(resolved.cmd, cliArgs, {
+    input: payload,
+    encoding: "utf8",
+    timeout: 15_000,
+    env: options.env,
+    shell: false,
+    windowsHide: true,
+  });
+  if (res.error || res.status !== 0) return undefined;
+  const lines = String(res.stdout ?? "")
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]) as { specPath?: unknown; scenarioId?: unknown };
+      if (typeof parsed.specPath === "string" && existsSync(parsed.specPath)) {
+        return {
+          specPath: parsed.specPath,
+          scenarioId:
+            typeof parsed.scenarioId === "string" && parsed.scenarioId ? parsed.scenarioId : options.scenarioId,
+        };
+      }
+    } catch {
+      /* ignore non-JSON prelude line */
+    }
+  }
+  return undefined;
+}
+
 export function saveHarvestedEval(options: {
   readonly cwd: string;
   readonly scenarioId: string;
@@ -167,51 +326,99 @@ export function saveHarvestedEval(options: {
   readonly reason?: string;
   readonly sessionFile?: string;
   readonly env?: NodeJS.ProcessEnv;
+  readonly outDirOverride?: string;
   readonly preferCli?: boolean;
+  readonly cliCommand?: string;
+  readonly cliArgsPrefix?: readonly string[];
 }): { saved: boolean; path?: string; scenarioId: string; via: "skill-harness-cli" | "builtin"; error?: string } {
-  const outRoot = harvestOutputDir(options.cwd, options.env ?? process.env);
-  const id = slugify(options.scenarioId);
-  mkdirSync(outRoot, { recursive: true, mode: 0o700 });
+  const env = options.env ?? process.env;
+  const outRoot = options.outDirOverride ?? harvestOutputDir(options.cwd, env);
+  const id = slugify(redactHarvestText(options.scenarioId), 48);
+  const prompt = redactHarvestText(options.signals.prompt).trim();
+  if (!prompt) {
+    return { saved: false, scenarioId: id, via: "builtin", error: "Cannot harvest an empty turn prompt" };
+  }
+  const reason = redactHarvestText(options.reason ?? options.signals.failureSummary)
+    .trim()
+    .slice(0, 400);
+  const editedFiles = [
+    ...new Set(options.signals.editedFiles.map((f) => redactHarvestText(f).trim()).filter(Boolean)),
+  ].slice(0, 12);
+  const verifyCommands = [
+    ...new Set(options.signals.verifyCommands.map((c) => redactHarvestText(c).trim()).filter(Boolean)),
+  ].slice(0, 8);
 
-  if (options.preferCli !== false && options.sessionFile && existsSync(options.sessionFile)) {
-    const cli = spawnSync("skill-harness", ["harvest", options.sessionFile, "--out", outRoot, "--id", id], {
-      encoding: "utf8",
-      timeout: 15_000,
-      shell: process.platform === "win32",
+  mkdirSync(outRoot, { recursive: true, mode: 0o700 });
+  const uniqueSkill = allocateUniqueSkillName(outRoot, id);
+
+  if (options.preferCli !== false) {
+    const cliResult = invokeHarnessCli({
+      outRoot,
+      scenarioId: id,
+      uniqueSkill,
+      prompt: prompt.slice(0, 4000),
+      editedFiles,
+      verifyCommands,
+      reason,
+      sessionLabel: options.sessionFile ? basename(options.sessionFile) : undefined,
+      sawColdReviewBlocker: options.signals.reviewBlockers > 0,
+      sawThrashHint: options.signals.thrashDetected,
+      env,
+      cliCommand: options.cliCommand,
+      cliArgsPrefix: options.cliArgsPrefix,
     });
-    if (cli.status === 0) {
-      const m = `${cli.stdout ?? ""}`.match(/->\s*(\S+specification\.yaml)/);
-      return { saved: true, path: m?.[1] ?? outRoot, scenarioId: id, via: "skill-harness-cli" };
+    if (cliResult) {
+      return { saved: true, path: cliResult.specPath, scenarioId: cliResult.scenarioId, via: "skill-harness-cli" };
     }
   }
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const specDir = join(outRoot, `${id}-${stamp}`, "tests");
-  mkdirSync(specDir, { recursive: true, mode: 0o700 });
-  const specPath = join(specDir, "specification.yaml");
-  const prompt = redactHarvestText(options.signals.prompt).trim() || "Reproduce and fix the harvested session issue.";
-  const reason = redactHarvestText(options.reason ?? options.signals.failureSummary).trim();
-  const yaml = [
-    `# Auto-harvested regression eval (pi-daddy Bucket 4)`,
-    `skill: ${id}`,
-    `version: 1`,
-    `scenarios:`,
-    `  - id: ${id}`,
-    `    title: ${JSON.stringify(`Harvested: ${id}`)}`,
-    `    prompt: ${JSON.stringify(prompt.slice(0, 2000))}`,
-    ...(reason ? [`    notes: ${JSON.stringify(reason.slice(0, 400))}`] : []),
-    `    criteria:`,
-    `      - id: regression-fixed`,
-    `        description: "Resolves the original task without repeating the harvested failure mode."`,
-    ...(options.signals.verifyCommands.length
-      ? [
-          `      - id: verification-passes`,
-          `        description: ${JSON.stringify(`Runs and passes: ${options.signals.verifyCommands[0]}`)}`,
-        ]
+  // Built-in exporter emits the exact schema validated by skill-harness's `loadSpec`/`parseSpec`.
+  const skillRoot = join(outRoot, uniqueSkill);
+  const testsDir = join(skillRoot, "tests");
+  mkdirSync(testsDir, { recursive: true, mode: 0o700 });
+  const specPath = join(testsDir, "specification.yaml");
+  const checklist = [
+    "Satisfies every explicit requirement in the user prompt",
+    ...(editedFiles.length
+      ? [`Modifies the relevant target file(s) cleanly (${editedFiles.slice(0, 4).join(", ")})`]
       : []),
+    ...(verifyCommands.length
+      ? [`Runs executable verification checks and confirms they pass (${verifyCommands[0].slice(0, 160)})`]
+      : []),
+    ...(options.signals.reviewBlockers > 0 ? ["Avoids defects previously flagged by cold diff review"] : []),
+    ...(options.signals.thrashDetected
+      ? ["Resolves edge cases cleanly without thrashing on repeated test failures"]
+      : []),
+    ...(reason ? [`Addresses harvested failure mode: ${reason}`] : []),
+  ];
+  const yaml = [
+    `skill: ${yamlStr(uniqueSkill)}`,
+    `judge_persona: ${yamlStr("rigorous senior engineer grading exact functional correctness, edge cases, and clean verification")}`,
+    `ship_bar:`,
+    `  total: 1`,
+    `  min_pass: 1`,
+    `  no_critical_fail: true`,
+    `critical:`,
+    `  - ${yamlStr(id)}`,
+    `scenarios:`,
+    `  - id: ${yamlStr(id)}`,
+    `    title: ${yamlStr(`Harvested: ${id}`)}`,
+    `    critical: true`,
+    `    turns:`,
+    `      - ${yamlStr(prompt.slice(0, 4000))}`,
+    `    checklist:`,
+    ...checklist.map((item) => `      - ${yamlStr(item)}`),
     "",
   ].join("\n");
   writeFileSync(specPath, yaml, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  const skillMd = join(skillRoot, "SKILL.md");
+  if (!existsSync(skillMd)) {
+    writeFileSync(
+      skillMd,
+      `---\nname: ${uniqueSkill}\ndescription: Use when handling tasks similar to harvested scenario ${id}.\n---\n# ${uniqueSkill}\n\nHarvested regression skill placeholder.\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+  }
   return { saved: true, path: specPath, scenarioId: id, via: "builtin" };
 }
 
@@ -242,14 +449,14 @@ export function createTurnHarvestTracker() {
     },
     markThrash(detail: string) {
       thrashDetected = true;
-      failureSummary = detail.slice(0, 400);
+      failureSummary = redactHarvestText(detail).slice(0, 400);
     },
     markEscalated() {
       escalated = true;
     },
     markReviewBlocker(feedback?: string) {
       reviewBlockers++;
-      if (feedback) failureSummary = feedback.slice(0, 400);
+      if (feedback) failureSummary = redactHarvestText(feedback).slice(0, 400);
     },
     markUserSteer() {
       userSteered = true;

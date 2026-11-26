@@ -4,7 +4,7 @@ Use Pi with the model you have to deliver software you can check. Pi Daddy coord
 
 ## Start here
 
-**Works natively on macOS (Apple Silicon & Intel), Linux, and Windows.** Herdr is optional. The install block below lists the supported runtimes and tested Pi version.
+**Works natively on macOS (Apple Silicon & Intel), Linux, and Windows.** The install block below lists the supported runtimes and tested Pi version.
 
 ### Install the ecosystem
 
@@ -35,24 +35,25 @@ Maintainers can refresh the published reproduction set from npm with `node packa
 
 In an open Pi session, run `/reload`, then `/grants`: `build`, `review`, and `debug` should be listed, even if they need your approval. To install Daddy alone, see [Install and first run](#install-and-first-run).
 
-### Interactive 5-Tab Side-Panel Dashboard (Herdr-Free)
+### Interactive 5-Tab Side-Panel Dashboard
 
 `pi install` updates the extension, not your shell's `pi-daddy` binary. For a split pane, use the matching standalone CLI above and check `pi-daddy --version`. Start Pi in the repository. Run `/dashboard split` to start and open the dashboard, or run `/dashboard` first and then `pi-daddy panel` from another terminal in the same directory. With `dashboard.autoStart` enabled, the manual start is unnecessary.
 
 ```bash
-/dashboard split          # inside Pi: auto-splits tmux, WezTerm, macOS iTerm2, or Windows Terminal
+/dashboard split          # inside Pi: auto-splits tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, or Windows Terminal
 pi-daddy panel            # from any second terminal pane in the same repo: auto-attaches with zero copy-paste
 ```
 
-Tabs & hotkeys: `[1] Overview` (live tokens, prompt cache %, cost, events) · `[2] Tasks` · `[3] Memory` · `[4] Research` · `[5] Settings` · `[s]` live steer · `[f]` follow-up · `[m]` work mode · `[a]` auto · `[t]` thinking · `[o]` toggle optional tools (`delegate_tournament`, `quick_review`) · `[e]` edit `fast`/`work`/`strong` model tiers (persisted to `~/.pi/agent/ecosystem.json`) · `[x]` manual strong-model escalation.
+Tabs & hotkeys: `[1] Overview` (live tokens, prompt cache %, cost, events, harvest status) · `[2] Tasks` · `[3] Memory` · `[4] Research` · `[5] Settings` · `[s]` live steer · `[f]` follow-up · `[m]` work mode · `[a]` auto · `[t]` thinking · `[o]` toggle optional tools (`delegate_tournament`, `quick_review`) · `[e]` edit `fast`/`work`/`strong` model tiers (persisted to `~/.pi/agent/ecosystem.json`) · `[x]` manual strong-model escalation · `[h]` harvest session eval.
 
-### Key v1.0 Capabilities
+### Key Capabilities
 
 - **Lean Turn-1 footprint:** 5 active tools (`read`, `bash`, `edit`, `write`, `delegate`) by default; optional orchestration tools stay deferred or toggleable from the panel.
 - **Two-tier cross-OS `delegate`:** Tier-1 in-process read-only reviews (`<150ms`, `quick_review`) on all OSs; Tier-2 hardened Linux x64 worker on Linux + clean Node process-group `portable-child` runner on macOS and Windows.
 - **Parallel Worktree Tournaments (`delegate_tournament`):** runs N competing candidates in isolated git worktrees in parallel, verifies each with anti-gaming verifier restoration, and uses a cold judge to pick and apply the winning diff.
 - **Fast Cold Diff Review & Smart Auto-Escalation:** lightweight `reasoning: "low"` diff review in `work-mode` plus automatic 1-shot strong-model rescue when `principal:thrash-detected:v1` fires (or on manual `[x]` escalation).
-- **Single Config (`~/.pi/agent/ecosystem.json`):** shared `models.{fast,work,strong}`, `escalation`, `bookie`, and `scout` settings across all 5 packages (env vars override when set).
+- **2-Stage Classifier Auto-Harvesting:** after a turn settles, a free Stage-1 signal filter checks for thrash, escalation, review blockers, live steering, or tool-failure + edit recovery; qualifying turns are triaged by `models.fast` over a secret-redacted digest and saved as Harness-validated `specification.yaml` evals under `~/.pi/agent/pi-daddy/harvested-evals/<repo>/` (`harvest.mode: "auto" | "suggest" | "off"`, fail-closed on invalid config).
+- **Single Config (`~/.pi/agent/ecosystem.json`):** shared `models.{fast,work,strong}`, `modelFallbacks`, `dashboard`, `escalation`, `harvest`, `bookie`, and `scout` settings across all 5 packages (`pi-daddy setup --preset auto` auto-detects configured providers including `openai-codex` OAuth separately from direct `openai` API keys).
 
 **Try a quick verification task.** Create and enter an empty folder, run `git init` and `git -c user.name=Demo -c user.email=demo@example.invalid commit --allow-empty -m setup`, then start `pi` there in Standard work mode. Run `/bookie-task enable` and approve memory access for this workspace so Pi can save the checkpoint.
 
@@ -192,9 +193,7 @@ pi
 Open Pi and start your task. An interactive parent discovers the agents Pi has selected and restores the
 project's saved permissions automatically. Additional agents supplied by extensions become available before
 the first task. In a fresh project the session uses its observed tools and the existing permission gates.
-Inside Herdr, Pi Daddy links its bundled dashboard on first use and opens it beside the parent, keeping the
-keyboard focus in Pi. A disabled dashboard or a saved startup opt-out stays disabled. Replacing a dashboard
-linked from a different installation asks first.
+Run `/dashboard split` or `pi-daddy panel` from a second terminal pane to open the 5-tab side panel alongside Pi.
 
 Use `/grants` to inspect access. To explicitly save a different project ceiling and enable the project governance
 ledger, use `/grants init`. It also creates the review copy at `.pi/pi-daddy/settings.json` and stores the enforced
@@ -352,7 +351,7 @@ escape hatch for an operator who wants the old behaviour, and an explicitly empt
 
 ## Approvals
 
-With Auto OFF, a gated capability needs a valid approval or the UI of the session executing the delegation. Captured children use Pi's JSON mode; Herdr children have a view-only native UI. Neither can answer local permission dialogs; a gate with neither a valid approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
+With Auto OFF, a gated capability needs a valid approval or the UI of the session executing the delegation. Captured children use Pi's JSON mode and cannot answer local permission dialogs; a gate with neither a valid approval nor an available UI is denied. The answer is **once**, **for this session**, or **always** (persisted for a bounded period, offered only for a
 named definition, keyed `capability@subject`). Approvals inherit down the subtree intersected with each child's grant;
 a `once` never crosses a spawn. The approval store and governance ledger never store raw task text. `/grants
 approvals` lists what is persisted; `/grants revoke <capability>@<definition>` or `--all` removes it. The store lives
@@ -429,19 +428,7 @@ anything a child did.
 
 ## Executors and the dashboard
 
-Captured and Herdr pane execution share the native owner and current-final validator on Linux x64.
-Initial qualification used Ubuntu WSL2, kernel `6.18.33.2-microsoft-standard-WSL2`, Node `v26.7.0`, and Pi 1.0.4.
-Additional live Herdr qualification on Ubuntu WSL2 with Node `v24.19.0` covers client/server 0.8.2 with
-Pi 1.0.4 and 1.1.0, client 0.9.3/server 0.9.0 with Pi 1.1.0, and client/server 0.9.3 with Pi 1.1.0.
-Each combination exercises real child results, retained tabs, cancellation, coordinator loss and server loss.
-These are measured combinations, not a product-version allowlist. Native Windows and WSL-to-Windows worker
-interop remain unqualified.
-
-Captured subprocess qualification on 2026-10-27 used Pi **1.4.0**, Node **v24.19.0**, and Linux x64.
-A real Pi parent delegated to a real Pi child through a scripted loopback endpoint, verifying an allowed read,
-a refused write, the persisted current final, and identity-bound native cleanup. Selected Principal **4.14.0**
-resources loaded successfully. This made no real provider calls and does not extend the Herdr matrix above.
-
+Captured subprocess execution owns and reaps cooperating child subtrees on Linux x64 via the packaged native worker, and uses the portable Node process-group child runner on macOS and Windows.
 A packaged native helper owns and reaps the cooperating child subtree. The final is accepted only when Pi's native lifecycle
 protocol settles and matches the exact persisted current turn and active branch. Complete final text is preserved;
 work, final availability, subtree cleanup and optional observation completeness are separate result fields. A failed
@@ -460,12 +447,12 @@ the same task, definition, model and context, planned with nobody asked and boun
 wall-clock deadline. A child killed from outside the tool call (a person's `kill`, the OOM killer) exits like a
 crash and is retried once. Daddy never retries a child its parent's tool call cancelled, one whose cleanup is not
 settled, one that spent an approval (on a gated tool, or a gated context handoff such as the default-gated
-`context:fork`), one in a Herdr pane, or one carrying an `operation_id`, and it never retries twice. The summary
+`context:fork`) or one carrying an `operation_id`, and it never retries twice. The summary
 then carries `"retry":{"attempts":2,"firstFailure":"…"}`, the details keep the first attempt complete, the
 result details link the two executions, and the usage reported to the Pi session covers both attempts. A failure carrying an `operation_id` that would otherwise have been retried is
 returned with `"replayable":true` instead, so its coordinator can retry it once as a new operation (Principal does).
 A complete answer is never retried, including after a later idle timeout. Bound operation failures retain optional
-owner-verified retry eligibility; a coordinator without that evidence keeps its manual retry path. Under the Herdr executor nothing is retried or marked. `PI_DADDY_REPLAY_RETRY=0` turns off the retry and the
+owner-verified retry eligibility; a coordinator without that evidence keeps its manual retry path. `PI_DADDY_REPLAY_RETRY=0` turns off the retry and the
 `replayable` mark; the replay-safe mark stays.
 
 Pi and TypeBox are wildcard host-provided peers so Pi's extension loader supplies one shared runtime copy. Development dependencies pin Pi **1.0.4**; the additional **1.1.0** and **1.4.0** checks have the execution scopes described above. Prefer a Pi-managed install under a measured host and executor combination. An ordinary standalone npm install may resolve untested peer versions. In a Pi-managed no-peer install, standalone help, version and reporting remain available; use `/grants init` inside Pi for an explicit persistent project ceiling. Principal's native phases use `plan`, `build`, `review`, `debug`, and `investigate` after a `delegate_describe` of each, which binds its `definitionId`; independent parallel work uses one `delegate_all` batch.
@@ -474,42 +461,7 @@ Final capture preserves whitespace and concatenates text blocks without insertin
 
 Retained capacity is rechecked against the original bound ownership and settlement receipt before a new single, parallel or chain dispatch. Exact later proof refunds the reservation once; missing, malformed or mismatched proof and unbound ownership remain retained. Recovery does not rewrite the original failed/unknown outcome or mint new capacity on reload. A single delegation reserves its available subtree; use `delegate_all` to allocate independent parallel children.
 
-Governed Herdr children appear in the native agent sidebar while running, with their role (for example
-Plan, Build or Review) and a corresponding named tab. Sidebar state is observational: native process
-receipts still determine settlement. The launcher releases its own sidebar source after settlement; with
-Governed children always run via captured subprocesses across Linux, macOS, and Windows (Herdr was removed).
-Herdr can retain a cached unknown Pi entry after that release even when all owned processes have exited.
-This display limitation has been observed on servers 0.8.2, 0.9.0 and 0.9.3; disappearance is not guaranteed by
-a newer release number. Normal settlement resets the terminal title; an abruptly killed launcher can
-leave the last title visible. Neither a title nor a cached entry proves liveness.
-While running, the tab displays Pi's own interface with the initial task, live tool calls and results, and
-the final answer. It is view-only: Ctrl+O expands or collapses tool output, and terminal scrollback remains
-available. Type task changes in the parent session. The child consumes other input once its session starts;
-an interruption during Pi startup can still fail the launch. Reasoning text is suppressed by Pi's public
-display transformer. This does not redact native session files or optional private diagnostic captures.
-
-The parent continues to control task dispatch and cancellation. Children retain existing/Auto permissions;
-a new local approval request refuses instead of waiting in a view-only tab. Existing Pi project-trust
-decisions remain effective; an unknown project receives the same noninteractive refusal as captured mode,
-without writing a new trust decision. Missing sidebar delivery is reported but does not change the execution result.
-
-Captured subprocess execution is the sole executor (Herdr support was removed).
-probes for a responding server. Startup requires a successful tab-list response and live JSON server status
-reporting a running, CLI-compatible transport. Newer release numbers and an older compatible server do not
-cause refusal. An explicit endpoint incompatibility also refuses; endpoint compatibility alone cannot override
-an incompatible CLI protocol. The status check uses Herdr's own compatibility decision, not a fixed private
-protocol number or a client/server product-version comparison. Missing or incompatible status refuses
-with no backend fallback. Each owned pane starts a packaged launcher
-connected to the coordinator over a private bounded Unix socket. The launcher uses the same pinned native
-subreaper, and the coordinator binds its identity before releasing the worker gate. Child environment and
-arguments come from the governed plan, without inheriting the Herdr daemon's environment. The native UI owns the pane terminal, while a separate inherited pipe carries lifecycle events to the
-same final validator. Terminal text never determines success or cleanup. Raw protocol/private reasoning
-is not used as a display channel.
-
-Native receipts, not pane closure or idle screen state, prove subtree cleanup. Model-free qualification covers
-actual Pi CLI success, retry, nested tool and failed-final cases, cancellation, coordinator SIGKILL and loss of
-the independently owned Herdr server, including detached descendants. Retained panes have no live Pi writer.
-An unavailable pane display cannot replace a missing final or cleanup receipt. Dashboard display remains independent.
+Captured subprocess execution is the sole executor across Linux, macOS, and Windows (native subreaper worker on Linux x64; portable child runner on macOS and Windows). Native receipts prove subtree cleanup.
 
 The trusted extension event `pi-daddy:runtime-snapshot:v1` supports Principal's explicitly armed resume checks.
 It reports the actual Pi session/canonical working directory, a stable owner scope, current backend qualification,
@@ -520,11 +472,10 @@ Missing or changed receipts, interrupted unbound launches, live owners and faile
 resume. The journal contains process identities and receipts, never task text or an approval. A model-authored
 list of children, successful prose or a progress flag cannot supply these facts. Principal separately verifies
 operator authorization, candidate and artifacts before consuming its checkpoint and queueing a fixed continuation.
-This bridge never grants capabilities, approves work or calls JEV/OpenAI/other models. The ledger schema is unchanged.
+This bridge never grants capabilities, approves work or calls external models. The ledger schema is unchanged.
 Same-user hostile filesystem or co-loaded-extension authenticity is outside this cooperative ownership boundary.
 
-`pi-daddy-dashboard` shows current work and actual pending approvals first; completed history is collapsed by default.
-`/grants dashboard` opens it beside the session in a Herdr pane. The header shows Auto ON/OFF and connection state.
+`pi-daddy-dashboard` and `/dashboard` show current work, live usage, and actual pending approvals first; completed history is collapsed by default.
 Use **a** to switch Auto, arrow keys to select a row, **Enter** for details, **m** for session models, **h** for history,
 and **?** for help. The view fits the terminal and follows resize events. A disconnected control displays its state
 as unavailable until the owning session acknowledges a fresh snapshot.
@@ -533,13 +484,12 @@ The **Overview** view keeps the current next action visible while you scroll. Wh
 an output ready for review, press **3** for **Reviews** and **Enter** on the output to see the reported
 review instructions and evidence reference. Open the owning project to record a decision.
 
-On Pi versions that emit native prompt events (verified on Pi 1.5.2), selections, confirmations and
+On Pi versions that emit native prompt events, selections, confirmations and
 text-entry dialogs appear under **Needs your input** while they are open. The row shows the question and directs you to answer or cancel in the main Pi chat; it clears when
 the dialog closes or the session changes. A pending Daddy permission takes priority over a duplicate native
-dialog row. The bundled Herdr hook receives the same start/end signal, including on older Herdr installations
-that do not consume Pi's terminal status protocol. Generic custom panels are not inferred to be questions:
+dialog row. Generic custom panels are not inferred to be questions:
 informational views and loading screens stay out, while existing producer-owned approvals keep their own status.
-Neither the dashboard nor the Herdr signal grants authority or changes Auto.
+The dashboard never grants authority or changes Auto without explicit operator action.
 
 A connected dashboard sends explicit Auto choices and model edits over a private session-local socket. Model edits
 use the same in-memory overrides and `session_config` audit path as `/grants models`; `m <definition>
@@ -776,8 +726,8 @@ specification of who owns what.
 | :--- | :--- | :--- |
 | `src/kernel` | What may a child hold, and how is that carried? Mostly pure; the readers that discover what exists are the exception, and they are bounded. | `resolve`, `spawn`, `propagation`, `catalog`, `definitions`, `capabilities`, `approval`, `chain`, `context-handoff`, `fanout`, `correlation`, `refusals`, `env-names`, `project-paths`, `workspace`, `bounded-read` |
 | `src/governance` | What was decided, and where is it written? | `record`, `ledger`, `ledger-events`, `ledger-report`, `approval-store`, `approval-prompt`, `grant-store`, `init`, `workspace-lease`, `execution-retention` |
-| `src/executors` | How does a child process start and end? | `executor`, `run-herdr`, `herdr-*`, `pane-reaper` |
-| `src/products` | What does the operator see or report? | `activity-timeline`, `dashboard-*`, `episode-report`, `episode-outcomes` |
+| `src/executors` | How does a child process start and end? | `executor`, `captured-execution`, `owned-worker`, `portable-child`, `inprocess-readonly`, `worktree-tournament` |
+| `src/products` | What does the operator see or report? | `activity-timeline`, `dashboard-*`, `web-dashboard`, `terminal-panel`, `terminal-split`, `setup-doctor`, `provider-detect`, `session-harvest`, `episode-report`, `episode-outcomes` |
 | `extensions/` | The pi extension and its wiring: hooks, the three tools, approvals flow, `/grants`. | `grants.ts` is the entry point |
 
 ## Tests
@@ -788,7 +738,7 @@ npm run typecheck
 npm test
 npm run build --workspace=pi-daddy
 npm run test:integration:ci --workspace=pi-daddy # model-free CI subset
-npm run test:integration --workspace=pi-daddy    # real Pi; Herdr creates and stops only its own named test server
+npm run test:integration --workspace=pi-daddy    # real Pi integration suite
 npm run test:smoke --workspace=pi-daddy          # pack, install into a scratch project, import and use it
 PI_DADDY_IT_MODEL=1 npm run test:integration --workspace=pi-daddy # opt-in real-model tier; consumes tokens
 ```
