@@ -61,7 +61,6 @@ import { planChain, type GateRequest } from "./chain-plan.ts";
 import { contextShape } from "./context-shape.ts";
 import { preflightModel, runtimePairUnavailable } from "../src/kernel/model-preflight.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
-import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
@@ -138,7 +137,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       "governed exactly as a single `delegate` is: it holds only what you grant it, and you cannot grant what you " +
       "do not hold. A failed step ABORTS the rest, and you still receive everything that completed.",
     parameters: params,
-    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       // A step that throws stops the chain; the steps that ran are reported through Pi's tool_result hook.
       const taskAdmission = session.taskDispatch?.capture();

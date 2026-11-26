@@ -1,7 +1,7 @@
 {
-  "piSdk": "1.6.0",
+  "piSdk": "1.6.1",
   "minimumRuntime": {
-    "pi": "1.6.0",
+    "pi": "1.6.1",
     "nodeMajor": 24
   },
   "normalCliInstalls": [

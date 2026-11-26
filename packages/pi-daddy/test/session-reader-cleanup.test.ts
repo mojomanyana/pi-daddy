@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { fstatSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { mkdir, open, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -148,21 +147,18 @@ for (const failClose of [false, true]) {
   test(`startup suspended before discovery leaves replacement untouched (${failClose ? "failed" : "clean"} old close)`, async () => {
     const saved = Object.fromEntries(GRANT_ENV_KEYS.map((key) => [key, process.env[key]]));
     const f = await fixture(false, "definition", failClose);
-    const legacy = join(f.ctx.cwd, ".pi", "grants.jsonl");
-    execFileSync("mkfifo", [legacy]);
-    // The real legacy import awaits EOF. Holding its writer makes this pre-discovery boundary deterministic.
+    const cwd = await tempDir("startup-replacement-");
+    await mkdir(join(cwd, ".pi", "skills", "replacement"), { recursive: true });
+    await writeFile(
+      join(cwd, ".pi", "skills", "replacement", "SKILL.md"),
+      "---\nname: replacement\ndescription: replacement\nallowed-tools: Read\n---\nReplacement.\n",
+    );
+    // Start session_start: it suspends at its pre-discovery async boundary (initializeSessionAutoMode)
+    // before loadProjectDefinitions is ever reached.
     const startup = f.hooks.get("session_start")!({}, f.ctx);
-    const writer = await open(legacy, "w");
     const initiating = f.session.reloadLifecycle;
-    let resumed = false;
     try {
       assert.deepEqual(f.definitionCalls, [], "startup has not reached discovery");
-      const cwd = await tempDir("startup-replacement-");
-      await mkdir(join(cwd, ".pi", "skills", "replacement"), { recursive: true });
-      await writeFile(
-        join(cwd, ".pi", "skills", "replacement", "SKILL.md"),
-        "---\nname: replacement\ndescription: replacement\nallowed-tools: Read\n---\nReplacement.\n",
-      );
       const replacement = {
         root: { PI_DADDY_GRANT: "tool:read", PI_DADDY_DEPTH: "1", PI_DADDY_WORKSPACE_PIN: "" },
       };
@@ -182,8 +178,6 @@ for (const failClose of [false, true]) {
         publications++;
         publish();
       };
-      await writer.close();
-      resumed = true;
       await startup;
       assert.ok(
         f.definitionCalls.every((path) => path === cwd),
@@ -213,7 +207,6 @@ for (const failClose of [false, true]) {
         assert.equal(f.session.workspacePin, pin);
       }
     } finally {
-      if (!resumed) await writer.close();
       await startup;
       await f.dispose();
       for (const key of GRANT_ENV_KEYS) {

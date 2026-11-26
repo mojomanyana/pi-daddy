@@ -19,13 +19,13 @@ import type { GrantRecord } from "./ledger.ts";
 import { isEscalationAttempt } from "./ledger.ts";
 import type { WorkspaceLeaseOutcome } from "./ledger-events.ts";
 import { isExecutionId } from "../kernel/execution-id.ts";
-import { isRetiredLedgerEvent, validateLedgerV3Event } from "./ledger-v3-validation.ts";
+import { validateLedgerV3Event } from "./ledger-v3-validation.ts";
 import { readRecords } from "./record.ts";
 
 export interface LedgerReport {
   /** False when the file is absent — a configuration state, not damage. */
   exists: boolean;
-  /** Capability-decision records (legacy, v2, or v3). */
+  /** Capability-decision records. */
   records: number;
   /** Every parsed ledger event, including lifecycle and lease events. */
   events: number;
@@ -41,8 +41,6 @@ export interface LedgerReport {
     recovered: number;
   };
   lifecycle: { starting: number; running: number; completed: number; failed: number };
-  /** Events of a kind an earlier version wrote and this one no longer builds; valid history, not corruption. */
-  retired: number;
   /** Lines that did not, with 1-based line numbers so the report is actionable. */
   corrupt: Array<{ line: number; reason: string }>;
   /** Records where an agent asked for more than it held — ADR-0008's designated signal. */
@@ -153,15 +151,15 @@ const LEASE_OUTCOME_COUNTERS: Record<WorkspaceLeaseOutcome, keyof LedgerReport["
 
 function requireVersioned(event: Record<string, unknown>, fields: string[]): void {
   if (
-    (event.ledgerVersion !== 2 && event.ledgerVersion !== 3) ||
+    event.ledgerVersion !== 3 ||
     typeof event.ts !== "string" ||
     fields.some((field) => typeof event[field] !== "string" || event[field] === "")
   ) {
     throw new Error("invalid versioned ledger event");
   }
   if (
-    event.ledgerVersion === 3 &&
-    (!isExecutionId(event.executionId) || (event.parentExecutionId !== null && !isExecutionId(event.parentExecutionId)))
+    !isExecutionId(event.executionId) ||
+    (event.parentExecutionId !== null && !isExecutionId(event.parentExecutionId))
   ) {
     throw new Error("invalid v3 execution identity");
   }
@@ -205,7 +203,6 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
           recovered: 0,
         },
         lifecycle: { starting: 0, running: 0, completed: 0, failed: 0 },
-        retired: 0,
         corrupt: [],
         escalationAttempts: 0,
         executors: { process: 0, unknown: 0 },
@@ -240,7 +237,6 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     recovered: 0,
   };
   const lifecycle = { starting: 0, running: 0, completed: 0, failed: 0 };
-  let retired = 0;
   let escalationAttempts = 0;
   const executors = { process: 0, unknown: 0 };
   const bySource: Record<ApprovalSource, number> = { prompt: 0, session: 0, persisted: 0, inherited: 0, auto: 0 };
@@ -262,11 +258,9 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
   read.records.forEach((record, index) => {
     try {
       const event = record.body;
-      if (event.ledgerVersion !== undefined) {
-        if (event.event === undefined) throw new Error("versioned ledger line has no event discriminator");
-        if (event.ledgerVersion !== 2 && event.ledgerVersion !== 3) throw new Error("unsupported ledger version");
-        if (event.ledgerVersion === 3 && validateLedgerV3Event(event)) throw new Error("invalid ledger v3 event");
-      }
+      if (event.ledgerVersion !== 3) throw new Error("unsupported ledger version");
+      if (event.event === undefined) throw new Error("versioned ledger line has no event discriminator");
+      if (validateLedgerV3Event(event)) throw new Error("invalid ledger v3 event");
       if (event.event === "workspace_lease") {
         requireVersioned(event, ["childId", "workspaceId", "root", "access"]);
         const outcome = typeof event.outcome === "string" ? event.outcome : "";
@@ -289,29 +283,13 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
         events += 1;
         return;
       }
-      if (
-        event.ledgerVersion === 3 &&
-        (event.event === "session_config" || event.event === "cost_gate" || event.event === "episode_outcome")
-      ) {
+      if (event.event === "session_config" || event.event === "cost_gate" || event.event === "episode_outcome") {
         // These facts passed the current v3 schema above. They are history, not capability decisions,
-        // and must not inflate approval, executor, lifecycle or retired-event counters.
+        // and must not inflate approval, executor, or lifecycle counters.
         events += 1;
         return;
       }
-      if (event.ledgerVersion === 3 && isRetiredLedgerEvent(event)) {
-        // Written by 0.30.0 or earlier; counted, never treated as corruption (see RETIRED_LEDGER_EVENT_KINDS).
-        retired += 1;
-        events += 1;
-        return;
-      }
-      if (event.event === "check_receipt") {
-        // v2 receipts predate the retired set and keep the field check they always had.
-        requireVersioned(event, ["childId", "receiptId", "workspaceId", "checkId", "treeSha"]);
-        retired += 1;
-        events += 1;
-        return;
-      }
-      if (event.event !== undefined && event.event !== "capability_decision") throw new Error("unknown ledger event");
+      if (event.event !== "capability_decision") throw new Error("unknown ledger event");
       const parsed = event as unknown as GrantRecord;
       if (event.event === "capability_decision") requireCapabilityDecision(event);
       if (!Array.isArray(parsed.denied)) throw new Error("not a grant record");
@@ -383,7 +361,6 @@ export async function verifyLedger(path: string): Promise<LedgerReport> {
     events,
     workspaceLeases,
     lifecycle,
-    retired,
     corrupt,
     escalationAttempts,
     executors,

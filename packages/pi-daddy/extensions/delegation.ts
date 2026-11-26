@@ -52,7 +52,6 @@ import { newDelegationOccurrence } from "./execution-occurrence.ts";
 import { correlationShape as buildCorrelationShape } from "./correlation-shape.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 import { contextShape } from "./context-shape.ts";
-import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 
 /**
  * Wire a set of children to pi's partial-result channel — ADR-0032.
@@ -301,7 +300,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "written by the operator. Use 'tools' only when no definition fits. Grant 'delegate' if the " +
       "sub-agent must itself delegate further; withhold it to make the sub-agent a leaf.",
     parameters: delegateParams,
-    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       // Reported through Pi's tool_result hook if this call throws after its child ran (2026-11-17).
       const taskAdmission = session.taskDispatch?.capture();
@@ -429,7 +427,6 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       "when independent tasks can proceed in parallel — several reviewers over one diff, say — and read " +
       "every child's outcome, because one can be refused while the others succeed.",
     parameters: delegateAllParams,
-    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const taskAdmission = session.taskDispatch?.capture();
       const taskObservation = session.bindTaskObservation?.() ?? null;

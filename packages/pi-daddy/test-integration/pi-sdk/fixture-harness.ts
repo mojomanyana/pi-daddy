@@ -17,7 +17,7 @@ import type { Request, Step } from "./scripted-provider.ts";
 
 type Settings = NonNullable<Parameters<typeof SettingsManager.inMemory>[0]>;
 
-export function assertVersion(expected = "1.6.0") {
+export function assertVersion(expected = "1.6.1") {
   for (const name of ["pi-coding-agent", "pi-agent-core", "pi-ai"]) {
     const packagePath = join(fileURLToPath(import.meta.resolve(`@earendil-works/${name}`)), "../../package.json");
     const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
@@ -27,7 +27,7 @@ export function assertVersion(expected = "1.6.0") {
 
 export async function createFixture(
   options: {
-    sdkVersion?: "1.0.4" | "1.1.0" | "1.6.0";
+    sdkVersion?: string;
     mode?: "json" | "tui";
     extension?: (root: string) => ExtensionFactory;
     next?: (request: Request, index: number) => Step;

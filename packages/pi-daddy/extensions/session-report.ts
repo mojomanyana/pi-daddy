@@ -16,8 +16,6 @@
  * came to silence the `holding [...]` line too.
  */
 
-import { existsSync } from "node:fs";
-import { legacyApprovalsPath, sharedApprovalsPath } from "../src/governance/approval-store.ts";
 import { verifyLedger } from "../src/governance/ledger.ts";
 import { AGENT_WILDCARD } from "../src/kernel/resolve.ts";
 import { ENV_PARENT_TOOLS, ENV_REPLAY_RETRY } from "../src/kernel/env-names.ts";
@@ -26,16 +24,6 @@ import { replayRetrySwitch } from "../src/kernel/replay-safe.ts";
 import { planWithApprovals } from "./run-delegation.ts";
 import type { GrantsSession } from "./session.ts";
 import { renderSpawnableSummary, summariseSpawnable } from "./spawn-summary.ts";
-import {
-  approvalsPath,
-  grantStorePath,
-  legacyGrantEnvPath,
-  legacyProjectLedgerPath,
-  legacyUserApprovalsPath,
-  legacyUserGrantStorePath,
-  projectLedgerPath,
-  projectSettingsPath,
-} from "../src/kernel/project-paths.ts";
 
 /**
  * The slice of pi's context this module needs: a working directory and somewhere to speak.
@@ -103,73 +91,6 @@ export async function reportSessionStart(session: GrantsSession, ctx: SessionRep
       `grants: workspace registry unreadable, no workspace is routable this session — ${session.catalog.registryRefusal}`,
       "warning",
     );
-  // ADR-0014: a pre-0.6 in-workspace approvals file is IGNORED, not migrated — importing it would
-  // import exactly the entries whose trustworthiness the move exists to remove. Say so, because an
-  // operator whose approvals silently stopped applying deserves to know why.
-  // ADR-0020: the pre-0.11 single shared store is ignored, not migrated. Same reasoning shape as the
-  // legacy file below — an operator whose approvals silently stopped applying must be told why — but a
-  // different reason for not migrating: splitting it by `cwd` would be lossless, and it is still declined
-  // because one-shot migration code in the layer with nine defects buys less than one re-approval costs.
-  try {
-    // ADR-0076 PR 3c moved the user-level stores under one pi-daddy/ directory WITHOUT migration (operator
-    // decision, following ADR-0020). Name what was left behind, so "why does it ask again" has an answer.
-    for (const [label, legacy, current, action] of [
-      [
-        "grant store",
-        legacyUserGrantStorePath(ctx.cwd),
-        grantStorePath(ctx.cwd),
-        "run /grants init to record this project's grant again",
-      ],
-      [
-        "approvals",
-        legacyUserApprovalsPath(ctx.cwd),
-        approvalsPath(ctx.cwd),
-        "answer the gate again; stored approvals are not migrated",
-      ],
-      [
-        "project ledger",
-        legacyProjectLedgerPath(ctx.cwd),
-        projectLedgerPath(ctx.cwd),
-        "it is imported once at session start; the old file is kept untouched",
-      ],
-      [
-        "grants.env",
-        legacyGrantEnvPath(ctx.cwd),
-        projectSettingsPath(ctx.cwd),
-        "it is no longer written or read; a shell that still sources it points PI_DADDY_LEDGER at the old ledger — delete the file",
-      ],
-    ] as const) {
-      if (existsSync(legacy) && !existsSync(current))
-        ctx.ui.notify(
-          `grants: ${label} found at its pre-0.30 location ${legacy} and not at ${current} — ${action}.`,
-          "warning",
-        );
-    }
-    if (existsSync(sharedApprovalsPath())) {
-      ctx.ui.notify(
-        `grants: ignoring ${sharedApprovalsPath()} — approvals are now stored one file per governed ` +
-          `directory (ADR-0020), because a single shared file could not hold two projects' approvals ` +
-          `for a same-named definition. Re-approve when next asked. **Deleting the old file is ` +
-          `recommended, not merely safe**: entries written by 0.10.x may contain the task text a model ` +
-          `composed at approval time, which this version no longer stores anywhere (ADR-0021).`,
-        "warning",
-      );
-    }
-  } catch {
-    /* never throw into the agent loop */
-  }
-  try {
-    if (existsSync(legacyApprovalsPath(ctx.cwd))) {
-      ctx.ui.notify(
-        `grants: ignoring ${legacyApprovalsPath(ctx.cwd)} — approvals now live outside the workspace ` +
-          `(it was writable by the very agents it gated). Re-approve when next asked; the old file is ` +
-          `safe to delete.`,
-        "warning",
-      );
-    }
-  } catch {
-    /* never throw into the agent loop */
-  }
   // `agent:*` grants no tools, but it authorises every definition in BOTH skill roots — including
   // `~/.pi/agent/skills/`, which other software installs into, so ADR-0017's "an operator-authored
   // file" is not true of everything it covers. Paired with a shell that is every body on disk running

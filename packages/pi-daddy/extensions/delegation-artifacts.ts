@@ -26,8 +26,6 @@ export async function claimWithArtifact(
   claim: () => Promise<OperationClaim>,
   scope = session.reloadLifecycle?.operationFinals,
   display?: Pick<DashboardResultDescription, "agent" | "summary">,
-  /** Exact pre-binding digest, for reading a completed ordinary operation only. Never used for election. */
-  legacyRequestDigest?: string,
   observe?: ReturnType<NonNullable<GrantsSession["bindTaskObservation"]>>,
 ): Promise<OperationClaim> {
   if (scope !== session.reloadLifecycle?.operationFinals) throw Error("Operation owner changed before admission");
@@ -40,40 +38,7 @@ export async function claimWithArtifact(
   const old = store.history(request.operationId, false);
   if (old) {
     if (old.requestDigest !== request.requestDigest) {
-      if (!legacyRequestDigest || old.requestDigest !== legacyRequestDigest)
-        throw Error("Operation identity conflict with retained request");
-      const complete = store.history(request.operationId, true);
-      const operation = complete?.operation;
-      const runtime = operation?.runtime;
-      if (
-        complete?.requestDigest !== legacyRequestDigest ||
-        !complete.artifact ||
-        !complete.final ||
-        store.owner.cwd !== request.cwd ||
-        operation?.cwd !== request.cwd ||
-        operation.workspaceId !== request.workspaceId ||
-        operation.state !== "settled" ||
-        runtime?.work !== "succeeded" ||
-        runtime.control === "failed" ||
-        runtime.final?.state !== "complete" ||
-        runtime.cleanup?.state !== "settled" ||
-        runtime.cleanup.executionId !== operation.executionId
-      )
-        throw Error("Legacy operation has no complete settled result for this workspace; inspect it without rerunning");
-      const live = await session.autoMode!.operations!.read(request.operationId);
-      if (
-        scope !== session.reloadLifecycle?.operationFinals ||
-        (live &&
-          (live.executionId !== operation.executionId ||
-            live.state !== "settled" ||
-            live.runtime?.control === "failed"))
-      )
-        throw Error("Legacy operation owner or live state changed; no new work was admitted");
-      return {
-        reused: true,
-        operation,
-        legacyResult: { text: complete.final.text, definitionIdentity: "not-recorded" },
-      };
+      throw Error("Operation identity conflict with retained request");
     }
     const live = await session.autoMode!.operations!.read(request.operationId);
     if (!live || live.executionId !== old.operation.executionId) return { reused: true, operation: old.operation };

@@ -1229,11 +1229,7 @@ test("ADR-0042: a delegated child inherits a NARROWED destination pin on the spa
   }
 });
 
-test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parses", async () => {
-  // The field is REQUIRED in TypeScript and absent from every line 0.15.0 wrote. A reviewer proved the read path
-  // does not care (`verifyLedger` validates only `Array.isArray(parsed.denied)`) — but nothing pinned it, so a
-  // future `if (!parsed.executor) throw` would silently reclassify every older ledger as corrupt with a green
-  // suite. This is that pin.
+test("a pre-v3 ledger line without ledgerVersion 3 is rejected as corrupt", async () => {
   const dir = await tempDir("grants-legacy-ledger-");
   const ledger = join(dir, "ledger.jsonl");
   const legacy = {
@@ -1253,8 +1249,8 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   await writeFile(ledger, recordLines(legacy));
 
   const report = await verifyLedger(ledger);
-  assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
-  assert.equal(report.records, 1, "and it must still be counted");
+  assert.equal(report.ok, false, "unversioned pre-v3 lines are rejected");
+  assert.equal(report.records, 0);
 });
 
 test("a complete final too large for required handoff blocks only the dependent step", async () => {

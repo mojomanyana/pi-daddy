@@ -260,8 +260,6 @@ export const grantsCommand = {
             ? ` · ${report.executors.unknown} not recorded (written before 0.16.0, which added the field)`
             : ""),
       );
-      if (report.retired > 0)
-        lines.push(`  retired    ${report.retired} event(s) of a kind written by an earlier version; valid history`);
       // R-51. ADR-0018 advertises that the ledger answers "did these four children run the same
       // instructions?" and "has this definition changed since?" — and nothing read `definitionDigest`, so
       // both needed hand-written jq and the second was not reproducible with `sha256sum` (the digest covers

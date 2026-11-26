@@ -35,8 +35,6 @@ export interface OperationRequest {
 export interface OperationClaim {
   operation: OperationReference;
   reused: boolean;
-  /** Read-only compatibility result; never a new admission or current semantic approval. */
-  legacyResult?: { text: string; definitionIdentity: "not-recorded" };
   /** Only the elected caller receives these methods. Neither grants execution authority. */
   started?(cwd: string, workspaceId: string | null): Promise<void>;
   finish?(state: "settled" | "not-started" | "uncertain", runtime?: OperationReference["runtime"]): Promise<void>;

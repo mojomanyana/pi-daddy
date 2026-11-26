@@ -101,30 +101,6 @@ function correlationOf(value: unknown): CorrelationMetadata | undefined {
     : undefined;
 }
 
-function legacyNode(event: ObjectRecord, line: number, now: Date): DashboardNode | null {
-  if (event.event !== undefined && event.event !== "capability_decision") return null;
-  if (!strings(event.denied)) return null;
-  const ts = timestamp(event.ts) ? event.ts : now.toISOString();
-  return {
-    executionId: `legacy-line:${line}`,
-    parentExecutionId: null,
-    logicalParentId: nonEmpty(event.parentId) ? event.parentId : undefined,
-    logicalChildId: nonEmpty(event.childId) ? event.childId : `legacy:${line}`,
-    depth: Number.isInteger(event.depth) ? (event.depth as number) : 0,
-    agentName: isLedgerDisplayIdentifier(event.agentType) ? event.agentType : "historical-delegation",
-    state: event.blocked === true ? "refused" : "historical",
-    provenance: "historical-unjoinable",
-    startedAt: ts,
-    updatedAt: ts,
-    durationMs: 0,
-    effectiveGrant: strings(event.effective) ? event.effective.filter(isLedgerCapabilityIdentifier) : [],
-    denied: event.denied.filter(isLedgerCapabilityIdentifier),
-    executor: EXECUTORS.has(String(event.executor)) ? (event.executor as "process") : undefined,
-    correlation: correlationOf(event.correlation),
-    refusal: object(event.refusal) ? (event.refusal as DashboardNode["refusal"]) : undefined,
-  };
-}
-
 function stateOf(occurrence: Occurrence, nowMs: number, graceMs: number): DashboardState {
   if (occurrence.decision?.blocked === true) return "refused";
   const latest = occurrence.lifecycle.at(-1);
@@ -257,7 +233,6 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
   const graceMs = options.startGraceMs ?? START_GRACE_MS;
   const corrupt: DashboardCorruptLine[] = [];
   const occurrences = new Map<string, Occurrence>();
-  const historical: DashboardNode[] = [];
   let orphanEvents = 0;
 
   // ADR-0076 PR 3d: the ledger is record envelopes. Only the failure class of a damaged line crosses to the
@@ -271,27 +246,6 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
     }
     const event: ObjectRecord = record.body;
 
-    if (event.ledgerVersion === undefined && event.event === undefined) {
-      const node = legacyNode(event, line, now);
-      if (node) historical.push(node);
-      else corrupt.push({ line, reason: "invalid legacy grant record" });
-      return;
-    }
-    if (event.ledgerVersion === 2) {
-      // Only reachable through the one-time import of a pre-format ledger. The frozen v2 schema reader is gone;
-      // what remains is the identity rule it enforced, or it is corruption rather than a historical row.
-      // v2 predates execution identity: a valid v2 event names its discriminator and its child, nothing more.
-      if (typeof event.event !== "string" || typeof event.childId !== "string") {
-        corrupt.push({ line, reason: "invalid ledger v2 event" });
-        return;
-      }
-      const node = legacyNode(event, line, now);
-      if (node) historical.push(node);
-      else if (["workspace_lease", "child_lifecycle", "check_receipt"].includes(String(event.event))) orphanEvents += 1;
-      else corrupt.push({ line, reason: "invalid ledger v2 event" });
-      return;
-    }
-
     if (event.ledgerVersion !== 3 || !nonEmpty(event.event)) {
       corrupt.push({ line, reason: validateV3(event) ?? "invalid ledger v3 event" });
       return;
@@ -303,7 +257,7 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
         return;
       }
     }
-    // The dashboard renders only delegation-tree events. Other current, retired, or future additive event kinds
+    // The dashboard renders only delegation-tree events. Other current or future additive event kinds
     // remain valid ledger history without acquiring tree identity fields they do not have.
     if (!["capability_decision", "child_lifecycle", "workspace_lease"].includes(event.event)) {
       orphanEvents += 1;
@@ -312,8 +266,6 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
     const executionId = event.executionId as string;
     const parentExecutionId = event.parentExecutionId as string | null;
     const childId = event.childId as string;
-    // Named checks (retired) had their own receipt identity and are not delegated-agent tree nodes.
-    if (childId.startsWith("check:")) return;
     const seen = occurrences.get(executionId);
     if (seen && (seen.parentExecutionId !== parentExecutionId || seen.childId !== childId)) {
       corrupt.push({ line, reason: "execution identity changed parent or logical child" });
@@ -361,13 +313,13 @@ export function parseDashboardLedger(text: string, options: DashboardProjectionO
     const occurrence = occurrences.get(executionId)!;
     corrupt.push({ line: occurrence.firstLine, reason: "execution parent cycle" });
   }
-  const current = [...occurrences.values()]
+  const nodes = [...occurrences.values()]
     .filter((occurrence) => !cycles.has(occurrence.executionId))
-    .map((occurrence) => nodeOf(occurrence, now, graceMs));
-  const nodes = [...current, ...historical].sort(
-    (left, right) =>
-      Date.parse(left.startedAt) - Date.parse(right.startedAt) || left.executionId.localeCompare(right.executionId),
-  );
+    .map((occurrence) => nodeOf(occurrence, now, graceMs))
+    .sort(
+      (left, right) =>
+        Date.parse(left.startedAt) - Date.parse(right.startedAt) || left.executionId.localeCompare(right.executionId),
+    );
   const active = nodes.filter((node) => ["authorised", "starting", "running"].includes(node.state)).length;
   return {
     nodes,
