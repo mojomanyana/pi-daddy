@@ -2,10 +2,11 @@
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
+import { findPackageJSON } from "node:module";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const runFile = promisify(execFile);
@@ -39,10 +40,14 @@ try {
   assert(existsSync(receipt.specPath),"Harness did not write a regression spec");
   console.log("Skill Harness wrote a regression spec from the synthetic turn.");
   const bookieModule = join(packages[2],"src/managed-vault.ts").replaceAll("\\","/");
+  const coreManifest = findPackageJSON("pi-bookie-core",pathToFileURL(bookieModule));
+  const coreEntry = JSON.parse(readFileSync(coreManifest,"utf8")).exports["."].import;
+  const coreModule = resolve(dirname(coreManifest),coreEntry).replaceAll("\\","/");
   const statusPath = join(root,"benchmarks/harvest/pilot-status.mjs").replaceAll("\\","/");
   writeFileSync(probe, `import {writeFileSync} from 'node:fs';
 import {ecosystemStatus} from ${JSON.stringify(statusPath)};
 import {taskEnrollment,openManagedVault,attestTaskEnrollment} from ${JSON.stringify(bookieModule)};
+import {inspectConcept,openTaskHistory} from ${JSON.stringify(coreModule)};
 export default function(pi) {
   pi.registerCommand('verify-ecosystem-fixture',{description:'Offline fixture',handler:async (_,ctx)=>{
     try {
@@ -51,16 +56,21 @@ export default function(pi) {
       if (process.platform === "linux") {
         const dir = ${JSON.stringify(profile)};
         const before = await taskEnrollment(ctx.cwd,dir);
-        await openManagedVault(ctx.cwd,async()=>{},dir);
-        await attestTaskEnrollment(ctx.cwd,async()=>{},dir);
-        enrollment = {before,after:await taskEnrollment(ctx.cwd,dir)};
+        const vault = await openManagedVault(ctx.cwd,async()=>{},dir);
+        const project = await inspectConcept(vault.root,{path:vault.project},{maxContentBytes:1});
+        if (!project.ok || project.type !== "Project") throw Error("Could not read the fixture Bookie project");
+        const history = await openTaskHistory({vault:vault.root,projectId:project.uid,assertCurrent:vault.assertCurrent});
+        const task = before === "absent" ? await history.ensureSelected() : await history.selected();
+        if (!task?.taskId) throw Error("Missing selected Bookie task for enrollment " + before);
+        await attestTaskEnrollment(ctx.cwd,vault.assertCurrent,dir);
+        enrollment = {before,after:await taskEnrollment(ctx.cwd,dir),taskId:task.taskId};
       }
       let scoutSettings = false;
       pi.events.emit('scout:model-settings:v1',{report(){scoutSettings=true}});
       const restored = ctx.sessionManager.getBranch().some(e=>e.type==='message' && e.message.content==='Fixture marker');
       writeFileSync(${JSON.stringify(result)},JSON.stringify({loaded,scoutSettings,restored,enrollment,id:ctx.sessionManager.getSessionId()}));
     } catch (error) {
-      writeFileSync(${JSON.stringify(result)},JSON.stringify({error:String(error)}));
+      writeFileSync(${JSON.stringify(result)},JSON.stringify({error:error.stack ?? String(error)}));
     } finally { ctx.shutdown(); }
   }});
 }`);
@@ -88,8 +98,10 @@ export default function(pi) {
   const second = await run();
   assert.equal(second.id,first.id); assert(second.restored,"Original turn missing after resume");
   if (process.platform === "linux") {
-    assert.deepEqual(first.enrollment,{before:"absent",after:"attached"});
+    assert.equal(first.enrollment.before,"absent");
+    assert.equal(first.enrollment.after,"attached");
     assert.equal(second.enrollment.before,"attached");
+    assert.equal(second.enrollment.taskId,first.enrollment.taskId);
     console.log("Bookie attached the fixture workspace and recovered the same enrollment after restart.");
   } else console.log("Bookie workspace enrollment is covered by the Linux/WSL run.");
   console.log("Fresh and resumed Pi registered all five components and the Scout settings handler.");
