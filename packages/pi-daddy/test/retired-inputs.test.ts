@@ -2,17 +2,10 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { withoutRetiredDelegationArguments } from "../extensions/retired-inputs.ts";
 import { createGrantsSession } from "../extensions/session.ts";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
-test("only the retired call argument is removed, without coercing active input", () => {
-  const raw = { task: 13, episodeCostCeiling: { malformed: true }, typoCost: "unchanged", tools: ["read"] };
-  assert.deepEqual(withoutRetiredDelegationArguments(raw), { task: 13, typoCost: "unchanged", tools: ["read"] });
-  assert.ok(Object.hasOwn(raw, "episodeCostCeiling"), "preparation must not mutate the caller");
-  assert.equal(withoutRetiredDelegationArguments(null), null);
-});
 test("malformed retired settings and environment cannot disable active delegation bounds", async () => {
   const cwd = await tempDir("retired-inputs-");
   await mkdir(join(cwd, ".pi", "pi-daddy"), { recursive: true });

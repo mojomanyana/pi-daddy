@@ -213,8 +213,8 @@ export async function appendRecord<B>(
         refusal(
           LEDGER_DAMAGED,
           preFormat
-            ? `ledger ${path} predates the record format (${last.damage.reason}); do NOT repair it — run ` +
-                `\`pi-daddy ledger import ${path} <target>\` or point PI_DADDY_LEDGER at the imported project ledger`
+            ? `ledger ${path} predates the record format (${last.damage.reason}); do NOT repair it — ` +
+                `move it aside or point PI_DADDY_LEDGER at a new record-v1 ledger path`
             : `ledger ${path} is damaged at ${where} (${last.damage.reason}); run ` +
                 `\`pi-daddy ledger repair ${path}\` to preview the torn tail, then retry with --yes`,
           { path, reason: last.damage.reason, preFormat },

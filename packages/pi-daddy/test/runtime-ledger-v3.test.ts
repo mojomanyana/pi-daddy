@@ -115,7 +115,7 @@ test("lifecycle events join by execution id under process executor", () => {
   assert.equal(event.executor, "process");
 });
 
-test("the reader accepts v3 beside historical v2 while rejecting malformed v3 identity", async () => {
+test("the reader accepts v3 capability and lifecycle events", async () => {
   const path = join(await tempDir("ledger-v3-"), "ledger.jsonl");
   await appendRecord({ path }, buildRecord({ ...base, executionId, parentExecutionId: null }));
   await appendLedgerEvent(

@@ -1191,7 +1191,7 @@ _About the field (surveyed 2026-09-21, sources in ADR-0076):_
 - **catalog** — the list of definitions and tools the current session can name, derived from pi's own tool surface and the discovered SKILL.md files.
 - **ledger** — the optional append-only governance record under `.pi/pi-daddy/`: capability, lifecycle, lease, cost, session-configuration and outcome events; each line is a record envelope; damage is readable up to the fault and refuses appends until `pi-daddy ledger repair`.
 - **record envelope** — the shared line shape of every append-only store: `v`, `seq`, `prev`, `at`, `kind`, `id`, `body`, `digest`; `contracts/ledger-record/v1/record.schema.json`; the activity timeline uses the same envelope with kind `activity`.
-- **LEDGER_DAMAGED** — the refusal a writer raises when its ledger has a torn or tampered tail; cleared by `pi-daddy ledger repair --yes`; a pre-format file is imported (`pi-daddy ledger import`), never repaired.
+- **LEDGER_DAMAGED** — the refusal a writer raises when its ledger has a torn or tampered tail; cleared by `pi-daddy ledger repair --yes`.
 - **refusal** — a thrown error with a stable code (`CAPABILITY_ESCALATION`, `GATED_UNAPPROVED`, `WORKSPACE_NOT_AUTHORIZED`, `CHILD_TIMED_OUT`, …); thrown rather than returned because pi discards a returned `isError`.
 - **approval** — a human's answer to a gate: once, for the session, or "always" for a bounded period for a named definition; keyed `capability@subject`; the approval store and governance ledger never store raw task text (ADR-0010, ADR-0014, ADR-0021).
 - **approval banking** — recording a dialog's answer so later steps or sessions with the same `capability@subject` do not re-ask; a `once` answer is never banked.

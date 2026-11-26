@@ -1166,9 +1166,7 @@ test("pi-daddy ledger repair parses, previews by default and truncates only with
     yes: false,
   });
   assert.equal(parseArgs(["node", "cli", "ledger", "repair", "/tmp/x.jsonl", "--yes"]).yes, true);
-  assert.deepEqual(parseArgs(["node", "cli", "ledger", "verify"]).errors, [
-    "ledger needs: repair <path> [--yes] | import <source> <target>",
-  ]);
+  assert.deepEqual(parseArgs(["node", "cli", "ledger", "verify"]).errors, ["ledger needs: repair <path> [--yes]"]);
   const dir = await project();
   const path = join(dir, "ledger.jsonl");
   const { appendRecord, readRecordsFile } = await import("../src/governance/record.ts");

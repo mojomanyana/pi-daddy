@@ -36,11 +36,7 @@ import { withFileLock } from "./file-lock.ts";
 import { basename, dirname, join } from "node:path";
 import { entryVerdict, type ApprovalEntry, type EntryVerdict, type SubjectSnapshot } from "../kernel/approval.ts";
 import { isApprovalBinding } from "../kernel/correlation.ts";
-import {
-  approvalsPath as userApprovalsPath,
-  piProjectDir,
-  agentDir as resolveAgentDir,
-} from "../kernel/project-paths.ts";
+import { approvalsPath as userApprovalsPath, agentDir as resolveAgentDir } from "../kernel/project-paths.ts";
 
 interface ApprovalFile {
   version: 1;
@@ -112,22 +108,6 @@ export function approvalsPath(cwd: string): string {
  * exercised on exactly one input per machine, and lives in the layer with nine recorded defects. Re-approving
  * costs a click; a migration bug costs a silently wrong approval.
  */
-export function sharedApprovalsPath(): string {
-  return join(agentDir(), "grants-approvals.json");
-}
-
-/**
- * The old in-workspace location, so it can be REPORTED rather than read.
- *
- * Deliberately not migrated. Importing a legacy file would import exactly the entries whose
- * trustworthiness this change exists to remove — a forged approval would survive the fix that was
- * supposed to stop it. The extension names the file and ignores it; re-approving is a few keystrokes and
- * the only honest path.
- */
-export function legacyApprovalsPath(cwd: string): string {
-  return join(piProjectDir(cwd), "grants-approvals.json");
-}
-
 /** `$PI_CODING_AGENT_DIR`, or pi's default. Matches how pi-subagents resolves the same directory. */
 function agentDir(): string {
   return resolveAgentDir();

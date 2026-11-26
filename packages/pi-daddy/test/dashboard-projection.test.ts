@@ -246,7 +246,7 @@ test("schema-shaped free text cannot become dashboard task or output text", () =
 
   const projection = parseDashboardLedger(lines(hostile, historical), { now });
   const rendered = renderDashboard(projection, { color: false, details: true });
-  assert.equal(projection.corrupt.length, 1, "v3 rejects fields that claim identifiers but carry prose");
+  assert.equal(projection.corrupt.length, 2, "unsupported v2 and hostile v3 prose identifiers are rejected as corrupt");
   assert.doesNotMatch(rendered, new RegExp(taskSecret));
   assert.doesNotMatch(rendered, new RegExp(outputSecret));
 });
@@ -265,7 +265,7 @@ test("malformed nested v3 fields are corruption, not renderer crashes", () => {
   assert.doesNotThrow(() => renderDashboard(projection, { color: false }));
 });
 
-test("v2 occurrences are historical and are never lifecycle-joined by childId", () => {
+test("unsupported v2 and pre-versioned ledger records are rejected as corrupt", () => {
   const legacy: Record<string, unknown> = { ...decision(), ledgerVersion: 2 };
   delete legacy.executionId;
   delete legacy.parentExecutionId;
@@ -273,30 +273,12 @@ test("v2 occurrences are historical and are never lifecycle-joined by childId", 
   delete oldLifecycle.executionId;
   delete oldLifecycle.parentExecutionId;
   delete oldLifecycle.deadlineAt;
+  const unversioned: Record<string, unknown> = { ts: decision().ts, childId: "d0.1", denied: [] };
 
-  const projection = parseDashboardLedger(lines(legacy, legacy, oldLifecycle), { now });
-  assert.equal(projection.nodes.length, 2);
-  assert.ok(projection.nodes.every((node) => node.state === "historical"));
-  assert.equal(projection.orphanEvents, 1, "the ambiguous v2 lifecycle is disclosed, not guessed");
-});
-
-test("malformed explicit v2 events are corruption, not historical or orphan rows", () => {
-  const malformedDecision: Record<string, unknown> = { ...decision(), ledgerVersion: 2 };
-  delete malformedDecision.executionId;
-  delete malformedDecision.parentExecutionId;
-  delete malformedDecision.childId;
-  const malformedLifecycle: Record<string, unknown> = { ...lifecycle(), ledgerVersion: 2 };
-  delete malformedLifecycle.executionId;
-  delete malformedLifecycle.parentExecutionId;
-  delete malformedLifecycle.childId;
-  const missingDiscriminator: Record<string, unknown> = { ...malformedDecision, childId: "d0.1" };
-  delete missingDiscriminator.event;
-
-  const projection = parseDashboardLedger(lines(malformedDecision, malformedLifecycle, missingDiscriminator), { now });
+  const projection = parseDashboardLedger(lines(legacy, oldLifecycle, unversioned), { now });
   assert.equal(projection.nodes.length, 0);
   assert.equal(projection.orphanEvents, 0);
   assert.equal(projection.corrupt.length, 3);
-  assert.ok(projection.corrupt.every((entry) => /v2/i.test(entry.reason)));
 });
 
 test("a lifecycle event after terminal state is corrupt and cannot resurrect a child", () => {

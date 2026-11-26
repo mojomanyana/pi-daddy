@@ -70,12 +70,6 @@ test("every project path lives under <cwd>/.pi/pi-daddy and every user path unde
   assert.equal(paths.grantStorePath(cwd, env), `/home/u/.pi/agent/pi-daddy/grants/${paths.projectFileName(cwd)}`);
   assert.equal(paths.approvalsPath(cwd, env), `/home/u/.pi/agent/pi-daddy/approvals/${paths.projectFileName(cwd)}`);
   assert.equal(paths.workspaceLeasesDir(env), "/home/u/.pi/agent/pi-daddy/workspace-leases");
-  assert.equal(paths.legacyUserGrantStorePath(cwd, env), `/home/u/.pi/agent/grants/${paths.projectFileName(cwd)}`);
-  assert.equal(
-    paths.legacyUserApprovalsPath(cwd, env),
-    `/home/u/.pi/agent/grants-approvals/${paths.projectFileName(cwd)}`,
-  );
-  assert.equal(paths.legacyProjectLedgerPath(cwd), "/work/proj/.pi/grants.jsonl");
   assert.match(paths.projectFileName("/a/b/cosmic-platform-backend"), /^cosmic-platform-backend-[0-9a-f]{16}\.json$/);
   assert.ok(paths.isUnderPiProjectDir("/x/.pi/pi-daddy/work.jsonl"));
   assert.ok(!paths.isUnderPiProjectDir("/home/u/.local/state/pi-daddy/x"));
