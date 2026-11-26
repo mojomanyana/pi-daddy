@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 1.1.2 - 2026-11-26
+
+- Make normal ecosystem setup and migration register updateable Pi sources. Keep the tested snapshot available with `--pinned`.
+- Launch the dashboard panel through the CLI bundled with the loaded extension. Use the Windows host to resolve Windows Terminal from WSL.
+
 ## 1.1.1 - 2026-11-25
 
 - Make automatic harvesting fail closed on invalid/unreadable `ecosystem.json` and redact all session-derived fields including quoted JSON keys, escaped quotes, and credentials crossing prompt/failure-summary length cutoffs.
