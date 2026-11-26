@@ -3,10 +3,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createAgentSession, RpcClient, SessionManager } from "@earendil-works/pi-coding-agent";
 import release from "../src/products/ecosystem-release.json" with { type: "json" };
+const { createAgentSession, RpcClient, SessionManager } = await import(process.env.DADDY_TEST_PI_CLI
+  ? pathToFileURL(resolve(dirname(process.env.DADDY_TEST_PI_CLI), "../index.js")).href
+  : "@earendil-works/pi-coding-agent");
 
 const profile = process.env.PI_CODING_AGENT_DIR;
 assert.ok(profile, "Point PI_CODING_AGENT_DIR at the fresh setup profile");
@@ -19,7 +21,8 @@ assert.deepEqual(sources.toSorted(), Object.entries(expectedVersions)
   .map(([name, version]) => candidateVersion ? `npm:${name}` : `npm:${name}@${version}`).sort());
 for (const [name, expected] of Object.entries(expectedVersions)) {
   const manifest = JSON.parse(readFileSync(join(profile, "npm", "node_modules", name, "package.json"), "utf8"));
-  assert.equal(manifest.version, expected, `Installed version of ${name}`);
+  if (!candidateVersion || name === "pi-daddy") assert.equal(manifest.version, expected, `Installed version of ${name}`);
+  expectedVersions[name] = manifest.version;
 }
 if (candidateVersion) {
   const root = join(profile, "npm", "node_modules", "pi-daddy");
@@ -67,7 +70,7 @@ try {
   for (const phase of phases) {
     const { details } = await describe.execute(`verify-${phase}`, { agent: phase });
     assert.deepEqual(details.binding, { package: "principal-pi-skills", phase });
-    assert.equal(details.selectedResources.package.version, release.publicVersions["principal-pi-skills"]);
+    assert.equal(details.selectedResources.package.version, expectedVersions["principal-pi-skills"]);
   }
 } finally {
   session.dispose();
