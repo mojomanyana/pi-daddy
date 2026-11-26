@@ -1644,3 +1644,7 @@ semantic approval or model-supplied execution fact is introduced.
 ### 2026-11-18 — Optional display-only remote hardware telemetry
 
 Telemetry remains off by default and owner-controlled. Use only configured read-only SSH probes; no model calls, service starts or automatic installations. Cancellation kills and reaps the owned local process before acknowledging a stop, and re-enable cannot overlap that process. Physical RAM comes from validated system memory fields; GPU heaps and stopped-model state never imply RAM allocation or token speed. Normal dashboard close requests the same owner-bound stop; disconnection and abrupt dashboard death cannot claim confirmed cleanup.
+
+### 2026-11-26 - Model choices follow the active session on a fresh profile
+
+Keep a saved research model and decision classifier independent. Resolve model availability before dispatch. Offer repair in the owning session. Retry only the pending classification after a settings save, within its original turn and session.

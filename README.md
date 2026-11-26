@@ -2,6 +2,29 @@
 
 Use Pi with the model you have to deliver software you can check. Pi Daddy coordinates the work, Principal helps build and review it, and Bookie remembers the result. Scout and Harness are available when a task needs sources or evaluation. The beta is testing how far these tools can help smaller models deliver reliable engineering work. Quality depends on the model and task.
 
+
+## Ecosystem settings
+
+Start the coding agent with your usual Pi model. Open `/dashboard settings` in Pi, or open the terminal side panel with `/dashboard split` and press **5**. The terminal provides three model controls.
+
+| Key | What it changes |
+| --- | --- |
+| **p** | Scout research model and thinking, Bookie recall and distillation, dashboard startup and automatic escalation |
+| **e** | FAST, WORK and STRONG chat model tiers |
+| **c** | The harvest decision model, threshold, harvest mode and optional routing comparison |
+
+New profiles created with plain `setup` follow the active Pi model. Choose **Follow Pi** to keep using the model you logged into, including after a model switch. A separately pinned research model requires the matching Scout update. Settings lists connected chat models, including local models exposed through Pi. Use `/login` to add credentials and `/model` to select the coding agent. If a saved tier is unavailable at interactive startup, Pi offers one repair for the affected tiers. If a pinned Scout model is unavailable before dispatch, you can pick a replacement for that request.
+
+## Harvest classifier settings
+
+In the terminal side panel, press **5** for Settings and **c** for the decision classifier. The picker shows the full provider/model ID and its remembered threshold. Choose **test** to send a synthetic turn or **save** to apply the selection. The arrow keys navigate tabs and scroll long views. Press **?** for all shortcuts. The Pi status line and both dashboards report ecosystem tool starts and results during the session, including partial Scout briefs and pending Bookie deliveries.
+
+In a root Pi session, open `/dashboard settings`. The classifier picker lists models from your Pi registry. For the direct OpenRouter Decisions API, start Pi with `OPENROUTER_API_KEY` exported in that shell and choose `openrouter-direct`. A connected llama.cpp router lists its classifiers under its own provider. Select the model, threshold, and harvest mode, then save. The synthetic test makes one model request with example data and displays the result and latency.
+
+Each provider/model has its own threshold in `ecosystem.json`. Selecting a different decision model initially selects suggestion mode. Existing fast tier uses the original chat classifier. On classifier failure Pi records the outage in Live Activity. Saving a working classifier retries the most recent affected eligible turn in that session. The coding task can finish while classification is pending.
+
+Select **Compare routing in the background for this session** and save to begin a pilot. Starting on the next turn, the first active tool and first eligible Principal specialist delegation are compared when at least two candidates exist. The classifier sees a redacted request, recent tool names, and candidate descriptions. Its prediction stays outside the agent conversation. Under the default profile, the comparison log is `~/.pi/agent/pi-daddy/classifier-routing.jsonl`. Join choices, predictions and completion events by session ID, tool call ID and kind. Compare task results and verification evidence separately when evaluating quality.
+
 ## Start here
 
 **Works natively on macOS (Apple Silicon & Intel), Linux, and Windows.** The install block below lists the supported runtimes and tested Pi version.

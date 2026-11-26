@@ -1,5 +1,9 @@
 # Changelog — pi-daddy
 
+## Unreleased
+
+- Open `/dashboard settings` to select a harvest classifier, retain thresholds by provider and model, and test a synthetic turn. Optional session routing comparisons record the first tool and first eligible Principal delegation for later review.
+
 ## 1.1.3 - 2026-11-26
 
 - Automatic setup asks the installed Pi which providers and models are available. It preserves explicit model tiers and falls back to the active session when no providers are configured.

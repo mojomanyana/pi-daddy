@@ -38,6 +38,8 @@ export interface EcosystemModelFallbacks {
 export interface EcosystemHarvestConfig {
   mode?: "auto" | "suggest" | "off";
   minConfidence?: number;
+  classifier?: string;
+  thresholds?: Record<string, number>;
 }
 
 export interface EcosystemConfig {
@@ -47,7 +49,7 @@ export interface EcosystemConfig {
   dashboard?: { autoStart?: boolean; autoSplit?: boolean };
   escalation?: { auto?: boolean };
   harvest?: EcosystemHarvestConfig;
-  scout?: { directUrls?: boolean };
+  scout?: { directUrls?: boolean; model?: string; thinking?: string };
   bookie?: { autoRecall?: boolean; autoDistill?: boolean };
 }
 
@@ -95,11 +97,34 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
   ]) {
     if (section in parsed && !record(parsed[section])) throw new Error(`Expected an object for ${section} in ${file}.`);
   }
+  if (record(parsed.scout)) {
+    const { model, thinking, directUrls } = parsed.scout;
+    if (model !== undefined && model !== "session" && (typeof model !== "string" || !/^[^/\s]+\/[^\s]+$/.test(model)))
+      throw Error("Expected session or a provider/model ID for scout.model.");
+    if (
+      thinking !== undefined &&
+      (typeof thinking !== "string" ||
+        !["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(thinking))
+    )
+      throw Error("Invalid scout.thinking setting.");
+    if (directUrls !== undefined && typeof directUrls !== "boolean") throw Error("Expected boolean scout.directUrls.");
+  }
   if (record(parsed.harvest)) {
     const mode = parsed.harvest.mode;
     if (mode !== undefined && mode !== "auto" && mode !== "suggest" && mode !== "off") {
       throw new Error(`Expected harvest.mode to be "auto", "suggest", or "off" in ${file}.`);
     }
+    const validId = (v: unknown) => typeof v === "string" && /^[^/\s]+\/[^\s]+$/.test(v);
+    if ("classifier" in parsed.harvest && !validId(parsed.harvest.classifier))
+      throw Error(`Expected a provider/model ID for harvest.classifier in ${file}.`);
+    if (
+      "thresholds" in parsed.harvest &&
+      (!record(parsed.harvest.thresholds) ||
+        !Object.entries(parsed.harvest.thresholds).every(
+          ([id, v]) => validId(id) && typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1,
+        ))
+    )
+      throw Error(`Expected provider/model thresholds between 0 and 1 in ${file}.`);
     const minC = parsed.harvest.minConfidence;
     if (minC !== undefined && (typeof minC !== "number" || !Number.isFinite(minC) || minC < 0 || minC > 1)) {
       throw new Error(`Expected harvest.minConfidence to be a number between 0 and 1 in ${file}.`);
@@ -187,7 +212,8 @@ export function resolveEcosystemModelTier(
   tier: EcosystemModelTier,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  return resolveEcosystemModelCandidates(tier, env).find((entry) => entry !== "session");
+  const first = resolveEcosystemModelCandidates(tier, env)[0];
+  return first === "session" ? undefined : first;
 }
 
 export function selectRegistryModel(
@@ -216,6 +242,8 @@ export function selectRegistryModel(
     if (found && hasAuth(found, parsed.provider, parsed.modelId)) return { model: found, label: candidate };
   }
   const fb = fallback as { provider?: string; id?: string } | undefined;
+  if (fb?.provider && fb.id && !hasAuth(fallback, fb.provider, fb.id))
+    return { model: undefined, label: "unavailable" };
   return {
     model: fallback,
     label: fb?.provider && fb?.id ? `${fb.provider}/${fb.id}` : "session-default",

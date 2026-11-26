@@ -4,6 +4,10 @@
  * Bookie/Scout observations, auto-split (tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, Windows Terminal),
  * strong-model escalation, and 2-stage classifier-driven session harvesting.
  */
+import { ecosystemPreferences } from "./ecosystem-preferences.ts";
+import { thresholdFor } from "../src/products/decision-classifier.ts";
+import { createClassifierSettings } from "./classifier-settings.ts";
+import { registerClassifierShadow } from "./classifier-shadow.ts";
 import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -28,7 +32,8 @@ import {
   loadEcosystemConfig,
   readEcosystemConfig,
   removePanelLocator,
-  resolveEcosystemModelTier,
+  resolveEcosystemModelCandidates,
+  selectRegistryModel,
   saveEcosystemConfig,
   writePanelLocator,
 } from "../src/kernel/ecosystem-config.ts";
@@ -41,6 +46,15 @@ const MAX_EVENTS = 60;
 const MAX_TASKS = 30;
 const OPTIONAL_TOOLS = ["delegate_tournament", "quick_review", "delegate_all", "delegate_chain"] as const;
 const THINKING_ALLOWED = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+function ecosystemToolLabel(name: string, agent?: unknown): string | undefined {
+  if (name === "delegate" && typeof agent === "string" && /^[\w.-]{1,80}$/.test(agent)) return "Delegate · " + agent;
+  if (name.startsWith("delegate") || name === "quick_review") return "Daddy · " + name;
+  if (name.startsWith("bookie_")) return "Bookie · " + name.slice(7).replaceAll("_", " ");
+  if (name.startsWith("scout_") || name.startsWith("research_"))
+    return "Scout · " + name.replace(/^(scout|research)_/, "").replaceAll("_", " ");
+  if (name.startsWith("skill_")) return "Skill Harness · " + name.slice(6).replaceAll("_", " ");
+}
 
 function openInBrowser(url: string): void {
   try {
@@ -100,8 +114,21 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         readonly cwd: string;
       }
     | undefined;
+  const classifierSettings = createClassifierSettings(
+    () => lastCtx,
+    () => session.depth === 0,
+  );
+  let harvestGeneration = 0;
+  let retryHarvest: (() => void) | undefined;
+  let eligibleTurn = 0;
   const harvestTracker = createTurnHarvestTracker();
   const recent: WebDashboardEvent[] = [];
+  const ecosystemActivity: WebDashboardEvent[] = [];
+  const runningTools = new Map<string, string>();
+  function activity(detail: string) {
+    ecosystemActivity.push({ at: new Date().toISOString(), kind: "ecosystem", detail });
+    if (ecosystemActivity.length > MAX_EVENTS) ecosystemActivity.shift();
+  }
   const tasks: WebDashboardTask[] = [];
 
   const syncAuto = async () => {
@@ -120,6 +147,13 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     const denom = inputTokens + cacheReadTokens;
     const cacheHitPct = denom > 0 ? Math.round((cacheReadTokens / denom) * 100) : 0;
     const { memoryLines, researchLines } = summarizeObservations(session);
+    const tierLabel = (tier: "fast" | "work" | "strong") => {
+      const choices = resolveEcosystemModelCandidates(tier);
+      const resolved = selectRegistryModel(lastCtx?.modelRegistry, choices, modelObj);
+      return resolved.label === model || resolved.label === "session-default" ? "session" : resolved.label;
+    };
+    const harvest = loadEcosystemConfig().harvest;
+    const selected = harvest?.classifier || "";
     return {
       sessionId: lastCtx?.sessionManager?.getSessionId?.() ?? session.episodeId,
       cwd: lastCtx?.cwd ?? session.cwd,
@@ -130,9 +164,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       activeTools,
       optionalTools: OPTIONAL_TOOLS,
       modelTiers: {
-        fast: resolveEcosystemModelTier("fast") ?? "",
-        work: resolveEcosystemModelTier("work") ?? "",
-        strong: resolveEcosystemModelTier("strong") ?? "",
+        fast: tierLabel("fast"),
+        work: tierLabel("work"),
+        strong: tierLabel("strong"),
       },
       workMode: workModeSnapshot(session),
       busy,
@@ -141,6 +175,14 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       memoryLines,
       researchLines,
       recentEvents: recent,
+      ecosystemActivity,
+      classifierNeedsModel: Boolean(retryHarvest),
+      classifier: {
+        model: selected,
+        mode: harvest?.mode ?? "auto",
+        threshold: selected ? thresholdFor(harvest, selected) : (harvest?.minConfidence ?? 0.75),
+        shadow: Boolean(selected && classifierSettings.shadowModel() === selected),
+      },
       ...(harvestInfo ? { harvest: harvestInfo } : {}),
     };
   };
@@ -153,9 +195,15 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     const costLabel = costUsd > 0 ? ` · $${costUsd.toFixed(3)}` : "";
     const dash = handle ? ` · panel:${handle.port}` : "";
     target.ui.setStatus("pi-daddy", `Daddy · ${label}${busy ? " · running" : ""}${costLabel}${dash}`);
+    const latest = ecosystemActivity.at(-1)?.detail;
+    target.ui.setStatus(
+      "pi-daddy-activity",
+      latest && (runningTools.size ? `${latest} · ${runningTools.size} active` : latest),
+    );
   };
 
   const record = (kind: string, detail: string, ctx?: ExtensionContext) => {
+    if (kind === "harvest") activity("Harvest · " + detail);
     if (ctx) lastCtx = ctx;
     recent.push({ at: new Date().toISOString(), kind, detail: detail.slice(0, 240) });
     if (recent.length > MAX_EVENTS) recent.splice(0, recent.length - MAX_EVENTS);
@@ -167,6 +215,13 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     tasks.push({ at: new Date().toISOString(), kind, status, detail: detail.slice(0, 200) });
     if (tasks.length > MAX_TASKS) tasks.splice(0, tasks.length - MAX_TASKS);
   };
+
+  const reportActivity = (detail: string, ctx: ExtensionContext) => {
+    activity(detail);
+    if (handle) handle.push(stateOf());
+    updateFooter(ctx);
+  };
+  registerClassifierShadow(pi, session, classifierSettings.shadowModel, reportActivity);
 
   const applyConfig = (patch: WebDashboardConfigUpdate) => {
     if (patch.thinking !== undefined && !THINKING_ALLOWED.has(patch.thinking))
@@ -181,6 +236,12 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         const value = patch.modelTiers[tier];
         if (value === undefined) continue;
         const clean = value.trim().slice(0, 200);
+        if (
+          clean &&
+          clean !== "session" &&
+          !lastCtx?.modelRegistry.getAvailable().some((m) => m.provider + "/" + m.id === clean)
+        )
+          throw Error("This model is unavailable. Use /login or choose a connected model in Settings.");
         if (clean) models[tier] = clean;
         else delete models[tier];
         overrides.set(`PI_ECO_MODEL_${tier.toUpperCase()}`, clean);
@@ -212,6 +273,29 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     await syncAuto();
     handle = await startWebDashboard({
       getState: stateOf,
+      onPreferences: (input) => {
+        if (!lastCtx || session.depth !== 0) throw Error("Open Settings in the root Pi session.");
+        let ready = false;
+        pi.events.emit("scout:model-settings:v1", {
+          report: () => {
+            ready = true;
+          },
+        });
+        const result = ecosystemPreferences(lastCtx, input, ready);
+        if (input.action === "save") record("config", "Updated " + input.key);
+        return result;
+      },
+      onClassifierSettings: async (data) => {
+        const result = await classifierSettings.action(data);
+        if (data.action === "save") {
+          harvestGeneration++;
+          const retry = retryHarvest;
+          retryHarvest = undefined;
+          if (data.mode !== "off") retry?.();
+          handle?.push(stateOf());
+        }
+        return result;
+      },
       onWorkModeChange: (selection, scope) => {
         setWorkMode(session, selection, scope);
         record("work-mode", workModeLabel(selection));
@@ -254,6 +338,10 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         if (!saved.saved || !saved.path) {
           throw new Error(saved.error ?? "Failed to save harvested eval");
         }
+        if (!pending) {
+          retryHarvest = undefined;
+          harvestGeneration++;
+        }
         pendingHarvestSuggestion = undefined;
         harvestInfo = {
           scenarioId: saved.scenarioId,
@@ -287,6 +375,12 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
 
   pi.on("session_start", async (_ev, ctx) => {
     lastCtx = ctx;
+    retryHarvest = undefined;
+    harvestGeneration++;
+    ecosystemActivity.length = 0;
+    runningTools.clear();
+    recent.length = 0;
+    tasks.length = 0;
     inputTokens = 0;
     outputTokens = 0;
     cacheReadTokens = 0;
@@ -297,6 +391,33 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     await syncAuto();
     updateFooter(ctx);
     const cfg = loadEcosystemConfig();
+    if (ctx.hasUI && session.depth === 0 && ctx.modelRegistry?.getAvailable && ctx.ui?.select) {
+      const models = ctx.modelRegistry.getAvailable().map((m) => m.provider + "/" + m.id);
+      const configured = (["fast", "work", "strong"] as const).map((tier) => ({
+        tier,
+        first: resolveEcosystemModelCandidates(tier)[0],
+      }));
+      const missing = configured.filter(({ first }) => first && first !== "session" && !models.includes(first));
+      if (missing.length && models.length) {
+        const follow = "Follow the active Pi model";
+        const choice = await ctx.ui.select(
+          "Unavailable tiers: " +
+            missing.map((m) => m.tier + " (" + m.first + ")").join(", ") +
+            ". Choose a replacement for these tiers.",
+          [follow, ...models],
+        );
+        if (choice && lastCtx === ctx) {
+          const tiers = missing.filter((m) => resolveEcosystemModelCandidates(m.tier)[0] === m.first);
+          applyConfig({
+            modelTiers: Object.fromEntries(tiers.map((m) => [m.tier, choice === follow ? "session" : choice])),
+          });
+        }
+      } else if (missing.length)
+        ctx.ui.notify(
+          "Connect a model with /login and choose it with /model. Tier settings are in /dashboard settings.",
+          "warning",
+        );
+    }
     const shouldAutoStart =
       process.env.PI_DADDY_DASHBOARD === "web" ||
       (ctx.hasUI && session.depth === 0 && cfg.dashboard?.autoStart === true);
@@ -307,6 +428,17 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         /* Never block startup. */
       }
     }
+  });
+  pi.on("session_tree", () => {
+    harvestGeneration++;
+    retryHarvest = undefined;
+    pendingHarvestSuggestion = undefined;
+    harvestInfo = undefined;
+    handle?.push(stateOf());
+  });
+  pi.on("model_select", (_event, ctx) => {
+    lastCtx = ctx;
+    handle?.push(stateOf());
   });
   pi.events?.on?.("principal:thrash-detected:v1", (payload: unknown) => {
     const p = payload as { command?: string; signature?: string } | undefined;
@@ -343,16 +475,43 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   pi.on("tool_execution_start", (ev, ctx) => {
     const row = ev as { toolName?: string; args?: Record<string, unknown> };
     const name = String(row.toolName ?? "tool");
+    const agent = row.args?.agent;
+    const label =
+      name === "delegate" &&
+      typeof agent === "string" &&
+      session.definitions?.get(agent)?.binding?.package === "principal-pi-skills"
+        ? "Principal · " + agent
+        : ecosystemToolLabel(name, agent);
+    if (label) {
+      runningTools.set(ev.toolCallId, label);
+      activity(label + " · started");
+    }
     harvestTracker.observeToolStart(name, row.args);
-    if (name.startsWith("delegate") || name === "quick_review") recordTask(name, "running", "dispatched");
+    if ((name.startsWith("delegate") && name !== "delegate_describe") || name === "quick_review")
+      recordTask(name, "running", label ?? name);
     record("tool:start", name, ctx);
   });
   pi.on("tool_execution_end", (ev, ctx) => {
     const row = ev as { toolName?: string; isError?: boolean };
     const name = row.toolName ?? "tool";
+    const label = runningTools.get(ev.toolCallId) ?? ecosystemToolLabel(name);
+    runningTools.delete(ev.toolCallId);
+    if (label) {
+      const details = ev.result?.details as
+        { partialAvailable?: boolean; researchStatus?: string; status?: string } | undefined;
+      let outcome = row.isError ? "failed" : "returned";
+      if (name === "scout_research" && details?.partialAvailable) outcome = "partial brief saved";
+      else if (name === "scout_research" && !row.isError && details?.researchStatus === "complete")
+        outcome = "brief completed";
+      else if (!row.isError && name === "bookie_remember") {
+        if (details?.status === "pending final reply") outcome = "awaiting final reply";
+        if (details?.status === "saved" || details?.status === "already saved") outcome = details.status;
+      }
+      activity(label + " · " + outcome);
+    }
     harvestTracker.observeToolEnd(row.isError);
-    if (name.startsWith("delegate") || name === "quick_review") {
-      recordTask(name, row.isError ? "error" : "done", row.isError ? "failed" : "completed");
+    if ((name.startsWith("delegate") && name !== "delegate_describe") || name === "quick_review") {
+      recordTask(name, row.isError ? "error" : "done", label ?? name);
     }
     record("tool:end", `${name}${row.isError ? " (error)" : ""}`, ctx);
   });
@@ -371,53 +530,91 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     if (mode === "off") return;
     const signals = harvestTracker.snapshot();
     if (!hasHarvestSignal(signals)) return;
-    const registry = (ctx as unknown as { modelRegistry?: HarvestClassifierRegistry }).modelRegistry;
-    const fallbackModel = (ctx as unknown as { model?: unknown }).model;
-    const sessionFile = (
-      ctx as unknown as { sessionManager?: { getSessionFile?: () => string | undefined } }
-    ).sessionManager?.getSessionFile?.();
-    void classifyHarvestCandidate({
-      signals,
-      registry,
-      fallbackModel,
-      minConfidence: cfg?.harvest?.minConfidence ?? 0.75,
-    })
-      .then((decision) => {
-        if (!decision.harvest) return;
-        if (mode === "auto") {
-          const saved = saveHarvestedEval({
-            cwd: ctx.cwd,
-            scenarioId: decision.scenarioId,
-            signals,
-            reason: decision.reason,
-            sessionFile,
-          });
-          if (!saved.saved || !saved.path) return;
-          pendingHarvestSuggestion = undefined;
-          harvestInfo = {
-            scenarioId: saved.scenarioId,
-            reason: decision.reason,
-            confidence: decision.confidence,
-            savedPath: saved.path,
-          };
-          recordTask("harvest", "auto-saved", `${saved.scenarioId} (${Math.round(decision.confidence * 100)}%)`);
-          record("harvest", `auto-saved ${saved.path}`, ctx);
-        } else {
-          pendingHarvestSuggestion = {
-            scenarioId: decision.scenarioId,
-            reason: decision.reason,
-            confidence: decision.confidence,
-            signals,
-            sessionFile,
-            cwd: ctx.cwd,
-          };
-          harvestInfo = { scenarioId: decision.scenarioId, reason: decision.reason, confidence: decision.confidence };
-          record("harvest", `candidate ${decision.scenarioId} — press [h] to save`, ctx);
-        }
+    const turn = ++eligibleTurn;
+    retryHarvest = undefined;
+    const run = () => {
+      const generation = harvestGeneration;
+      const cfg = readEcosystemConfig();
+      const mode = cfg?.harvest?.mode ?? "auto";
+      if (mode === "off") return;
+      const registry = (ctx as unknown as { modelRegistry?: HarvestClassifierRegistry }).modelRegistry;
+      const fallbackModel = (ctx as unknown as { model?: unknown }).model;
+      const sessionFile = (
+        ctx as unknown as { sessionManager?: { getSessionFile?: () => string | undefined } }
+      ).sessionManager?.getSessionFile?.();
+      reportActivity("Harvest · checking whether to keep this turn", ctx);
+      void classifyHarvestCandidate({
+        signals,
+        registry,
+        fallbackModel,
+        ...(cfg?.harvest?.classifier
+          ? { classifier: { model: cfg.harvest.classifier, registry: ctx.modelRegistry } }
+          : {}),
+        minConfidence: cfg?.harvest?.classifier
+          ? thresholdFor(cfg.harvest, cfg.harvest.classifier)
+          : (cfg?.harvest?.minConfidence ?? 0.75),
       })
-      .catch(() => {});
+        .then((decision) => {
+          if (generation !== harvestGeneration || turn !== eligibleTurn) return;
+          if (
+            [
+              "classifier-unavailable",
+              "classifier-thinking-off-unavailable",
+              "classifier-error",
+              "classifier-incomplete",
+            ].includes(decision.reason)
+          )
+            throw Error(decision.reason);
+          if (!decision.harvest) {
+            reportActivity("Harvest · no new regression suggested", ctx);
+            return;
+          }
+          if (mode === "auto") {
+            const saved = saveHarvestedEval({
+              cwd: ctx.cwd,
+              scenarioId: decision.scenarioId,
+              signals,
+              reason: decision.reason,
+              sessionFile,
+            });
+            if (!saved.saved || !saved.path) return;
+            pendingHarvestSuggestion = undefined;
+            harvestInfo = {
+              scenarioId: saved.scenarioId,
+              reason: decision.reason,
+              confidence: decision.confidence,
+              savedPath: saved.path,
+            };
+            recordTask("harvest", "auto-saved", `${saved.scenarioId} (${Math.round(decision.confidence * 100)}%)`);
+            record("harvest", `auto-saved ${saved.path}`, ctx);
+          } else {
+            pendingHarvestSuggestion = {
+              scenarioId: decision.scenarioId,
+              reason: decision.reason,
+              confidence: decision.confidence,
+              signals,
+              sessionFile,
+              cwd: ctx.cwd,
+            };
+            harvestInfo = { scenarioId: decision.scenarioId, reason: decision.reason, confidence: decision.confidence };
+            record("harvest", `candidate ${decision.scenarioId} — press [h] to save`, ctx);
+          }
+        })
+        .catch(() => {
+          if (generation !== harvestGeneration || turn !== eligibleTurn) return;
+          retryHarvest = run;
+          const hint = "Choose a working classifier in /dashboard settings and save to retry this turn.";
+          record("harvest", "Classifier unavailable: " + (cfg?.harvest?.classifier ?? "fast chat model"), ctx);
+          if (ctx.hasUI) ctx.ui.notify?.(hint, "warning");
+        });
+    };
+    run();
   });
   pi.on("session_shutdown", async () => {
+    harvestGeneration++;
+    retryHarvest = undefined;
+    classifierSettings.reset();
+    lastCtx = undefined;
     const current = handle;
     handle = undefined;
     if (locatorCwd) removePanelLocator(locatorCwd, process.pid);
@@ -426,7 +623,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
   });
 
   pi.registerCommand("dashboard", {
-    description: "Start or open the 5-tab side panel (terminal split or web UI)",
+    description: "Open the side panel, or use /dashboard settings to configure classifiers",
     handler: async (args, ctx) => {
       lastCtx = ctx;
       const sub = args.trim().toLowerCase();
@@ -452,6 +649,12 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       }
       const started = await ensureStarted();
       let splitError: string | undefined;
+      if (sub === "settings") {
+        const url = started.url + "#ecosystem-settings";
+        openInBrowser(url);
+        ctx.ui.notify("Ecosystem settings: " + url, "info");
+        return;
+      }
       if (sub === "open") openInBrowser(started.url);
       else if (sub === "split" || sub === "tui") {
         const split = await openTerminalSplit(started.url);

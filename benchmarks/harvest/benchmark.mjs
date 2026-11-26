@@ -12,29 +12,34 @@ import {
 } from "../../packages/pi-daddy/src/kernel/ecosystem-config.ts";
 import { supportedModelEfforts } from "../../packages/pi-daddy/src/kernel/model-preflight.ts";
 
-const corpus = readFileSync(new URL("./cases.jsonl", import.meta.url), "utf8")
-  .replaceAll("\r\n", "\n")
-  .trimEnd();
-export const corpusHash = createHash("sha256").update(corpus).digest("hex");
 const signalNames = ["thrashDetected", "escalated", "reviewBlockers", "userSteered", "toolFailedAndEdited"];
-export const cases = corpus.split("\n").map((line) => {
-  const { id, expected, prompt, editedFile, verifyCommand, signal, summary } = JSON.parse(line);
-  assert.ok(typeof expected === "boolean" && [...signalNames, "none"].includes(signal));
-  const signals = {
-    prompt,
-    editedFiles: [editedFile],
-    verifyCommands: [verifyCommand],
-    failureSummary: summary,
-    ...Object.fromEntries(
-      signalNames.map((key) => [key, key === "reviewBlockers" ? Number(key === signal) : key === signal]),
-    ),
-  };
-  return { id, expected, signals };
-});
-assert.equal(new Set(cases.map((row) => row.id)).size, 60);
-assert.equal(cases.length, 60);
-assert.equal(cases.filter((row) => row.expected).length, 30);
-const cutoff = 0.75;
+export function loadCorpus(file) {
+  const corpus = readFileSync(new URL(file, import.meta.url), "utf8")
+    .replaceAll("\r\n", "\n")
+    .trimEnd();
+  const corpusHash = createHash("sha256").update(corpus).digest("hex");
+  const cases = corpus.split("\n").map((line) => {
+    const { id, expected, prompt, editedFile, verifyCommand, signal, summary } = JSON.parse(line);
+    assert.ok(typeof expected === "boolean" && [...signalNames, "none"].includes(signal));
+    const signals = {
+      prompt,
+      editedFiles: [editedFile],
+      verifyCommands: [verifyCommand],
+      failureSummary: summary,
+      ...Object.fromEntries(
+        signalNames.map((key) => [key, key === "reviewBlockers" ? Number(key === signal) : key === signal]),
+      ),
+    };
+    return { id, expected, signals };
+  });
+  assert.equal(new Set(cases.map((row) => row.id)).size, 60);
+  assert.equal(cases.length, 60);
+  assert.equal(cases.filter((row) => row.expected).length, 30);
+  return { cases, corpusHash };
+}
+
+export const { cases, corpusHash } = loadCorpus("./cases.jsonl");
+export const cutoff = 0.75;
 const modelId = "gpt-6-luna-decisions";
 const provider = "github-copilot";
 const label = (model) => (model ? model.provider + "/" + model.id : null);
@@ -126,50 +131,57 @@ async function baselineCall(registry, model, signals, digest, signal) {
   };
 }
 
+export const saveQuestion = {
+  instructions: "Should this completed coding-agent turn be saved as a regression evaluation?",
+  criteria: {
+    true: "A generalizable agent or skill failure, such as a thrash loop, wrong assumption, review blocker, or tool misuse.",
+    false: "Routine work, a preference change, or a one-off environment hiccup.",
+  },
+};
+
 async function lunaCall(registry, model, digest, signal) {
   const result = await registry.classify(
     model,
-    {
-      state: { turn: digest },
-      questions: {
-        save: {
-          type: "bool",
-          instructions: "Should this completed coding-agent turn be saved as a regression evaluation?",
-          criteria: {
-            true: "A generalizable agent or skill failure, such as a thrash loop, wrong assumption, review blocker, or tool misuse.",
-            false: "Routine work, a preference change, or a one-off environment hiccup.",
-          },
-        },
-      },
-    },
+    { state: { turn: digest }, questions: { save: { type: "bool", ...saveQuestion } } },
     { signal },
   );
   const answer = result.answers?.save;
-  const valid =
-    answer?.type === "bool" &&
-    Number.isFinite(answer.probability) &&
-    answer.probability >= 0 &&
-    answer.probability <= 1;
-  const status = result.stopReason !== "stop" ? "request-error" : valid ? "ok" : "invalid-response";
-  return { save: status === "ok" && answer.probability >= cutoff, status, ...usageFields(result.usage) };
+  const probability = answer?.type === "bool" ? answer.probability : undefined;
+  return { ...scoreDecision(probability, result.stopReason === "stop"), ...usageFields(result.usage) };
+}
+
+export function scoreDecision(probability, completed = true, threshold = cutoff) {
+  const valid = Number.isFinite(probability) && probability >= 0 && probability <= 1;
+  const status = completed ? (valid ? "ok" : "invalid-response") : "request-error";
+  return { save: status === "ok" && probability >= threshold, probability: valid ? probability : null, status };
 }
 
 export async function pairedRun(registry, models, onRow) {
   assert.equal(models.blockers.length, 0);
-  let pair = 0;
-  for (const { id, signals, expected } of cases) {
+  return runHarvestModels(
+    {
+      baseline: (signals, digest, signal) => baselineCall(registry, models.baseline, signals, digest, signal),
+      luna: (_signals, digest, signal) => lunaCall(registry, models.luna, digest, signal),
+    },
+    onRow,
+  );
+}
+
+export async function runHarvestModels(arms, onRow, dataset = cases) {
+  const names = Object.keys(arms);
+  assert.ok(names.length >= 2, "Choose at least two different models");
+  let eligibleIndex = 0;
+  for (const { id, signals, expected } of dataset) {
     const row = { id, expected, eligible: hasHarvestSignal(signals) };
     if (row.eligible) {
       const digest = harvestClassifierDigest(signals);
-      const order = pair++ % 2 ? ["luna", "baseline"] : ["baseline", "luna"];
+      const first = eligibleIndex++ % names.length;
+      const order = [...names.slice(first), ...names.slice(0, first)];
       for (const arm of order) {
         const start = performance.now();
         const signal = AbortSignal.timeout(45000);
         try {
-          row[arm] =
-            arm === "baseline"
-              ? await baselineCall(registry, models.baseline, signals, digest, signal)
-              : await lunaCall(registry, models.luna, digest, signal);
+          row[arm] = await arms[arm](signals, digest, signal);
         } catch {
           row[arm] = { status: "request-error", save: false, ...usageFields() };
         }
@@ -177,14 +189,14 @@ export async function pairedRun(registry, models, onRow) {
       }
     }
     onRow(row);
-    if (row.eligible && (row.baseline.status === "request-error" || row.luna.status === "request-error"))
-      throw Error("A provider request failed at " + id + "; see the partial report. No further pairs were sent.");
+    if (row.eligible && names.some((arm) => row[arm].status === "request-error"))
+      throw Error("A provider request failed at " + id + "; see the partial report. No further cases were sent.");
   }
 }
-export function summarize(rows) {
+export function summarize(rows, arms = ["baseline", "luna"]) {
   const eligible = rows.filter((r) => r.eligible);
   const summaries = {};
-  for (const arm of ["baseline", "luna"]) {
+  for (const arm of arms) {
     const values = eligible.map((r) => r[arm]);
     const latency = values
       .filter((v) => v.status === "ok")
@@ -216,7 +228,7 @@ export function summarize(rows) {
     observed: rows.length,
     eligible: eligible.length,
     sharedGateMisses: rows.filter((r) => !r.eligible && r.expected).map((r) => r.id),
-    disagreements: eligible.filter((r) => r.baseline.save !== r.luna.save).map((r) => r.id),
+    disagreements: eligible.filter((r) => arms.some((arm) => r[arm].save !== r[arms[0]].save)).map((r) => r.id),
     arms: summaries,
   };
 }

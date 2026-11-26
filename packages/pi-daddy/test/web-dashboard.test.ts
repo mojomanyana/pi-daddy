@@ -47,6 +47,8 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
 
   const handle = await startWebDashboard({
     getState: makeState,
+    onPreferences: (input) => ({action:input.action, current:"fixture/agent"}),
+    onClassifierSettings: async (input) => ({ action: input.action, selected: "local/kev" }),
     onWorkModeChange: (sel) => {
       currentMode = sel;
     },
@@ -84,6 +86,17 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
       });
 
     assert.equal((await post("/api/steer", { message: "Focus on edge cases", deliverAs: "steer" })).status, 200);
+    assert.deepEqual(await (await post("/api/classifiers", { action: "list" })).json(), {
+      action: "list",
+      selected: "local/kev",
+    });
+    assert.deepEqual(await (await post("/api/preferences",{action:"list"})).json(),{action:"list",current:"fixture/agent"});
+    const client = await (await fetch(handle.url)).text();
+    assert.match(client, /id="ecosystem-settings"/);
+    assert.match(client, /id="classifier-threshold"/);
+    assert.match(client, /Test with a synthetic turn/);
+    assert.match(client, /id="ecosystem-activity"/);
+    new Function(client.match(/<script>([\s\S]*?)<\/script>/)![1]!);
     assert.deepEqual(steered, [{ message: "Focus on edge cases", deliverAs: "steer" }]);
     assert.equal(
       (await post("/api/work-mode", { mode: "ambitious", emphases: ["depth"], scope: "session" })).status,
@@ -115,6 +128,11 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
     assert.match(renderTerminalPanel(s, "ok", 80, 3), /Bookie memory/);
     assert.match(renderTerminalPanel(s, "ok", 80, 4), /Scout brief/);
     assert.match(renderTerminalPanel(s, "ok", 80, 5), /fireworks\/qwen3\.8-max/);
+    const compact = renderTerminalPanel(s, "", 42, 5, 14);
+    assert.match(compact, /\[c\] Select model/);
+    assert.ok(compact.split("\n").length <= 14);
+    assert.ok(compact.split("\n").every(line => [...line].length <= 42));
+    assert.match(renderTerminalPanel(s, "", 42, 5, 14, 999), /Optional tools/);
   } finally {
     await handle.close();
   }

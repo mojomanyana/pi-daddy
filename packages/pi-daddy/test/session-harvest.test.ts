@@ -7,6 +7,8 @@ import { test, type TestContext } from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "../extensions/session.ts";
 import { registerWebDashboard } from "../extensions/web-dashboard.ts";
+import { renderTerminalPanel } from "../src/products/terminal-panel.ts";
+import type { WebDashboardState } from "../src/products/web-dashboard.ts";
 import {
   classifyHarvestCandidate,
   createTurnHarvestTracker,
@@ -306,7 +308,7 @@ test("P1 cutoff redaction: redacts JSON credentials straddling the 800-char prom
   }
 });
 
-test("P2: suggest mode saves the exact classified turn A even after turn B starts, then manual harvest saves turn B", async (t) => {
+test("classifier outage after settlement reaches Live Activity, preserves the pending suggestion and allows manual harvest", async (t) => {
   const { agent, repo } = tempDirs(t);
   mkdirSync(agent, { recursive: true });
   mkdirSync(repo, { recursive: true });
@@ -359,6 +361,26 @@ test("P2: suggest mode saves the exact classified turn A even after turn B start
   } as unknown as GrantsSession);
 
   const fastModel = { provider: "google", id: "gemini-3.5-flash-lite" };
+  const selectedModel = { provider: "fixture", id: "offline" };
+  let failRequest!: (error: Error) => void;
+  let selectedCalls = 0;
+  const chat = t.mock.fn(() => ({
+    result: async () => ({
+      stopReason: "stop",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            harvest: true,
+            category: "thrash",
+            confidence: 0.92,
+            scenarioId: "turn-a-parser-bug",
+            reason: "Turn A failed parser check repeatedly",
+          }),
+        },
+      ],
+    }),
+  }));
   const ctx = {
     cwd: repo,
     hasUI: false,
@@ -367,23 +389,24 @@ test("P2: suggest mode saves the exact classified turn A even after turn B start
     modelRegistry: {
       find: () => fastModel,
       hasConfiguredAuth: () => true,
-      streamSimple: () => ({
-        result: async () => ({
-          stopReason: "stop",
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                harvest: true,
-                category: "thrash",
-                confidence: 0.92,
-                scenarioId: "turn-a-parser-bug",
-                reason: "Turn A failed parser check repeatedly",
-              }),
-            },
-          ],
-        }),
-      }),
+      streamSimple: chat,
+      getAvailableOfType: async () => [{ provider: "fixture", id: "restored" }],
+      getModelOfType: (_type: string, _provider: string, id: string) =>
+        id === "restored" ? { provider: "fixture", id } : selectedModel,
+      classify: (model: unknown) => {
+        if ((model as { id: string }).id === "restored")
+          return Promise.resolve({
+            provider: "fixture",
+            model: "restored",
+            stopReason: "stop",
+            answers: { save: { type: "bool", probability: 0.99 } },
+          });
+        assert.equal(model, selectedModel);
+        selectedCalls++;
+        return new Promise<never>((_resolve, reject) => {
+          failRequest = reject;
+        });
+      },
     },
   } as unknown as ExtensionCommandContext;
 
@@ -403,6 +426,7 @@ test("P2: suggest mode saves the exact classified turn A even after turn B start
 
     // Turn B starts BEFORE operator clicks/presses [h] to save the visible suggestion!
     for (const fn of hooks.get("before_agent_start") ?? []) fn({ prompt: "Turn B: rename button color in CSS" }, ctx);
+    for (const fn of hooks.get("agent_start") ?? []) fn({}, ctx);
     for (const fn of hooks.get("tool_execution_start") ?? [])
       fn({ toolName: "edit", args: { path: "src/turn-b.css" } }, ctx);
     for (const fn of hooks.get("tool_execution_start") ?? [])
@@ -412,6 +436,57 @@ test("P2: suggest mode saves the exact classified turn A even after turn B start
     const loc = readPanelLocator(repo, { PI_CODING_AGENT_DIR: agent });
     assert.ok(loc);
     const endpoint = new URL(loc.url);
+    endpoint.pathname = "/api/state";
+    const state = async (): Promise<WebDashboardState> => {
+      const response = await fetch(endpoint);
+      assert.equal(response.status, 200);
+      return (await response.json()) as WebDashboardState;
+    };
+    assert.equal((await state()).busy, true);
+    const statuses = new Map<string, string>();
+    const uiCtx = { ...ctx, hasUI: true, ui: { setStatus: (key: string, value: string) => statuses.set(key, value) } };
+    for (const fn of hooks.get("tool_execution_start") ?? [])
+      fn({ toolName: "scout_research", toolCallId: "research" }, uiCtx);
+    assert.match(statuses.get("pi-daddy-activity")!, /Scout · research · started/);
+    for (const fn of hooks.get("tool_execution_end") ?? [])
+      fn(
+        {
+          toolName: "scout_research",
+          toolCallId: "research",
+          isError: true,
+          result: { details: { partialAvailable: true } },
+        },
+        uiCtx,
+      );
+    assert.equal(statuses.get("pi-daddy-activity"), "Scout · research · partial brief saved");
+    for (const fn of hooks.get("tool_execution_end") ?? [])
+      fn(
+        {
+          toolName: "bookie_remember",
+          toolCallId: "memory",
+          isError: false,
+          result: { details: { status: "pending final reply" } },
+        },
+        uiCtx,
+      );
+    assert.equal((await state()).ecosystemActivity?.at(-1)?.detail, "Bookie · remember · awaiting final reply");
+    saveEcosystemConfig({ harvest: { mode: "auto", classifier: "fixture/offline" } }, { PI_CODING_AGENT_DIR: agent });
+    for (const fn of events.get("principal:thrash-detected:v1") ?? []) fn({ command: "vitest", signature: "fail" });
+    for (const fn of hooks.get("agent_settled") ?? []) assert.equal(fn({}, ctx), undefined);
+    const settled = await state();
+    assert.equal(settled.busy, false);
+    assert.equal(settled.recentEvents.at(-1)?.detail, "settled");
+    assert.equal(selectedCalls, 1);
+    failRequest(new Error("simulated provider outage"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const failed = await state();
+    assert.equal(failed.recentEvents.at(-1)?.kind, "harvest");
+    assert.equal(failed.recentEvents.at(-1)?.detail, "Classifier unavailable: fixture/offline");
+    assert.match(renderTerminalPanel(failed), /Classifier unavailable: fixture\/offline/);
+    assert.equal(failed.classifierNeedsModel, true);
+    assert.equal(failed.harvest?.scenarioId, "turn-a-parser-bug");
+    assert.equal(chat.mock.callCount(), 1, "only the first turn used the fast chat model");
+    assert.equal(existsSync(harvestOutputDir(repo, { PI_CODING_AGENT_DIR: agent })), false);
     endpoint.pathname = "/api/harvest";
 
     // First harvest saves the suggested Turn A!
@@ -434,7 +509,24 @@ test("P2: suggest mode saves the exact classified turn A even after turn B start
     assert.ok(!yamlA.includes("src/turn-b.css"), "must not mix Turn B edits into Turn A suggestion");
     assert.ok(!yamlA.includes("turn-b.test.ts"), "must not mix Turn B verify commands into Turn A suggestion");
 
-    // Second harvest (now with NO pending suggestion) preserves manual harvest behavior for Turn B!
+    endpoint.pathname = "/api/classifiers";
+    const action = (data: unknown) =>
+      fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
+    assert.equal((await action({ action: "list" })).status, 200);
+    assert.equal(
+      (await action({ action: "save", model: "fixture/restored", mode: "suggest", threshold: 0.53, shadow: false }))
+        .status,
+      200,
+    );
+    await new Promise<void>((done) => setImmediate(done));
+    endpoint.pathname = "/api/state";
+    const recovered = await state();
+    assert.equal(recovered.classifierNeedsModel, false);
+    assert.equal(recovered.harvest?.confidence, 0.99);
+    assert.equal(selectedCalls, 1);
+    assert.equal(chat.mock.callCount(), 1);
+    endpoint.pathname = "/api/harvest";
+    // Saving the recovered suggestion uses the original Turn B snapshot.
     const respB = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -443,7 +535,7 @@ test("P2: suggest mode saves the exact classified turn A even after turn B start
     assert.equal(respB.status, 200);
     const bodyB = (await respB.json()) as { saved?: boolean; path?: string; scenarioId?: string };
     assert.equal(bodyB.saved, true);
-    assert.equal(bodyB.scenarioId, "manual-session-harvest");
+    assert.equal(bodyB.scenarioId, recovered.harvest?.scenarioId);
     assert.ok(bodyB.path && bodyB.path !== bodyA.path);
     const yamlB = readFileSync(bodyB.path, "utf8");
     assert.ok(yamlB.includes("Turn B: rename button color in CSS"));

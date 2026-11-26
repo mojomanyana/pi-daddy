@@ -20,7 +20,6 @@ import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
 import {
   loadEcosystemConfig,
   resolveEcosystemModelCandidates,
-  resolveEcosystemModelTier,
   selectRegistryModel,
 } from "../src/kernel/ecosystem-config.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
@@ -284,7 +283,7 @@ async function runColdDiffReview(
     if (!trimmed) return { pass: true };
     const registry = (ctx as any).modelRegistry;
     const { model } = selectRegistryModel(registry, resolveEcosystemModelCandidates("strong"), (ctx as any).model);
-    if (!model || typeof registry?.streamSimple !== "function") return { pass: true };
+    if (!model || typeof registry?.streamSimple !== "function") throw Error("Review model unavailable");
     const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
     const reviewPrompt = [
       "You are an independent, cold senior engineer reviewing ONLY this git diff against",
@@ -316,10 +315,17 @@ async function runColdDiffReview(
       .map((c: any) => c.text)
       .join("\n")
       .trim();
-    if (!text || /^VERDICT:\s*PASS\b/im.test(text)) return { pass: true };
+    if (!text || message?.stopReason === "error" || message?.stopReason === "aborted")
+      throw Error("Review model unavailable");
+    if (/^VERDICT:\s*PASS\b/im.test(text)) return { pass: true };
     return { pass: false, feedback: text.slice(0, 2500) };
   } catch {
-    return { pass: true };
+    if (!signal?.aborted && ctx.hasUI)
+      ctx.ui?.notify?.(
+        "Independent review could not finish. Choose a connected STRONG model in /dashboard settings, then use Escalate to retry.",
+        "warning",
+      );
+    return { pass: false };
   }
 }
 
@@ -333,8 +339,16 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
 
   const runRescueEscalation = async (reason: string) => {
     if (escalatedForTurn || !lastCtx) return;
-    const strongSpec = resolveEcosystemModelTier("strong");
-    if (!strongSpec) return;
+    const { model, label: strongSpec } = selectRegistryModel(
+      lastCtx.modelRegistry,
+      resolveEcosystemModelCandidates("strong"),
+      lastCtx.model,
+    );
+    if (!model) {
+      if (lastCtx.hasUI)
+        lastCtx.ui.notify("Select a connected model with /model and request escalation again.", "warning");
+      return;
+    }
     escalatedForTurn = true;
     const verdict = await runColdDiffReview(
       lastCtx,
@@ -468,7 +482,12 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     const wantsAmbitiousDepth =
       active?.mode === "ambitious" && (active.emphases.length === 0 || active.emphases.includes("depth"));
     const wantsStandardStrong =
-      !wantsAmbitiousDepth && Boolean(resolveEcosystemModelTier("strong")) && process.env.PI_DADDY_AUTO_REVIEW !== "0";
+      !wantsAmbitiousDepth &&
+      Boolean(
+        resolveEcosystemModelCandidates("strong").length ||
+        (ctx.model && loadEcosystemConfig().escalation?.auto === true),
+      ) &&
+      process.env.PI_DADDY_AUTO_REVIEW !== "0";
     if (!wantsAmbitiousDepth && !wantsStandardStrong) return;
     if (wantsStandardStrong) {
       const preview = await collectReviewDiff(ctx.cwd);
