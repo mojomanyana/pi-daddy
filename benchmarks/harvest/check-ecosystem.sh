@@ -26,5 +26,5 @@ if ((full)); then
   if ((failed)); then echo "At least one full suite failed. See its test output." >&2; exit 1; fi
 fi
 if ((live)); then
-  exec bash "$here/try-settings.sh" "Run a short ecosystem check. Use scout_research once with https://nodejs.org/api/fs.html to check the birthtime fallback, then read its brief if one was saved. Use delegate for one read-only Principal review of Scout model selection in $scout/extension/worker.ts. Use a Bookie read-only task or memory lookup for this workspace and inspect one available Skill Harness check or its status. Report one row per component with the actual tool, result, and any missing grant, model, or prerequisite. Mark partial results explicitly. Leave project files unchanged."
+  exec bash "$here/try-settings.sh" -e "$here/live-classifier-check.mjs" "Run a short ecosystem check. Use scout_research once with https://nodejs.org/api/fs.html to check the birthtime fallback, then read its brief if one was saved. Use delegate for one read-only Principal review of Scout model selection in $scout/extension/worker.ts. Use a Bookie read-only task or memory lookup for this workspace and inspect one available Skill Harness check or its status. Report one row per component with the actual tool, result, and any missing grant, model, or prerequisite. Mark partial results explicitly. Leave project files unchanged."
 fi

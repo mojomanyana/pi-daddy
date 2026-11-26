@@ -10,7 +10,7 @@ Keep the matching Scout feature checkout beside this repository as `pi-harvest-s
 bash benchmarks/harvest/check-ecosystem.sh --live
 ```
 
-The offline checks build the panel, exercise settings and recovery, then start a fresh Pi and reopen a saved fixture session with the five packages. The live option opens the pilot with one combined request to exercise research, review, memory lookup and Harness discovery. A partial Scout brief is reported as partial. The live request uses your configured providers. For the full Daddy and Scout suites and Daddy's SDK integration checks, add `--full`. Omit `--live` for offline checks only.
+The offline checks build the panel, exercise settings and recovery, then start a fresh Pi and reopen a saved fixture session with the five packages. The live option tests the selected decision classifier once with synthetic data and opens the pilot with one combined request to exercise research, review, memory lookup and Harness discovery. A partial Scout brief is reported as partial. The live request uses your configured providers. For the full Daddy and Scout suites and Daddy's SDK integration checks, add `--full`. Omit `--live` for offline checks only.
 
 ## Try the full Pi session
 
