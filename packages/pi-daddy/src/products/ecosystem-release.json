@@ -12,11 +12,11 @@
     "skill-harness"
   ],
   "publicVersions": {
-    "pi-bookie": "1.0.2",
-    "pi-daddy": "1.0.3",
+    "pi-bookie": "1.0.4",
+    "pi-daddy": "1.1.0",
     "principal-pi-skills": "6.0.2",
     "pi-scout-research": "1.0.2",
-    "skill-harness": "1.0.3"
+    "skill-harness": "1.0.4"
   },
   "freshProfile": true
 }

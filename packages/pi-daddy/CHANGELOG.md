@@ -1,5 +1,13 @@
 # Changelog — pi-daddy
 
+## 1.1.1 - 2026-11-25
+
+- Make automatic harvesting fail closed on invalid/unreadable `ecosystem.json` and redact all session-derived fields including quoted JSON keys, escaped quotes, and credentials crossing prompt/failure-summary length cutoffs.
+- Hand exact classified turns to `skill-harness harvest --turn-json -` over stdin with Windows `.cmd` shim resolution (`shell: false`), 48-char uniqueness-preserving capture directories, and suggest-mode Turn-A snapshot preservation.
+- Separate `openai-codex` OAuth from direct `openai` API-key auto-detection and skip catalogued models whose provider lacks configured auth.
+- Handle async terminal spawn/launch errors in `/dashboard split` without crashing Pi, falling back cleanly to the dashboard URL.
+- Refreshed companion release manifest to `pi-bookie@1.0.4` and `skill-harness@1.0.4`.
+
 ## 1.1.0 - 2026-11-25
 
 - **Bucket 4 — 2-Stage Classifier-Driven Auto-Harvesting (`session-harvest.ts`, `[h]` panel hotkey, `POST /api/harvest`):** After a turn settles, a free Stage-1 signal filter checks for thrash, escalation, Cold Diff Review blockers, live user steering, or tool-failure + edit recovery; qualifying turns are triaged by `models.fast` (Stage-2 structured JSON classifier at `reasoning: "off"` over a secret-redacted digest) and auto-saved (`harvest.mode: "auto"`, default; configurable to `"suggest"` or `"off"`) into `~/.pi/agent/pi-daddy/harvested-evals/<repo>/` with zero project repo pollution. Manual `[h]` harvest hotkey and Web UI button also supported.
