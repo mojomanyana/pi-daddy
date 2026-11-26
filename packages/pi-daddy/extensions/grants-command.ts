@@ -96,7 +96,7 @@ export interface GrantsCommandContext {
    */
   runInit: () => Promise<void>;
   /** Open or report the read-only dashboard; injected so this diagnostic never becomes enforcement. */
-  openDashboard: () => Promise<string | { kind: "fallback"; frame: string; visibleBesideCaller: false }>;
+  openDashboard: () => Promise<string>;
 }
 
 /**
@@ -178,7 +178,7 @@ export const grantsCommand = {
     }
 
     if (
-      await handleConnectedCommand(sub, target, {
+      await handleConnectedCommand(sub, {
         openDashboard: ctx.grants.openDashboard,
         ui: ctx.ui,
       })

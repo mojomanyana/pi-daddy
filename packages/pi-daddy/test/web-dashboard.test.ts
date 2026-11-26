@@ -121,25 +121,18 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
   }
 });
 
-test("/grants dashboard notifies with standalone Side Panel guidance for string and fallback results", async () => {
+test("/grants dashboard notifies with standalone Side Panel guidance and reports errors", async () => {
   const notices: Array<{ message: string; level: "info" | "error" }> = [];
   const ui = { notify: (message: string, level: "info" | "error") => notices.push({ message, level }) };
   assert.equal(
-    await handleConnectedCommand("dashboard", undefined, {
+    await handleConnectedCommand("dashboard", {
       openDashboard: async () => "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.",
       ui,
     }),
     true,
   );
   assert.equal(
-    await handleConnectedCommand("dashboard", undefined, {
-      openDashboard: async () => ({ kind: "fallback", frame: "FALLBACK_FRAME", visibleBesideCaller: false }),
-      ui,
-    }),
-    true,
-  );
-  assert.equal(
-    await handleConnectedCommand("dashboard", undefined, {
+    await handleConnectedCommand("dashboard", {
       openDashboard: async () => {
         throw new Error("socket closed");
       },
@@ -147,10 +140,9 @@ test("/grants dashboard notifies with standalone Side Panel guidance for string 
     }),
     true,
   );
-  assert.equal(await handleConnectedCommand("other", undefined, { openDashboard: async () => "x", ui }), false);
+  assert.equal(await handleConnectedCommand("other", { openDashboard: async () => "x", ui }), false);
   assert.deepEqual(notices, [
     { message: "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.", level: "info" },
-    { message: "FALLBACK_FRAME", level: "info" },
     { message: "grants: dashboard unavailable — socket closed", level: "error" },
   ]);
 });

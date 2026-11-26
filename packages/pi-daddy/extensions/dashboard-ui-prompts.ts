@@ -31,19 +31,9 @@ const clean = (value: string) =>
 export function registerDashboardPrompts(pi: ExtensionAPI, current: () => DashboardSourceOwner | undefined) {
   let owner: DashboardSourceOwner | undefined, prompt: DashboardInputPrompt | undefined;
   let closed = false,
-    bridged = false,
     ordinal = 0;
-  const publish = (active: boolean, label?: string) => {
-    try {
-      // No-op: standalone dashboard reads blocked state directly from session hooks.
-    } catch {
-      /* Display failure cannot change a dialog or its permission result. */
-    }
-  };
   const clear = () => {
     prompt = undefined;
-    if (bridged) publish(false);
-    bridged = false;
   };
   const valid = (ctx?: ExtensionContext) => {
     const next = closed ? undefined : current();
@@ -69,8 +59,6 @@ export function registerDashboardPrompts(pi: ExtensionAPI, current: () => Dashbo
     if (prompt?.kind === kind && prompt.label === label) return;
     clear();
     prompt = { id: `input:${++ordinal}`, kind, label };
-    bridged = true;
-    publish(true, label);
   };
   const end: Handler = (event, ctx) => {
     if (!valid(ctx) || event.reason !== "ui_prompt" || !prompt || event.kind !== prompt.kind) return;

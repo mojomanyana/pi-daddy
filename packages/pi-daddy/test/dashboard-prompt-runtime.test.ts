@@ -26,6 +26,7 @@ test("runtime rebinding and reload keep one current native prompt listener", asy
     events: {
       on: (name: string, fn: (...args: any[]) => void) => subscribe(events, name, fn),
       emit(name: string, value: any) {
+        if (name.includes("blocked")) assert.fail(`unexpected legacy blocked event emitted: ${name}`);
         for (const fn of events.get(name) ?? []) fn(value);
       },
     },

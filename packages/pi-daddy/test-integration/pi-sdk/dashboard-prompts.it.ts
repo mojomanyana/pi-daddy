@@ -18,6 +18,7 @@ test("real Pi SDK question events reach the dashboard while the native UI is pen
   let owner: DashboardSourceOwner | undefined;
   let prompts: ReturnType<typeof registerDashboardPrompts> | undefined;
   const answers: unknown[] = [];
+  const unexpectedEvents: string[] = [];
   let entered = deferred<void>(),
     answer = deferred<unknown>();
   const waitForAnswer = () => {
@@ -27,6 +28,11 @@ test("real Pi SDK question events reach the dashboard while the native UI is pen
   const fixture = await createFixture({
     mode: "tui",
     extension: () => (pi) => {
+      const originalEmit = pi.events.emit.bind(pi.events);
+      pi.events.emit = ((name: string, value: unknown) => {
+        if (name.includes("blocked")) unexpectedEvents.push(name);
+        return originalEmit(name, value);
+      }) as typeof pi.events.emit;
       prompts = registerDashboardPrompts(pi, () => owner);
       pi.on("session_start", (_event, ctx) => {
         prompts!.reset();
@@ -86,6 +92,7 @@ test("real Pi SDK question events reach the dashboard while the native UI is pen
     await info;
     await setImmediate();
     assert.deepEqual(answers, ["Friday", false, undefined, "Private draft", undefined]);
+    assert.deepEqual(unexpectedEvents, []);
     assert.equal(fixture.requests.length, 0);
     assert.deepEqual(fixture.errors, []);
   } finally {

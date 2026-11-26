@@ -928,7 +928,7 @@ default on the operator's session corpus. That is not task-success evidence and 
 default. The rule names itself in the ledger so a later advisor can replace the selection without anything else
 changing. Still not established: what a forked child does differently from one given a summary.
 
-Two interactions worth knowing, both found by review rather than by reasoning. pi refuses `--fork` beside
+One interaction worth knowing, found by review rather than by reasoning. pi refuses `--fork` beside
 `--session` or `--no-session`, and PR 3e gives every child a session file for the inactivity deadline; a forked
 child therefore gets `--fork` with `--session-dir` and `--session-id`, and the activity probe watches that
 directory instead of a fixed path.
