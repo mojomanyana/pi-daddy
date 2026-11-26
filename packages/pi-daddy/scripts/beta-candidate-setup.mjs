@@ -59,6 +59,9 @@ try {
   const update = spawn("pi", ["update", "--extensions"], { stdio: "inherit", env });
   const [updateCode] = await once(update, "exit");
   assert.equal(updateCode, 0, "Pi must be able to update the managed ecosystem");
+  for (const path of ["dist/cli.js", "extensions/grants.ts", "dist/products/setup-doctor.js"]) {
+    assert.deepEqual(readFileSync(join(profile, "npm/node_modules/pi-daddy", path)), readFileSync(join(packageRoot, path)), path);
+  }
 } finally {
   registry.close();
 }
