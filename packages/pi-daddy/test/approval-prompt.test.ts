@@ -135,6 +135,7 @@ test("the decision distinguishes requested intent from shell access; full task a
   const ui: ApprovalUI = {
     select: async (title, options, opts) => {
       screens.push(title);
+      assert.equal(opts?.blockedKind, "permission");
       signals.add(opts?.signal);
       if (!opened) {
         opened = true;

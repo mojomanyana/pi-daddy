@@ -96,12 +96,13 @@ export async function selectPermission(
     ...(request.recheckReason ? [request.recheckReason] : []),
     scopeHint(request),
   ].join("\n");
+  const dialog = { signal, blockedKind: "permission" as const };
   const choices = [...labels, DETAILS];
   let lines: string[] | undefined;
   let page = -1;
   while (!signal.aborted) {
     if (page < 0) {
-      const choice = await ui.select(title, choices, { signal });
+      const choice = await ui.select(title, choices, dialog);
       if (choice !== DETAILS) return choice;
       lines ??= detailLines(request);
       page = 0;
@@ -109,7 +110,7 @@ export async function selectPermission(
       const pages = Math.ceil(lines!.length / 8);
       const title = [`Permission details · ${page + 1}/${pages}`, ...lines!.slice(page * 8, page * 8 + 8)].join("\n");
       const options = [BACK, ...(page + 1 < pages ? [NEXT] : []), ...(page > 0 ? [PREVIOUS] : [])];
-      const nav = await ui.select(title, options, { signal });
+      const nav = await ui.select(title, options, dialog);
       if (nav === undefined || !options.includes(nav)) return undefined;
       if (nav === BACK) page = -1;
       else page += nav === NEXT ? 1 : -1;

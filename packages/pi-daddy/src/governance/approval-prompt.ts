@@ -21,7 +21,7 @@ export interface ApprovalUI {
   select(
     title: string,
     options: string[],
-    opts?: { timeout?: number; signal?: AbortSignal },
+    opts?: { timeout?: number; signal?: AbortSignal; blockedKind?: "permission" },
   ): Promise<string | undefined>;
   notify(message: string, type?: "info" | "warning" | "error"): void;
 }
