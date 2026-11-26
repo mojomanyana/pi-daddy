@@ -50,7 +50,7 @@ export interface EcosystemConfig {
   escalation?: { auto?: boolean };
   harvest?: EcosystemHarvestConfig;
   scout?: { directUrls?: boolean; model?: string; thinking?: string };
-  bookie?: { autoRecall?: boolean; autoDistill?: boolean };
+  bookie?: { autoRecall?: boolean; autoDistill?: boolean; autoSyncReviews?: boolean };
 }
 
 export interface PanelLocator {
@@ -97,6 +97,8 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
   ]) {
     if (section in parsed && !record(parsed[section])) throw new Error(`Expected an object for ${section} in ${file}.`);
   }
+  if (record(parsed.bookie) && "autoSyncReviews" in parsed.bookie && typeof parsed.bookie.autoSyncReviews !== "boolean")
+    throw Error(`Expected a boolean for bookie.autoSyncReviews in ${file}.`);
   if (record(parsed.scout)) {
     const { model, thinking, directUrls } = parsed.scout;
     if (model !== undefined && model !== "session" && (typeof model !== "string" || !/^[^/\s]+\/[^\s]+$/.test(model)))

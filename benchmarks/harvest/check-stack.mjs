@@ -11,8 +11,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const runFile = promisify(execFile);
 const peers = resolve(process.argv[2] ?? join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "npm", "node_modules"));
+const localBookie = resolve(root,"../pi-harvest-bookie/packages/pi-extension");
 const packages = [join(root,"packages/pi-daddy"),resolve(root,"../pi-harvest-scout"),
-  ...["pi-bookie","principal-pi-skills","skill-harness"].map(name=>join(peers,name))].map(path=>{
+  existsSync(join(localBookie,"package.json")) ? localBookie : join(peers,"pi-bookie"),
+  ...["principal-pi-skills","skill-harness"].map(name=>join(peers,name))].map(path=>{
     assert(existsSync(join(path,"package.json")), "Missing package at " + path);
     return realpathSync(path);
   });

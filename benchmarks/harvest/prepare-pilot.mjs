@@ -42,17 +42,20 @@ function identify(entry, base) {
 const scoutCandidate = join(dirname(repo), "pi-harvest-scout");
 const localScout = existsSync(join(scoutCandidate, "lib/research-model.mjs"))
   && identify(scoutCandidate, projectDir) === "pi-scout-research" ? scoutCandidate : undefined;
+const bookieCandidate = join(dirname(repo), "pi-harvest-bookie", "packages", "pi-extension");
+const localBookie = identify(bookieCandidate, projectDir) === "pi-bookie" ? bookieCandidate : undefined;
 const release = JSON.parse(readFileSync(join(repo, "packages/pi-daddy/src/products/ecosystem-release.json"), "utf8"));
 for (const name of release.normalCliInstalls) {
   const configured = [...packages.map((p)=>[p,projectDir]), ...(user.packages ?? []).map((p)=>[p,profile])];
-  if (name === "pi-scout-research" && localScout) {
+  const candidate = name === "pi-scout-research" ? localScout : name === "pi-bookie" ? localBookie : undefined;
+  if (candidate) {
     for (const [entry, dir] of configured) {
-      if (identify(entry,dir) !== name || resolve(dir, source(entry)) === localScout) continue;
+      if (identify(entry,dir) !== name || resolve(dir, source(entry)) === candidate) continue;
       const override = {source:source(entry), extensions:[], skills:[], prompts:[], themes:[]};
       const i = packages.findIndex(item=>source(item) === source(entry));
       if (i < 0) packages.push(override); else packages[i] = override;
     }
-    if (!packages.some(entry=>resolve(projectDir,source(entry)) === localScout)) packages.push(localScout);
+    if (!packages.some(entry=>resolve(projectDir,source(entry)) === candidate)) packages.push(candidate);
     continue;
   }
   if (name !== "pi-daddy") {

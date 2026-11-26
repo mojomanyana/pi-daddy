@@ -63,17 +63,19 @@ test("a checkout missing creation time uses a stable separate workspace for the 
   assert.match(unavailable.stderr, /Both candidate folders failed/);
 });
 
-test("paired local candidate replaces installed Scout only in the pilot and survives a second launch", t => {
+test("paired Scout and Bookie checkouts replace installed copies only in the pilot and survive a second launch", t => {
   const temp = mkdtempSync(join(tmpdir(),"pi-scout-pilot-"));
   t.after(()=>rmSync(temp,{recursive:true,force:true}));
   const repo = join(temp,"bench"), scripts=join(repo,"benchmarks","harvest"), profile=join(temp,"profile");
   const products=join(repo,"packages","pi-daddy","src","products"), scout=join(temp,"pi-harvest-scout");
-  for (const p of [profile,scripts,products,join(scout,"lib")]) mkdirSync(p,{recursive:true});
+  const bookie=join(temp,"pi-harvest-bookie","packages","pi-extension");
+  for (const p of [profile,scripts,products,join(scout,"lib"),bookie]) mkdirSync(p,{recursive:true});
   cpSync(new URL("./prepare-pilot.mjs",import.meta.url), join(scripts,"prepare-pilot.mjs"));
   cpSync(new URL("../../packages/pi-daddy/src/products/ecosystem-release.json",import.meta.url),join(products,"ecosystem-release.json"));
   writeFileSync(join(scout,"package.json"),JSON.stringify({name:"pi-scout-research"}));
   writeFileSync(join(scout,"lib","research-model.mjs"),"");
-  const original=JSON.stringify({packages:["npm:pi-scout-research@1.0.2"]});
+  writeFileSync(join(bookie,"package.json"),JSON.stringify({name:"pi-bookie"}));
+  const original=JSON.stringify({packages:["npm:pi-scout-research@1.0.2","npm:pi-bookie@1.0.4"]});
   writeFileSync(join(profile,"settings.json"),original);
   for(let i=0;i<2;i++){
     const result=spawnSync(process.execPath,[join(scripts,"prepare-pilot.mjs"),"--print-workspace"],{encoding:"utf8",env:{...process.env,PI_CODING_AGENT_DIR:profile}});
@@ -81,6 +83,8 @@ test("paired local candidate replaces installed Scout only in the pilot and surv
     const {packages}=JSON.parse(readFileSync(join(result.stdout.trim(),".pi","settings.json")));
     assert.equal(packages.filter(p=>p===scout).length,1);
     assert.deepEqual(packages.find(p=>p.source==="npm:pi-scout-research@1.0.2")?.extensions,[]);
+    assert.equal(packages.filter(p=>p===bookie).length,1);
+    assert.deepEqual(packages.find(p=>p.source==="npm:pi-bookie@1.0.4")?.extensions,[]);
     assert.equal(readFileSync(join(profile,"settings.json"),"utf8"),original);
   }
 });

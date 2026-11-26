@@ -9,3 +9,14 @@ if ! node --input-type=commonjs -e '
 ' 2>/dev/null; then
   npm ci
 fi
+bookie=../pi-harvest-bookie
+if [[ -f "$bookie/packages/pi-extension/src/producer-bridge.ts" ]]; then
+  (
+    cd -- "$bookie"
+    if [[ ! -f node_modules/typescript/bin/tsc || ! -e node_modules/pi-bookie-core/package.json ]]; then
+      npm ci
+    fi
+    node node_modules/typescript/bin/tsc -b packages/pi-extension
+    if [[ ! -d packages/core/dist/schemas ]]; then node packages/core/scripts/copy-schemas.mjs; fi
+  )
+fi

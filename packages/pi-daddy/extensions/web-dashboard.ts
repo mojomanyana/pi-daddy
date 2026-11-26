@@ -253,7 +253,16 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
             ready = true;
           },
         });
-        const result = ecosystemPreferences(lastCtx, input, ready);
+        let bookieSyncReady = false;
+        pi.events.emit("bookie:review-sync-settings:v1", {
+          action: "status",
+          report: () => {
+            bookieSyncReady = true;
+          },
+        });
+        const result = ecosystemPreferences(lastCtx, input, ready, bookieSyncReady);
+        if (input.action === "save" && input.key === "autoSyncReviews")
+          pi.events.emit("bookie:review-sync-settings:v1", { action: "changed" });
         if (input.action === "save") record("config", "Updated " + input.key);
         return result;
       },

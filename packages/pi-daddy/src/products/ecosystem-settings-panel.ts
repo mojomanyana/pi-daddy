@@ -14,6 +14,11 @@ export const preferenceFields = [
   ],
   ["autoStart", "Start dashboard with Pi", "Start the panel server when the next interactive root session opens."],
   [
+    "autoSyncReviews",
+    "Bookie automatic review capture",
+    "With Daddy Auto on, Bookie catches up on saved reviews for this session. Off leaves /bookie-capture sync available. Bookie stores references locally.",
+  ],
+  [
     "autoEscalate",
     "Automatic escalation",
     "Request a strong-model review when Principal detects a repeated failing check.",
@@ -24,6 +29,7 @@ export interface PreferenceCatalog {
   levels: string[];
   current: string;
   scoutReady: boolean;
+  bookieSyncReady?: boolean;
   values: Record<string, string | boolean>;
 }
 export const preferencePanel = `<section class="card" id="ecosystem-settings">
@@ -49,6 +55,10 @@ async function loadPreferences() {
       for (const value of options) sel.add(new Option(value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : value, String(value)));
       if (!options.includes(saved)) sel.add(new Option(String(saved) + ' (unavailable)', String(saved)));
       sel.value = String(saved); sel.disabled = key.startsWith('scout') && !c.scoutReady;
+      if (key === 'autoSyncReviews' && !c.bookieSyncReady) {
+        sel.disabled = true;
+        caption.textContent = 'Load the Bookie review sync update to use this setting.';
+      }
       sel.onchange = async () => {
         sel.disabled = true;
         try {

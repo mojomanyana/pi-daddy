@@ -3,7 +3,12 @@ import { readEcosystemConfig, saveEcosystemConfig } from "../src/kernel/ecosyste
 
 export const researchLevels = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-export function ecosystemPreferences(ctx: ExtensionContext, input: Record<string, unknown>, scoutReady: boolean) {
+export function ecosystemPreferences(
+  ctx: ExtensionContext,
+  input: Record<string, unknown>,
+  scoutReady: boolean,
+  bookieSyncReady = false,
+) {
   const cfg = readEcosystemConfig() ?? {};
   const models = [...new Set(ctx.modelRegistry.getAvailable().map((m) => m.provider + "/" + m.id))].sort();
   const values = {
@@ -12,6 +17,7 @@ export function ecosystemPreferences(ctx: ExtensionContext, input: Record<string
     directUrls: cfg.scout?.directUrls ?? process.env.PI_SCOUT_DIRECT_URLS === "1",
     autoRecall: cfg.bookie?.autoRecall !== false,
     autoDistill: cfg.bookie?.autoDistill !== false,
+    autoSyncReviews: cfg.bookie?.autoSyncReviews !== false,
     autoStart: cfg.dashboard?.autoStart === true,
     autoEscalate: cfg.escalation?.auto !== false,
   };
@@ -21,10 +27,13 @@ export function ecosystemPreferences(ctx: ExtensionContext, input: Record<string
       levels: researchLevels,
       values,
       scoutReady,
+      bookieSyncReady,
       current: ctx.model ? ctx.model.provider + "/" + ctx.model.id : "Select a model with /model",
     };
   if (input.action !== "save") throw Error("Unknown ecosystem settings action.");
   const { key, value } = input;
+  if (key === "autoSyncReviews" && !bookieSyncReady)
+    throw Error("Load the Bookie review sync update to change automatic capture.");
   if (key === "scoutModel" || key === "scoutThinking") {
     if (!scoutReady) throw Error("Load the Scout settings update before changing research models.");
     const choices = key === "scoutModel" ? ["session", ...models] : researchLevels;
@@ -34,7 +43,8 @@ export function ecosystemPreferences(ctx: ExtensionContext, input: Record<string
   } else {
     if (typeof value !== "boolean") throw Error("Expected an on/off setting.");
     if (key === "directUrls") cfg.scout = { ...cfg.scout, directUrls: value };
-    else if (key === "autoRecall" || key === "autoDistill") cfg.bookie = { ...cfg.bookie, [key]: value };
+    else if (key === "autoRecall" || key === "autoDistill" || key === "autoSyncReviews")
+      cfg.bookie = { ...cfg.bookie, [key]: value };
     else if (key === "autoStart") cfg.dashboard = { ...cfg.dashboard, autoStart: value };
     else if (key === "autoEscalate") cfg.escalation = { ...cfg.escalation, auto: value };
     else throw Error("Unknown ecosystem setting.");
