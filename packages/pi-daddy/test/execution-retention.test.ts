@@ -78,7 +78,6 @@ test("public concurrent delegation calls retain distinct native attempts and exa
   await chmod(join(bin, "pi"), 0o700);
   const values = {
     PATH: bin,
-    PI_DADDY_HERDR: "0",
     PI_DADDY_GRANT: "tool:delegate",
     PI_DADDY_MAX_DEPTH: "2",
     PI_DADDY_FANOUT: "3",

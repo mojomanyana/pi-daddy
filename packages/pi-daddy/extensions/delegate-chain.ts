@@ -152,11 +152,10 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const steps = bound.specs;
       assertDefinitionInputsBeforeAdmission(session, steps, bound.bindings);
 
-      // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
-      // `PI_DADDY_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
-      // written, and the delegation was then refused anyway. `runOneDelegation` checks the executor before its own
-      // gate; a chain hoists its gate above `runOneDelegation`, so the check has to be repeated here or that
-      // ordering is simply bypassed.
+      // **Every cheap refusal happens before any human is asked.** If the executor is refused, the gate must
+      // not prompt first, bank a 30-day approval, and then fail anyway. `runOneDelegation` checks the executor
+      // before its own gate; a chain hoists its gate above `runOneDelegation`, so the check has to be repeated
+      // here or that ordering is simply bypassed.
       if (session.executor.refusal)
         throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", `chain refused: ${session.executor.refusal}`));
 

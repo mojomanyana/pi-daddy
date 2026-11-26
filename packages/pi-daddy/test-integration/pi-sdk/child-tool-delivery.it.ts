@@ -65,7 +65,6 @@ test("native Pi origins admit builtins and Daddy tools, preserve selected prompt
           PI_SKIP_VERSION_CHECK: "1",
           NO_COLOR: "1",
           DADDY_TOOL_CAPTURE: observed,
-          PI_DADDY_HERDR: "0",
           PI_DADDY_AUTO_MODE: "0",
           PI_DADDY_LEAN_TOOLS: "0",
           PI_DADDY_ACTIVITY_TIMELINE: "off",

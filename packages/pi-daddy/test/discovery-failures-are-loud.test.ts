@@ -30,7 +30,6 @@ after(cleanupTempDirs);
 const KEYS = [
   ...GRANT_ENV_KEYS,
   "PI_CODING_AGENT_DIR",
-  "PI_DADDY_HERDR",
   "PI_DADDY_WORKSPACE_REGISTRY",
   "PI_DADDY_WORKSPACE_PIN",
 ] as const;
@@ -69,7 +68,6 @@ async function withEnv(fn: (cwd: string, agentDir: string) => Promise<void>): Pr
     process.chdir(cwd);
     for (const key of KEYS) delete process.env[key];
     process.env.PI_CODING_AGENT_DIR = agentDir;
-    process.env.PI_DADDY_HERDR = "0";
     await saveGrant(cwd, ["tool:read", "tool:delegate"]);
     await fn(cwd, agentDir);
   } finally {

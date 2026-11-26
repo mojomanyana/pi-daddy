@@ -95,11 +95,8 @@ export interface GrantsCommandContext {
    * from the caller, visibly.
    */
   runInit: () => Promise<void>;
-  /** Open or reuse the read-only Herdr dashboard; injected so this diagnostic never becomes enforcement. */
-  openDashboard: () => Promise<
-    | { kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }
-    | { kind: "fallback"; frame: string; visibleBesideCaller: false }
-  >;
+  /** Open or report the read-only dashboard; injected so this diagnostic never becomes enforcement. */
+  openDashboard: () => Promise<string | { kind: "fallback"; frame: string; visibleBesideCaller: false }>;
 }
 
 /**
@@ -463,11 +460,8 @@ export const grantsCommand = {
     const lines = [
       governed ? "grants: ACTIVE" : "grants: inactive (set PI_DADDY_GRANT to govern this session)",
       `  holding    ${ownGrant.join(", ") || "(nothing)"}${observed ? " (observed)" : " (inherited, not yet observed)"}`,
-      // ADR-0031/0032. This screen named the grant, the depth, the ledger, the approvals and the catalog, and
-      // never said WHERE children run — so an operator on a machine where herdr hosts their whole workspace
-      // could not discover that their children were invisible subprocesses. That gap is what produced
-      // ADR-0031, and its probe is only defensible because this line exists. Placed next to `holding` so the
-      // two facts about what a spawn will be sit together.
+      // ADR-0032. Placed next to `holding` so the two facts about what a spawn will be sit together:
+      // what capabilities it carries and which executor runs it.
       `  executor   ${executor.disclosure}`,
       ...renderExecutionControls(ctx.grants.nativeSessionRoot, process.env, ctx.grants.executionLimits),
       `  Auto       ${ctx.grants.autoModeStatus ?? "OFF (default)"}`,

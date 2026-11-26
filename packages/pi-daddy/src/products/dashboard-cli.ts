@@ -92,7 +92,7 @@ function setupFrame(cwd: string): string {
     `  export PI_DADDY_LEDGER=${shellQuote(ledger)}`,
     "  pi",
     "",
-    "Then run /grants dashboard inside that Herdr-hosted pi session.",
+    "Then run /grants dashboard (or /dashboard open) inside that pi session.",
   ].join("\n");
 }
 

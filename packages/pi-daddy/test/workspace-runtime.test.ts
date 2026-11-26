@@ -105,8 +105,7 @@ test("a ledger failure after lease acquisition releases the writer lock", async 
  * **R-152: the ledger records what happened, not what was intended.**
  *
  * `releaseDelegationWorkspace` discarded `markRetained`'s result and wrote the word `retained`
- * unconditionally — *"kept deliberately because a herdr writer tab would not close, so the pane may still be
- * live"*. Here the helper is already dead and the kernel lock already back, so the fact is `lost`, which is
+ * unconditionally. Here the helper is already dead and the kernel lock already back, so the fact is `lost`, which is
  * the distinction R-103 added the release vocabulary for.
  *
  * **The production change that breaks this test** (rule 7): going back to
@@ -133,7 +132,7 @@ test("a retained lease whose helper already died is ledgered `lost`, not `retain
     executionId: "exec:00000000-0000-4000-8000-000000000001",
     parentExecutionId: null,
     ledgerPath,
-    reason: "herdr-close-failed",
+    reason: "writer-close-failed",
     retain: true,
   });
 

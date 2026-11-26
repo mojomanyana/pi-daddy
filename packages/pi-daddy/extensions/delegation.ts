@@ -105,14 +105,11 @@ function progressReporter(
         const child = children[index];
         if (!child) return;
         if (update.paneId) child.paneId = update.paneId;
-        // **Reported, not derived.** It used to be rebuilt here from the label and the child id, which was true
-        // until `runHerdrPane` began uniquifying the name to stop herdr's `agent_name_taken` — after which the
-        // block named an agent that did not exist, and an operator following it would find nothing. The name is
-        // known only where it is minted, so it travels from there.
+        // **Reported, not derived.** When an executor mints an agent name, it travels from there rather than
+        // being reconstructed from label + child id.
         if (update.agentName) child.agentName = update.agentName;
-        // Two shapes, deliberately distinct, because the two executors are: a subprocess APPENDS bytes, a pane
-        // reports a SNAPSHOT that replaces. Collapsing them into one "output" field is what caused the herdr
-        // path's amplification, so the difference is spelled out in the type rather than remembered.
+        // Two shapes, deliberately distinct: a byte stream APPENDS chunks, while a terminal snapshot REPLACES
+        // the tail. Keeping them distinct prevents snapshot amplification.
         if (update.chunk) child.tail = appendTail(child.tail, update.chunk);
         if (update.snapshot) child.tail = replaceTail(update.snapshot);
         if (update.state) child.state = update.state;
@@ -483,11 +480,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
 
       // Concurrent by construction. Each child gets its own budget share and its own ledger id, so the
       // records form a tree and two siblings can never be confused for one another.
-      // EVERY sibling's error, not just the first. `??=` discarded the rest with no log anywhere, and one
-      // of the discardable ones is `HerdrWriterCloseError`, whose entire meaning is "a pane may still be
-      // live and its writer lease is deliberately retained" — a resource-retention notice, not a per-child
-      // failure. Losing it meant nobody was told a lease is held with no owner until the process exits
-      // (R-116).
+      // EVERY sibling's error, not just the first. `??=` discarded the rest with no log anywhere, which could
+      // drop a lease-retention notice rather than reporting all infrastructure failures (R-116).
       const infrastructureErrors: unknown[] = [];
       const capture = publicEvidenceCall(
         session.publicEvidence,

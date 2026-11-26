@@ -247,7 +247,7 @@ function failedFirst(overrides: Partial<DelegationOutcome> = {}): DelegationOutc
     ...overrides,
   };
 }
-function owner(capacity = 4, executor: "process" | "herdr" = "process") {
+function owner(capacity = 4, executor: string = "process") {
   return { executor: { kind: executor }, capacity: createCapacityAllocator(capacity) } as unknown as GrantsSession;
 }
 const ids: ExecutionOccurrenceIds = { parentId: "d0", childId: "d0.1", executionId: FIRST_ID, parentExecutionId: null };
@@ -436,7 +436,7 @@ test("both attempts' child usage is reported: on the returned outcome and on an 
   }
 });
 
-test("composition refusals: switch, operation, Herdr, cancellation, cleanup, approval and deadline start nothing", async () => {
+test("composition refusals: switch, operation, non-process executor, cancellation, cleanup, approval and deadline start nothing", async () => {
   setEnv(ENV_CHILD_IDLE_TIMEOUT, "1");
   const cases: Array<[string, () => Promise<DelegationOutcome>]> = [];
   const attempt = (
@@ -454,7 +454,7 @@ test("composition refusals: switch, operation, Herdr, cancellation, cleanup, app
   const aborted = new AbortController();
   aborted.abort();
   cases.push(["operation", () => attempt(failedFirst(), { operation: true })]);
-  cases.push(["herdr", () => attempt(failedFirst(), {}, owner(4, "herdr"))]);
+  cases.push(["non-process executor", () => attempt(failedFirst(), {}, owner(4, "external"))]);
   cases.push(["parent abort", () => attempt(failedFirst(), { signal: aborted.signal })]);
   cases.push(["unknown cleanup", () => attempt(failedFirst({ cleanup: { state: "unknown", reason: "lost" } }))]);
   cases.push([
@@ -508,10 +508,17 @@ test("under a stable operation an eligible failure is returned marked replayable
   aborted.abort();
   const unmarked: Array<[string, Promise<DelegationOutcome>]> = [
     [
-      "herdr",
+      "non-process executor",
       replayIfSafe(
         first,
-        { session: owner(1, "herdr"), ids, budget: undefined, signal: undefined, operation: true, attempt: observed() },
+        {
+          session: owner(1, "external"),
+          ids,
+          budget: undefined,
+          signal: undefined,
+          operation: true,
+          attempt: observed(),
+        },
         async () => second(),
       ),
     ],
@@ -616,7 +623,7 @@ test("/grants marks an allowed definition replay-safe and says when this session
     { capability: "agent:fix", kind: "agentType" },
   ]);
   session.catalogReady = Promise.resolve(session.catalog);
-  const render = async (executor: { kind: "process" | "herdr" } = session.executor) => {
+  const render = async (executor: { kind: "process" } = session.executor) => {
     let output = "";
     await grantsCommand.handler("", {
       ui: { notify: (text: string) => void (output = text) },

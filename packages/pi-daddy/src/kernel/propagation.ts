@@ -100,9 +100,7 @@ export const GRANT_ENV_KEYS = [
   // Not governance state, but the same rule applies for a stronger reason: neither a credential the parent holds
   // nor the switch that points it at a third party is something a child inherits by being spawned (ADR-0077).
   //
-  // **This strips the PROCESS executor's environment.** A Herdr pane inherits the daemon's environment, which this
-  // function never sees (R-148), so a daemon started from a shell exporting these two hands them to every pane
-  // child. Named here rather than claimed away: "stripped from every child" would be false on that path.
+  // **Stripped from every spawned child's environment.** Neither the advisor switch nor API key is inherited.
   ENV_ADVISOR_KEY,
   ENV_ADVISOR,
   ENV_ADVISOR_TASK_EGRESS,
@@ -390,8 +388,8 @@ export function childEnv(input: ChildEnvInput): Record<string, string> {
  * **There are two places a child's environment is built**, and this file already carries the scar: the
  * "held but never inherited" rule for `workspace:*` lived only in `childEnv`, so `delegate.ts` — the path a
  * delegated child's grant actually travels — handed the wildcard straight down, and the test written beside
- * that fix exercised the wrong path. The pin reached the same fork. The ADR is explicit that "the process and
- * Herdr paths must share one propagation builder", so this is that builder and both callers use it.
+ * that fix exercised the wrong path. The pin reached the same fork, so both callers share this single
+ * propagation builder.
  *
  * Written even when it narrows to nothing, and omitted only when this session has no pin at all: an omitted
  * key does not overwrite, so the child would inherit the parent's UNNARROWED pin through the process-global

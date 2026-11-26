@@ -525,10 +525,8 @@ test("R-69: unsatisfied gate outcomes remain distinct in the record", async () =
 test("ADR-0031: a record names the executor, because the argv differs between them", () => {
   // The production change that breaks this: dropping `executor` from buildRecord, or making it optional.
   //
-  // Why it must be recorded at all: before ADR-0031 the executor was a variable an operator set, so "which one
-  // ran?" was answerable from configuration afterwards. It is now decided by a runtime probe at session start,
-  // and the herdr plan withholds `--print` — so two records with identical capabilities can describe different
-  // argv, and nothing outside the record preserves which.
+  // Why it must be recorded at all: recording `executor` on every event keeps the audit trail self-contained
+  // without relying on external configuration to determine how the child ran.
   const shape = {
     parentId: "d0",
     childId: "d0.1",

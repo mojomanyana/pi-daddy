@@ -4,9 +4,6 @@
  * Every test here refuses or aborts before a child is spawned, so this file stays fast, deterministic, and free of
  * network, model and credentials. The tests that let a step actually run live in
  * `test-integration/delegate-chain.it.ts`, because a real `pi` child always calls a model.
- *
- * **`PI_DADDY_HERDR=0` throughout** — an unset variable means *probe*, and `session_start` probes, so leaving it
- * would shell out to whatever herdr happens to be running on the machine under test.
  */
 
 import assert from "node:assert/strict";

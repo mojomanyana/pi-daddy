@@ -127,9 +127,8 @@ export interface ChildProgressUpdate {
 }
 /**
  * Execute one already-approved plan, record lifecycle, and release any workspace lease on every path
- * EXCEPT a failed herdr writer-tab close, which deliberately retains the lease because the pane may
- * still be live and promptable — that retention is recorded as `retained` rather than left as a silent
- * gap in the trail (R-104).
+ * unless retention is explicitly requested (recorded as `retained` rather than left as a silent gap in
+ * the trail, R-104).
  *
  * Teardown never destroys the result. A terminal ledger append is an OBSERVATION written after the child
  * has already run, so failing closed there prevents nothing and used to discard completed work while
@@ -312,9 +311,8 @@ async function executePreparedChild(
   // file so the parent can see it working when its stdout is quiet (pi appends each message and tool result to it).
   const configuredIdleMs = limits.idleMs;
   const activitySession = await activitySessionFor(plan.args, executionId);
-  // Disposed on every path (review finding: it leaked on every throw), except when the operator keeps a Herdr pane,
-  // where the interactive pi in that pane is still alive and still appending to this file.
-  const keepPaneRequested = false; // The qualified pane launcher exits; retained panes contain no live Pi writer.
+  // Disposed on every path (review finding: it leaked on every throw).
+  const keepPaneRequested = false;
   try {
     return await executeWithActivitySession();
   } finally {
@@ -341,7 +339,7 @@ async function executePreparedChild(
   async function executeWithActivitySession(): Promise<DelegationOutcome> {
     const args = activitySession.args;
     // The process executor adds a second signal that is live during a tool call: the child tree's CPU time and
-    // descendants (`process-activity.ts`). Herdr children are started by the daemon, so their pid is not known here.
+    // descendants (`process-activity.ts`).
     let childPid: number | undefined;
     const probe = async () => {
       const [file, tree] = await Promise.all([
@@ -689,9 +687,7 @@ async function executePreparedChild(
       });
       const usageObservation = await observeUsage();
       if (ledgerPath && !terminalAttempted) {
-        // Best-effort: this records the failure, so it must not REPLACE the failure. A strict append that
-        // throws here would discard the original error — including HerdrWriterCloseError, whose whole
-        // meaning is "a lease is deliberately retained" (R-108).
+        // Best-effort: this records the failure, so it must not REPLACE the original error (R-108).
         await appendAfterRuntimeRecord(runtimeRecord, () =>
           appendLedgerEvent(
             {

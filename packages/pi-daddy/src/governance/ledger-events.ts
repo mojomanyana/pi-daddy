@@ -93,7 +93,7 @@ export interface ChildUsageTotals {
  * `lost` was recorded as nothing at all, because the old `release()` threw before the append ran:
  *   `lost`     the kernel lock went away under a live governed writer — NOT the same fact as a user
  *              cancelling, which is what it used to be indistinguishable from (R-103);
- *   `retained` the lease was deliberately kept because a herdr writer tab would not close, so the
+ *   `retained` the lease was deliberately kept because the writer could not be confirmed closed, so the
  *              successor's `recovered: true` would otherwise blame a healthy path (R-104);
  *   `uncontended` a read lease took no kernel lock at all, so counting it as an acquisition
  *              overstated how many exclusions the kernel actually performed (R-105).

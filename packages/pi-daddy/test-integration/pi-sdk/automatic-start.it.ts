@@ -31,19 +31,12 @@ import { workModeSnapshot } from "../../extensions/work-mode.ts";
 
 for (const contribute of [true, false]) {
   test(`interactive startup revalidates selected agents before dispatch ${contribute ? "with late contributions" : "even with identical selected paths"}`, async () => {
-    const keys = [
-      ...GRANT_ENV_KEYS,
-      "PI_CODING_AGENT_DIR",
-      "PI_DADDY_HERDR",
-      "PI_DADDY_ACTIVITY_TIMELINE",
-      "HERDR_ENV",
-    ];
+    const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_ACTIVITY_TIMELINE"];
     const saved = new Map(keys.map((key) => [key, process.env[key]]));
     let current: GrantsSession | undefined;
     let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
     try {
       for (const key of keys) delete process.env[key];
-      process.env.PI_DADDY_HERDR = "0";
       process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
       fixture = await createFixture({
         mode: "tui",
@@ -114,7 +107,7 @@ for (const contribute of [true, false]) {
 }
 
 test("interactive trusted parent offers workspace memory and the connected dashboard renders the provider's readiness", async () => {
-  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR", "PI_DADDY_ACTIVITY_TIMELINE", "HERDR_ENV"];
+  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_ACTIVITY_TIMELINE"];
   const saved = new Map(keys.map((key) => [key, process.env[key]]));
   let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
   let current: GrantsSession | undefined;
@@ -123,7 +116,6 @@ test("interactive trusted parent offers workspace memory and the connected dashb
   try {
     for (const key of keys) delete process.env[key];
     process.env.PI_DADDY_AUTO_MODE = "1";
-    process.env.PI_DADDY_HERDR = "0";
     process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
     fixture = await createFixture({
       mode: "tui",
@@ -186,7 +178,7 @@ test("interactive trusted parent offers workspace memory and the connected dashb
 });
 
 test("Pi /new in the same folder gets a fresh root, dashboard, delivery guard and Bookie owner", async () => {
-  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR", "PI_DADDY_ACTIVITY_TIMELINE", "HERDR_ENV"];
+  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_ACTIVITY_TIMELINE"];
   const saved = new Map(keys.map((key) => [key, process.env[key]]));
   const sessions: GrantsSession[] = [];
   const leases: ProjectMemoryOwner[] = [];
@@ -195,7 +187,6 @@ test("Pi /new in the same folder gets a fresh root, dashboard, delivery guard an
   let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
   try {
     for (const key of keys) delete process.env[key];
-    process.env.PI_DADDY_HERDR = "0";
     process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
     process.env.PI_DADDY_FANOUT = "3";
     const offline = (fixture = await createFixture());

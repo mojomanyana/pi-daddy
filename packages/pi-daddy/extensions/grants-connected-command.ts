@@ -1,26 +1,17 @@
 export interface GrantsConnectedCommandContext {
-  openDashboard: () => Promise<
-    | { kind: "opened" | "reused"; paneId: string; visibleBesideCaller: boolean }
-    | { kind: "fallback"; frame: string; visibleBesideCaller: false }
-  >;
+  openDashboard: () => Promise<string | { kind: "fallback"; frame: string; visibleBesideCaller: false }>;
   ui: { notify(message: string, level: "info" | "error"): void };
 }
-/** Host lifecycle and pane placement live together; neither belongs in the capability-report renderer. */
+/** Dashboard entry lives outside the capability-report renderer. */
 export async function handleConnectedCommand(
   sub: string | undefined,
-  target: string | undefined,
+  _target: string | undefined,
   ctx: GrantsConnectedCommandContext,
 ): Promise<boolean> {
   if (sub === "dashboard") {
     try {
       const opened = await ctx.openDashboard();
-      ctx.ui.notify(
-        opened.kind === "fallback"
-          ? opened.frame
-          : `grants: dashboard ${opened.kind} in Herdr pane ${opened.paneId} without changing focus` +
-              (opened.visibleBesideCaller ? "." : " (the existing pane is in another tab)."),
-        "info",
-      );
+      ctx.ui.notify(typeof opened === "string" ? opened : opened.frame, "info");
     } catch (error) {
       ctx.ui.notify(
         `grants: dashboard unavailable — ${error instanceof Error ? error.message : String(error)}`,

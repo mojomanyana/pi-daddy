@@ -52,7 +52,6 @@ else process.stdout.write("read complete");
     for (const key of keys) if (key !== "PATH") delete process.env[key];
     Object.assign(process.env, {
       PATH: `${bin}:${saved.get("PATH") ?? ""}`,
-      PI_DADDY_HERDR: "0",
       PI_DADDY_GRANT: "tool:read,tool:delegate",
       PI_CODING_AGENT_DIR: directory,
     });

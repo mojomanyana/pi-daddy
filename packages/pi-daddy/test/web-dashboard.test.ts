@@ -1,6 +1,7 @@
-/** Unit tests for 5-tab Side-Panel Steering & Configuration Dashboard (no Herdr; macOS/Linux/Windows). */
+/** Unit tests for 5-tab Side-Panel Steering & Configuration Dashboard (cross-OS: macOS/Linux/Windows). */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { handleConnectedCommand } from "../extensions/grants-connected-command.ts";
 import {
   startWebDashboard,
   type WebDashboardConfigUpdate,
@@ -118,4 +119,38 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
   } finally {
     await handle.close();
   }
+});
+
+test("/grants dashboard notifies with standalone Side Panel guidance for string and fallback results", async () => {
+  const notices: Array<{ message: string; level: "info" | "error" }> = [];
+  const ui = { notify: (message: string, level: "info" | "error") => notices.push({ message, level }) };
+  assert.equal(
+    await handleConnectedCommand("dashboard", undefined, {
+      openDashboard: async () => "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.",
+      ui,
+    }),
+    true,
+  );
+  assert.equal(
+    await handleConnectedCommand("dashboard", undefined, {
+      openDashboard: async () => ({ kind: "fallback", frame: "FALLBACK_FRAME", visibleBesideCaller: false }),
+      ui,
+    }),
+    true,
+  );
+  assert.equal(
+    await handleConnectedCommand("dashboard", undefined, {
+      openDashboard: async () => {
+        throw new Error("socket closed");
+      },
+      ui,
+    }),
+    true,
+  );
+  assert.equal(await handleConnectedCommand("other", undefined, { openDashboard: async () => "x", ui }), false);
+  assert.deepEqual(notices, [
+    { message: "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.", level: "info" },
+    { message: "FALLBACK_FRAME", level: "info" },
+    { message: "grants: dashboard unavailable — socket closed", level: "error" },
+  ]);
 });

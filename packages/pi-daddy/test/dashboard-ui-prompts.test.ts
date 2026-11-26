@@ -10,7 +10,6 @@ import {
 
 function fixture() {
   const handlers = new Map<string, (...args: any[]) => void>();
-  const emitted: { active: boolean; label?: string }[] = [];
   let owner: DashboardSourceOwner | undefined = { sessionId: "session-a", cwd: "/work" };
   const ctx = { hasUI: true, mode: "tui", cwd: "/work", sessionManager: { getSessionId: () => "session-a" } };
   const pi = {
@@ -19,9 +18,8 @@ function fixture() {
       return () => handlers.delete(name);
     },
     events: {
-      emit(name: string, body: any) {
-        assert.equal(name, "herdr:blocked");
-        emitted.push(body);
+      emit() {
+        assert.fail("dashboard-ui-prompts should not emit legacy blocked events");
       },
     },
   };
@@ -31,7 +29,6 @@ function fixture() {
   return {
     view,
     event,
-    emitted,
     handlers,
     ctx,
     replace: (next: typeof owner) => {

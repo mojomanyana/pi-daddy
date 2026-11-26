@@ -41,9 +41,6 @@ export const HANDOFF_MAX_BYTES = 32 * 1024;
  * **twice** produced a 131,502-byte argv element and the spawn failed with `E2BIG` — loudly, so rule 8 was
  * satisfied, but the cap had been sized against the child's 1 MiB *output* limit with no reference to the limit that
  * really applies. A predecessor could trip it deliberately. At 32 KiB even four placeholders fit.
- *
- * The herdr executor is unaffected — the task travels via `agent prompt`, not argv — but the bound has to hold for
- * the executor that is *not* the default too.
  */
 export const MAX_ARG_STRLEN = 131_072;
 

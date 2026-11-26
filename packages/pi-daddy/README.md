@@ -764,7 +764,7 @@ npm run typecheck
 npm test
 npm run build --workspace=pi-daddy
 npm run test:integration:ci --workspace=pi-daddy # model-free CI subset
-npm run test:integration --workspace=pi-daddy    # real Pi; Herdr creates and stops only its own named test server
+npm run test:integration --workspace=pi-daddy    # real Pi integration suite (model-free)
 npm run test:smoke --workspace=pi-daddy          # pack, install into a scratch project, import and use it
 PI_DADDY_IT_MODEL=1 npm run test:integration --workspace=pi-daddy # opt-in real-model tier; consumes tokens
 ```

@@ -64,8 +64,8 @@ export function registerDashboardPrompts(pi: ExtensionAPI, current: () => Dashbo
     if (!valid(ctx) || event.reason !== "ui_prompt" || !kinds.has(event.kind ?? "")) return;
     const kind = event.kind as DashboardInputPrompt["kind"];
     const label = clean(typeof event.title === "string" ? event.title : "") || "Pi is waiting for your answer";
-    // Pi reports the outermost native dialog once. Defensive duplicate observations must not
-    // increment Herdr's blocked counter and leave the pane stuck after one corresponding end.
+    // Pi reports the outermost native dialog once. Ignore defensive duplicate observations
+    // so a single corresponding end clears the prompt cleanly.
     if (prompt?.kind === kind && prompt.label === label) return;
     clear();
     prompt = { id: `input:${++ordinal}`, kind, label };

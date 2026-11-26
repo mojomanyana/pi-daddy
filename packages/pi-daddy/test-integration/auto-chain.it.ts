@@ -17,7 +17,6 @@ test("a real chain completes its admitted first child but OFF refuses the next s
   const keys = [
     "PI_DADDY_GRANT",
     "PI_DADDY_GATED",
-    "PI_DADDY_HERDR",
     "PI_CODING_AGENT_DIR",
     "PI_DADDY_LEDGER",
     "PI_DADDY_AUTO_MODE",
@@ -29,7 +28,6 @@ test("a real chain completes its admitted first child but OFF refuses the next s
   Object.assign(process.env, {
     PI_DADDY_GRANT: "tool:*",
     PI_DADDY_GATED: "tool:bash",
-    PI_DADDY_HERDR: "0",
     PI_DADDY_AUTO_MODE: "1",
   });
   delete process.env.PI_DADDY_AUTO_MODE_REF;

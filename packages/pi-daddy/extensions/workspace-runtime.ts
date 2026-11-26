@@ -182,7 +182,7 @@ export async function releaseDelegationWorkspace(input: {
   parentExecutionId: string | null;
   ledgerPath?: string;
   reason: string;
-  /** Deliberately keep the lease: a herdr writer tab would not close, so the pane may still be live. */
+  /** Deliberately keep the lease when the caller cannot confirm the writer has stopped. */
   retain?: boolean;
   onObservationFailure?: (error: unknown) => void;
 }): Promise<LeaseReleaseOutcome | "retained" | undefined> {
