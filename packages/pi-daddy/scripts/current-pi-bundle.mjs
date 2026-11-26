@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import release from "../src/products/ecosystem-release.json" with { type: "json" };
@@ -50,7 +51,8 @@ assert.equal(version(), current);
 assert.deepEqual(sources(), expected);
 
 process.env.PI_OFFLINE = "1";
-const sdk = await import(pathToFileURL(resolve(dirname(cli), "../index.js")).href);
+const sdkUrl = pathToFileURL(resolve(dirname(cli), "../index.js")).href;
+const sdk = await import(sdkUrl);
 const client = new sdk.RpcClient({ cliPath: cli, args: ["--offline", "--no-session", "--no-approve"] });
 const notices = [];
 client.onEvent((event) => {
@@ -97,7 +99,18 @@ try {
 }
 // Exercise Bookie's installed receipt lifecycle with synthetic data and its real reset callback.
 const bookieHooks = new Map();
-const { createBookieContextFilter } = await import(pathToFileURL(join(modules, "pi-bookie/dist/context-filter.js")).href);
+// A standalone Node import needs the Pi SDK alias that the extension loader supplies in the real session above.
+const sdkAlias = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    return nextResolve(specifier === "@earendil-works/pi-coding-agent" ? sdkUrl : specifier, context);
+  },
+});
+let createBookieContextFilter;
+try {
+  ({ createBookieContextFilter } = await import(pathToFileURL(join(modules, "pi-bookie/dist/context-filter.js")).href));
+} finally {
+  sdkAlias.deregister();
+}
 const filter = createBookieContextFilter({ on: (event, handler) => bookieHooks.set(event, handler) });
 const content = [{ type: "text", text: "bundle fixture receipt" }];
 const message = { role: "toolResult", toolCallId: "fixture", toolName: "bookie_read", content };
