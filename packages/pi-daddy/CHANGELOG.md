@@ -1,5 +1,10 @@
 # Changelog — pi-daddy
 
+## 1.1.3 - 2026-11-26
+
+- Automatic setup asks the installed Pi which providers and models are available. It preserves explicit model tiers and falls back to the active session when no providers are configured.
+- Doctor reports unavailable model choices and their supported thinking levels. Harvest skips classifiers that cannot run with thinking disabled.
+
 ## 1.1.2 - 2026-11-26
 
 - Make normal ecosystem setup and migration register updateable Pi sources. Keep the tested snapshot available with `--pinned`.
