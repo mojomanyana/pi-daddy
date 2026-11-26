@@ -8,19 +8,21 @@ import { cleanupTempDirs, tempDir } from "./tmp.ts";
 
 after(cleanupTempDirs);
 
-test("resolveTierModel routes review/architect to STRONG and investigate to FAST when configured", () => {
+test("resolveTierModel routes review/architect to STRONG and investigate to FAST when configured", async () => {
+  const profile = { PI_CODING_AGENT_DIR: await tempDir("inproc-tier-profile-") };
   const registry = {
     find: (provider: string, id: string) => ({ provider, id }),
   };
   const fallback = { provider: "google", id: "gemini-3.8-flash" };
   const env = {
+    ...profile,
     PI_ECO_MODEL_STRONG: "fireworks/qwen3.8-max",
     PI_ECO_MODEL_FAST: "fireworks/glm-5.3-flash",
   };
   assert.equal(resolveTierModel(registry, "review", fallback, undefined, env).label, "fireworks/qwen3.8-max");
   assert.equal(resolveTierModel(registry, "architect", fallback, undefined, env).label, "fireworks/qwen3.8-max");
   assert.equal(resolveTierModel(registry, "investigate", fallback, undefined, env).label, "fireworks/glm-5.3-flash");
-  assert.equal(resolveTierModel(registry, "review", fallback, undefined, {}).label, "google/gemini-3.8-flash");
+  assert.equal(resolveTierModel(registry, "review", fallback, undefined, profile).label, "google/gemini-3.8-flash");
 });
 
 test("runInProcessReadOnly reads bounded workspace files, blocks traversal/binaries, and streams result", async () => {

@@ -37,7 +37,12 @@ test("dashboard model edits report a damaged profile and take effect only after 
       thinking = value;
     },
   } as unknown as ExtensionAPI;
-  const ctx = { cwd, hasUI: false, ui: { notify() {} } } as unknown as ExtensionCommandContext;
+  const ctx = {
+    cwd,
+    hasUI: false,
+    ui: { notify() {} },
+    modelRegistry: { getAvailable: () => [{ provider: "local", id: "updated" }] },
+  } as unknown as ExtensionCommandContext;
   registerWebDashboard(pi, { cwd, reloadLifecycle: {} } as unknown as GrantsSession);
   await dashboard.handler("", ctx);
   try {

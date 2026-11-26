@@ -211,7 +211,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         if (
           clean &&
           clean !== "session" &&
-          !lastCtx?.modelRegistry.getAvailable().some((m) => m.provider + "/" + m.id === clean)
+          !lastCtx?.modelRegistry?.getAvailable?.().some((m) => m.provider + "/" + m.id === clean)
         )
           throw Error("This model is unavailable. Use /login or choose a connected model in Settings.");
         if (clean) models[tier] = clean;

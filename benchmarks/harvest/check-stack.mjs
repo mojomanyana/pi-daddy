@@ -1,7 +1,7 @@
 // Run two actual Pi processes against the local candidates and installed peers. No model requests.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,8 +9,10 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const peers = resolve(process.argv[2] ?? join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "npm", "node_modules"));
 const packages = [join(root,"packages/pi-daddy"),resolve(root,"../pi-harvest-scout"),
-  ...["pi-bookie","principal-pi-skills","skill-harness"].map(name=>join(peers,name))];
-for (const path of packages) assert(existsSync(join(path,"package.json")), "Missing package at " + path);
+  ...["pi-bookie","principal-pi-skills","skill-harness"].map(name=>join(peers,name))].map(path=>{
+    assert(existsSync(join(path,"package.json")), "Missing package at " + path);
+    return realpathSync(path);
+  });
 const version = path => JSON.parse(readFileSync(join(path,"package.json"),"utf8")).version;
 const sdk = version(join(root,"node_modules/@earendil-works/pi-coding-agent"));
 const release = JSON.parse(readFileSync(join(root,"packages/pi-daddy/src/products/ecosystem-release.json"),"utf8"));
@@ -34,7 +36,7 @@ try {
   const receipt = JSON.parse(harvest.stdout.trim().split(/\r?\n/).at(-1));
   assert(existsSync(receipt.specPath),"Harness did not write a regression spec");
   console.log("Skill Harness wrote a regression spec from the synthetic turn.");
-  const bookieModule = join(peers,"pi-bookie/src/managed-vault.ts").replaceAll("\\","/");
+  const bookieModule = join(packages[2],"src/managed-vault.ts").replaceAll("\\","/");
   const statusPath = join(root,"benchmarks/harvest/pilot-status.mjs").replaceAll("\\","/");
   writeFileSync(probe, `import {writeFileSync} from 'node:fs';
 import {ecosystemStatus} from ${JSON.stringify(statusPath)};

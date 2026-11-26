@@ -178,6 +178,8 @@ const NOT_REFUSAL_CODES = new Set([
   // POSIX open(2) flag. Named in the bounded-reader entry because it is the specific thing that keeps a FIFO
   // from wedging session start, and no vaguer wording would let a reader check the claim.
   "O_NONBLOCK",
+  // Provider credential configuration in the dashboard setup instructions.
+  "OPENROUTER_API_KEY",
   // An exported constant the probe record has to name, because "the default turn count" would leave a reader
   // unable to find it. Same shape as the flag above: a real identifier, not an invented refusal.
   "DEFAULT_CONTEXT_TURNS",
