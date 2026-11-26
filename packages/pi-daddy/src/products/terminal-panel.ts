@@ -41,6 +41,7 @@ export async function editTerminalClassifier(request: ClassifierRequest, ask: (l
   const catalog = (await request({ action: "list" })) as {
     models: string[];
     selected: string;
+    recovery: string;
     thresholds: Record<string, number>;
     legacyThreshold: number;
     currentMode: string;
@@ -50,13 +51,30 @@ export async function editTerminalClassifier(request: ClassifierRequest, ask: (l
   const models = [...new Set(["", ...catalog.models, catalog.selected])];
   const choices = models.map((id, index) => {
     const label = (id || "Configured fast chat model").replace(/[\x00-\x1f\x7f]/g, "");
-    return `${index}. ${label}${id === catalog.selected ? " (current)" : ""}`;
+    const status =
+      id === catalog.selected ? (id && !catalog.models.includes(id) ? " (saved, unavailable)" : " (current)") : "";
+    return `${index}. ${label}${status}`;
   });
-  const reply = await ask([...catalog.errors, ...choices, "Select a classifier by number (Enter cancels)"].join("\n"));
+  const reply = await ask(
+    [
+      ...catalog.errors,
+      ...(catalog.recovery ? [catalog.recovery] : []),
+      ...choices,
+      "Select a classifier by number (Enter cancels)",
+    ].join("\n"),
+  );
   if (!reply) return "Cancelled.";
   const model = models[Number(reply)];
   if (!/^\d+$/.test(reply) || model === undefined) throw Error("Choose a listed classifier number.");
   const remembered = model ? catalog.thresholds[model] : catalog.legacyThreshold;
+  if (model && !catalog.models.includes(model)) {
+    const action = await ask(
+      "This saved model is unavailable. Type off to disable harvesting, or press Enter to return.",
+    );
+    if (action !== "off") return catalog.recovery;
+    await request({ action: "save", model, threshold: remembered, mode: "off", shadow: false });
+    return "Harvesting off.";
+  }
   const text = await ask(`Save threshold, 0 to 1 [${remembered}]`);
   const threshold = text ? Number(text) : remembered;
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw Error("Enter a threshold from 0 to 1.");

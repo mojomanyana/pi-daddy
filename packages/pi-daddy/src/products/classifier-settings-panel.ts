@@ -14,7 +14,7 @@ export const classifierPanel = `<div class="card" id="classifiers">
     <p>Routing comparisons send a redacted request and candidate names and descriptions to the selected classifier.
     The local comparison log records the actual and suggested choices and tool completion status.</p>
     <div class="bar"><button class="primary" onclick="classifierAction('save')">Save settings</button>
-      <button onclick="classifierAction('test')">Test with a synthetic turn</button></div>
+      <button id="classifier-test" onclick="classifierAction('test')">Test with a synthetic turn</button></div>
   </div><div class="msg" role="status" id="classifier-message"></div></div>`;
 
 export const classifierScript = `
@@ -31,6 +31,7 @@ function populateModels(preferred) {
 function selectClassifier() {
   const m = cf('model').value;
   cf('threshold').value = m ? classifierConfig.thresholds[m] : classifierConfig.legacyThreshold;
+  cf('test').disabled = !classifierConfig.models.includes(m);
   cf('shadow').disabled = !m;
   if (!m) cf('shadow').checked = false;
   if (m && m !== classifierConfig.selected) cf('mode').value = 'suggest';
@@ -51,7 +52,7 @@ async function loadClassifiers() {
     cf('shadow').checked = data.shadow;
     document.getElementById('classifier-fields').hidden = false;
     document.getElementById('load-classifiers').textContent = 'Refresh catalog';
-    cf('message').textContent = [...data.errors, ...(data.selected && !data.models.includes(data.selected) ? ['Saved classifier currently unavailable'] : [])].join('. ');
+    cf('message').textContent = [...data.errors, ...(data.recovery ? ['Saved classifier unavailable. ' + data.recovery] : [])].join('. ');
   } catch (e) { cf('message').textContent = e.message; }
 }
 async function classifierAction(action) {

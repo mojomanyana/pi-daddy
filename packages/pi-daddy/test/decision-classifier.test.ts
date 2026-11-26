@@ -71,6 +71,40 @@ test("terminal picker tests without saving and persists per-model settings throu
   assert.equal(readEcosystemConfig()?.harvest?.minConfidence, 0);
   assert.equal(readEcosystemConfig()?.harvest?.classifier, undefined);
 });
+test("an unavailable saved classifier explains reconnection before the terminal offers a test", async (t) => {
+  profile(t);
+  const model = "openrouter/typesafe/jev-1.14";
+  saveEcosystemConfig({ harvest: { classifier: model, mode: "suggest" } });
+  let connected = false;
+  const ctx = {
+    modelRegistry: {
+      getAvailableOfType: async () => (connected ? [{ provider: "openrouter", id: "typesafe/jev-1.14" }] : []),
+    },
+  } as unknown as ExtensionContext;
+  const settings = createClassifierSettings(
+    () => ctx,
+    () => true,
+  );
+  const prompts: string[] = [];
+  const edit = (...answers: string[]) =>
+    editTerminalClassifier(settings.action, async (label) => {
+      prompts.push(label);
+      assert.ok(answers.length);
+      return answers.shift()!;
+    });
+  assert.match(await edit("1", ""), /\/login openrouter/);
+  assert.match(prompts[0], /saved, unavailable/);
+  assert.equal(prompts.length, 2);
+  assert.equal(readEcosystemConfig()?.harvest?.mode, "suggest");
+  await assert.rejects(settings.action({ action: "test", model, threshold: 0.53 }), /\/login openrouter/);
+  await edit("1", "off");
+  assert.equal(readEcosystemConfig()?.harvest?.mode, "off");
+  connected = true;
+  prompts.length = 0;
+  await edit("");
+  assert.match(prompts[0], /jev-1\.14 \(current\)/);
+  assert.doesNotMatch(prompts[0], /unavailable|\/login/);
+});
 test("root picker remembers thresholds by full ID and applies the same boundary in test and harvest", async (t) => {
   profile(t);
   let value = 0.51;

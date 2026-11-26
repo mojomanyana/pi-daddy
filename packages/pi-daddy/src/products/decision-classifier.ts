@@ -4,6 +4,13 @@ import type { EcosystemHarvestConfig } from "../kernel/ecosystem-config.ts";
 type Registry = ExtensionContext["modelRegistry"];
 export const directProvider = "openrouter-direct";
 const prefix = directProvider + "/";
+export function classifierRecovery(model: string): string {
+  if (model.startsWith("openrouter/"))
+    return "In the Pi chat pane, run /login openrouter and check the connection. Then reopen the classifier picker.";
+  if (model.startsWith(prefix))
+    return "Check OPENROUTER_API_KEY in the shell that starts Pi, restart Pi, then reopen the classifier picker.";
+  return "Check the classifier provider connection in Pi, then reopen the classifier picker.";
+}
 export const harvestQuestion = {
   type: "bool" as const,
   instructions: "Should this completed coding-agent turn be saved as a regression evaluation?",

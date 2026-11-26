@@ -4,7 +4,12 @@ import {
   saveEcosystemConfig,
   type EcosystemHarvestConfig,
 } from "../src/kernel/ecosystem-config.ts";
-import { classifierCatalog, harvestProbability, thresholdFor } from "../src/products/decision-classifier.ts";
+import {
+  classifierCatalog,
+  classifierRecovery,
+  harvestProbability,
+  thresholdFor,
+} from "../src/products/decision-classifier.ts";
 import { harvestClassifierDigest } from "../src/products/session-harvest.ts";
 
 export function createClassifierSettings(getContext: () => ExtensionContext | undefined, isRoot: () => boolean) {
@@ -29,6 +34,8 @@ export function createClassifierSettings(getContext: () => ExtensionContext | un
         return {
           ...result,
           selected: harvest.classifier ?? "",
+          recovery:
+            harvest.classifier && !catalog.has(harvest.classifier) ? classifierRecovery(harvest.classifier) : "",
           currentMode: harvest.mode ?? "auto",
           shadow: Boolean(shadowModel && shadowModel === harvest.classifier),
           thresholds: Object.fromEntries(ids.map((id) => [id, thresholdFor(harvest, id)])),
@@ -42,7 +49,11 @@ export function createClassifierSettings(getContext: () => ExtensionContext | un
           !catalog.has(model) &&
           !(input.action === "save" && input.mode === "off" && model === harvest.classifier))
       )
-        throw Error("Refresh the catalog and select an available classifier.");
+        throw Error(
+          typeof model === "string" && model
+            ? "Classifier unavailable: " + model + ". " + classifierRecovery(model)
+            : "Refresh the catalog and select an available classifier.",
+        );
       const threshold = input.threshold;
       if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1)
         throw Error("Threshold must be a number from 0 to 1.");
