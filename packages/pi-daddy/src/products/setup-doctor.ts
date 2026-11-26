@@ -8,17 +8,19 @@ import { join } from "node:path";
 import {
   ecosystemConfigPath,
   readEcosystemConfig,
-  resolveEcosystemModelTier,
+  resolveEcosystemModelCandidates,
   saveEcosystemConfig,
   type EcosystemConfig,
   type EcosystemModelFallbacks,
+  type EcosystemModelsConfig,
 } from "../kernel/ecosystem-config.ts";
 import release from "./ecosystem-release.json" with { type: "json" };
 import { compareStableVersions } from "../kernel/stable-version.ts";
 import { agentDir, piProjectDir } from "../kernel/project-paths.ts";
 import {
   buildAutoPreset,
-  detectConfiguredProviders,
+  loadProviderCatalog,
+  type ProviderCatalog,
   PROVIDER_PRESETS,
   type ProviderPresetName,
 } from "./provider-detect.ts";
@@ -33,6 +35,7 @@ function applyPreset(
   existing: EcosystemConfig,
   requested?: ProviderPresetName,
   autoFallbacks?: EcosystemModelFallbacks,
+  autoModels?: EcosystemModelsConfig,
 ): EcosystemConfig {
   // Legacy profiles have no provenance. Match known shipped values and preserve other model IDs as overrides.
   const previous = existing.setupPreset;
@@ -45,26 +48,36 @@ function applyPreset(
   );
   const name = requested ?? previousName ?? legacyName ?? "open-weight";
   const base = PROVIDER_PRESETS[name];
-  const models: EcosystemConfig["models"] = { ...base.models, ...existing.models };
+  const defaults = autoModels ?? (!requested && previousName ? previous?.defaults : undefined) ?? base.models;
+  const models: EcosystemModelsConfig = { ...defaults, ...existing.models };
   for (const tier of tiers) {
     const value = existing.models?.[tier];
     const wasDefault = previous
       ? previous.defaults?.[tier] === value
       : Object.values(PROVIDER_PRESETS).some((preset) => preset.models[tier] === value);
     if (value === undefined || (wasDefault && (requested || previousName))) {
-      if (base.models[tier] === undefined) delete models[tier];
-      else models[tier] = base.models[tier];
+      if (defaults[tier] === undefined) delete models[tier];
+      else models[tier] = defaults[tier];
     }
   }
-  const modelFallbacks =
-    autoFallbacks && Object.keys(autoFallbacks).length > 0
-      ? { ...autoFallbacks, ...existing.modelFallbacks }
-      : existing.modelFallbacks;
+  const modelFallbacks: EcosystemModelFallbacks = { ...existing.modelFallbacks };
+  if (autoFallbacks) {
+    for (const tier of tiers) {
+      const old = existing.modelFallbacks?.[tier];
+      if (old && JSON.stringify(old) !== JSON.stringify(previous?.fallbacks?.[tier])) continue;
+      if (autoFallbacks[tier]) modelFallbacks[tier] = autoFallbacks[tier];
+      else delete modelFallbacks[tier];
+    }
+  }
   return {
     ...existing,
-    setupPreset: { name, defaults: { ...base.models } },
+    setupPreset: {
+      name,
+      defaults: { ...defaults },
+      ...((autoFallbacks ?? previous?.fallbacks) && { fallbacks: autoFallbacks ?? previous?.fallbacks }),
+    },
     models,
-    ...(modelFallbacks ? { modelFallbacks } : {}),
+    ...(existing.modelFallbacks || Object.keys(modelFallbacks).length ? { modelFallbacks } : {}),
     dashboard: { ...base.dashboard, ...existing.dashboard },
     escalation: { ...base.escalation, ...existing.escalation },
     harvest: { ...base.harvest, ...existing.harvest },
@@ -156,18 +169,30 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
     // Installation can take a while. Keep edits made by the operator while it was running.
     let resolvedPreset: ProviderPresetName | undefined = preset === "auto" ? undefined : (preset as ProviderPresetName);
     let autoFallbacks: EcosystemModelFallbacks | undefined;
-    if (preset === "auto") {
-      const detected = buildAutoPreset();
+    let autoModels: EcosystemModelsConfig | undefined;
+    const requestedModels = tiers.flatMap((tier) => resolveEcosystemModelCandidates(tier));
+    let catalog: ProviderCatalog | undefined;
+    try {
+      catalog = loadProviderCatalog(requestedModels);
+    } catch (error) {
+      if (preset === "auto") throw error;
+      console.log("  Model availability could not be verified: " + String(error));
+    }
+    if (preset === "auto" && catalog) {
+      const detected = buildAutoPreset(catalog);
+      autoModels = detected.models;
+      for (const reason of detected.diagnostics) console.log("  " + reason);
       resolvedPreset = detected.preset;
       autoFallbacks = detected.fallbacks;
       const summary = detected.detected.map((d) => `${d.label} (${d.source})`).join(", ") || "none -> session default";
       console.log(`pi-daddy setup: auto-detected providers: ${summary}`);
     }
-    const config = applyPreset(readEcosystemConfig() ?? {}, resolvedPreset, autoFallbacks);
+    const config = applyPreset(readEcosystemConfig() ?? {}, resolvedPreset, autoFallbacks, autoModels);
     const file = saveEcosystemConfig(config);
+    if (catalog) reportTierAvailability(catalog);
     console.log(`pi-daddy setup: wrote ${file} (preset: ${config.setupPreset?.name})`);
     console.log(
-      `Effective models: ${tiers.map((tier) => `${tier}=${resolveEcosystemModelTier(tier) ?? "session"}`).join(", ")}`,
+      `Configured models: ${tiers.map((tier) => `${tier}=${resolveEcosystemModelCandidates(tier)[0] ?? "session"}`).join(", ")}`,
     );
   } catch (error) {
     console.error(`pi-daddy setup: ${String(error)}`);
@@ -186,6 +211,28 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
     );
   }
   return 0;
+}
+
+function reportTierAvailability(catalog: ProviderCatalog) {
+  for (const tier of tiers) {
+    const candidates = resolveEcosystemModelCandidates(tier);
+    let chosen = false;
+    for (const spec of candidates) {
+      if (spec === "session") break;
+      const efforts = catalog.models[spec];
+      if (!efforts?.length) {
+        console.log(
+          "  " + tier + ": " + spec + " unavailable in Pi's offline catalog (extension providers may differ)",
+        );
+        continue;
+      }
+      const note = tier === "fast" && !efforts.includes("off") ? "; harvest needs thinking off" : "";
+      console.log("  " + tier + ": " + spec + " available (" + efforts.join(", ") + note + ")");
+      chosen = true;
+      break;
+    }
+    if (!chosen) console.log("  " + tier + ": active Pi session when available");
+  }
 }
 
 function reportPackagePins(path: string, local: boolean): void {
@@ -215,7 +262,6 @@ export function runEcosystemDoctor(): number {
     { name: "Docker (optional for open-web Scout)", ...probeCmd("docker", ["--version"]), optional: true },
   ];
   const splitters = detectSupportedSplitters((cmd, args) => probeCmd(cmd, args).ok);
-  const providers = detectConfiguredProviders();
 
   console.log("pi-daddy doctor — Ecosystem Health Check\n");
   let failed = false;
@@ -225,19 +271,24 @@ export function runEcosystemDoctor(): number {
     console.log(`  ${mark} ${c.name.padEnd(36)} ${c.output || c.detail || "not found"}`);
   }
   console.log(`  ✓ ${"Terminal auto-split support".padEnd(36)} ${splitters.join(", ") || "use /dashboard open in Pi"}`);
-  console.log(
-    `  ${providers.length ? "✓" : "○"} ${"Detected model providers".padEnd(36)} ${
-      providers.map((p) => `${p.label} (${p.source})`).join(", ") || "none detected (using session model)"
-    }`,
-  );
   const cfgPath = ecosystemConfigPath();
   try {
     const cfg = readEcosystemConfig();
+    if (checks.every((check) => !["pi CLI", "Node.js"].includes(check.name) || check.ok)) {
+      const catalog = loadProviderCatalog(tiers.flatMap((tier) => resolveEcosystemModelCandidates(tier)));
+      const summary = buildAutoPreset(catalog);
+      console.log(
+        "  Detected model providers: " +
+          (summary.detected.map((p) => p.label + " (" + p.source + ")").join(", ") || "none"),
+      );
+      for (const reason of summary.diagnostics) console.log("  " + reason);
+      reportTierAvailability(catalog);
+    }
     console.log(
       `  ${cfg ? "✓" : "○"} ${"Ecosystem config".padEnd(36)} ${cfgPath} (${cfg ? "present" : "not created — run `pi-daddy setup`"})`,
     );
   } catch (error) {
-    console.log(`  ✗ ${"Ecosystem config".padEnd(36)} ${String(error)}`);
+    console.log(`  ✗ ${String(error)}`);
     failed = true;
   }
   reportPackagePins(join(agentDir(), "settings.json"), false);

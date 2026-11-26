@@ -8,6 +8,7 @@
  * Mode 2 ("auto", default): saves directly to `~/.pi/agent/pi-daddy/harvested-evals/<repo>/`
  * (zero git repo pollution), with `"suggest"` and `"off"` configurable in `ecosystem.json`.
  */
+import { supportedModelEfforts } from "../kernel/model-preflight.ts";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -167,6 +168,11 @@ export async function classifyHarvestCandidate(input: {
   const candidates = resolveEcosystemModelCandidates("fast", input.env ?? process.env);
   const picked = selectRegistryModel(input.registry, candidates, input.fallbackModel);
   if (!picked.model || typeof input.registry?.streamSimple !== "function") return skip("classifier-unavailable");
+
+  if (typeof picked.model === "object" && "reasoning" in picked.model && typeof picked.model.reasoning === "boolean") {
+    if (!supportedModelEfforts(picked.model as { reasoning: boolean }).includes("off"))
+      return skip("classifier-thinking-off-unavailable");
+  }
 
   const redactedPrompt = redactHarvestText(input.signals.prompt).slice(0, 800);
   const redactedEdits = input.signals.editedFiles

@@ -1,10 +1,7 @@
-/**
- * Provider auto-detection and tier preset builder for `pi-daddy setup` and `pi-daddy doctor`
- * (Layer 3: products). Reads only provider key names from `~/.pi/agent/auth.json` and env var
- * presence — never logs, copies, or returns secret values.
- */
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+/** Model tier preferences and availability as reported by Pi's local model catalog. */
+import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { agentDir } from "../kernel/project-paths.ts";
 import type { EcosystemConfig, EcosystemModelFallbacks, EcosystemModelsConfig } from "../kernel/ecosystem-config.ts";
 
@@ -63,8 +60,8 @@ export const PROVIDER_PRESETS: Record<ProviderPresetName, EcosystemConfig & { mo
   "openai-codex": {
     models: {
       fast: "openai-codex/gpt-5.6-sol",
-      work: "openai-codex/gpt-5.6-sol",
-      strong: "openai-codex/gpt-5.6-sol",
+      work: "openai-codex/gpt-6.2-sol",
+      strong: "openai-codex/gpt-6.2-sol",
     },
     ...COMMON_DEFAULTS,
   },
@@ -82,88 +79,104 @@ export const PROVIDER_PRESETS: Record<ProviderPresetName, EcosystemConfig & { mo
   },
 };
 
-const PROVIDER_PROBES: ReadonlyArray<{
-  preset: Exclude<ProviderPresetName, "session">;
-  label: string;
-  envKeys: readonly string[];
-  authKeys: readonly string[];
-}> = [
-  { preset: "open-weight", label: "fireworks", envKeys: ["FIREWORKS_API_KEY"], authKeys: ["fireworks"] },
-  {
-    preset: "openrouter",
-    label: "openrouter",
-    envKeys: ["OPENROUTER_API_KEY"],
-    authKeys: ["openrouter"],
-  },
-  { preset: "deepseek", label: "deepseek", envKeys: ["DEEPSEEK_API_KEY"], authKeys: ["deepseek"] },
-  {
-    preset: "google",
-    label: "google",
-    envKeys: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    authKeys: ["google", "google-gemini-cli", "gemini"],
-  },
-  { preset: "anthropic", label: "anthropic", envKeys: ["ANTHROPIC_API_KEY"], authKeys: ["anthropic"] },
-  { preset: "openai-codex", label: "openai-codex", envKeys: [], authKeys: ["openai-codex"] },
-  {
-    preset: "openai",
-    label: "openai",
-    envKeys: ["OPENAI_API_KEY"],
-    authKeys: ["openai"],
-  },
-];
+const providerOrder = [
+  "open-weight",
+  "openrouter",
+  "deepseek",
+  "google",
+  "anthropic",
+  "openai-codex",
+  "openai",
+] as const;
+const tiers = ["fast", "work", "strong"] as const;
+export interface ProviderCatalog {
+  providers: Record<string, { configured: boolean; source?: string }>;
+  models: Record<string, string[]>;
+}
 
-function readAuthProviderKeys(env: NodeJS.ProcessEnv): Set<string> {
-  const keys = new Set<string>();
-  const file = join(agentDir(env), "auth.json");
-  if (!existsSync(file)) return keys;
+/** Run the probe inside the user's Pi so npm-managed and standalone installs use the same registry as /login. */
+export function loadProviderCatalog(extraModels: string[] = []): ProviderCatalog {
+  const specs = [
+    ...new Set([...Object.values(PROVIDER_PRESETS).flatMap((preset) => Object.values(preset.models)), ...extraModels]),
+  ];
+  const result = spawnSync(
+    "pi",
+    [
+      "--offline",
+      "--mode",
+      "rpc",
+      "--no-session",
+      "--no-approve",
+      "--no-extensions",
+      "-e",
+      "./provider-catalog-probe.ts",
+    ],
+    {
+      cwd: fileURLToPath(new URL("../../src/products/", import.meta.url)),
+      env: {
+        ...process.env,
+        PI_CODING_AGENT_DIR: resolve(agentDir(process.env)),
+        PI_DADDY_CATALOG_REQUEST: JSON.stringify(specs),
+      },
+      encoding: "utf8",
+      shell: process.platform === "win32",
+      timeout: 30000,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  const prefix = "PI_DADDY_CATALOG ";
+  // Pi RPC can redirect extension output to stderr. Consume only our metadata record.
+  const output = [result.stdout, result.stderr].join("\n");
+  const line = output.split(/\r?\n/).find((row) => row.startsWith(prefix));
+  if (result.status !== 0 || !line)
+    throw new Error("Could not read Pi's provider catalog. Check `pi --version` and `/login`.");
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return keys;
-    for (const [key, value] of Object.entries(parsed)) {
-      if (value !== null && value !== undefined && value !== "") keys.add(key.toLowerCase());
-    }
+    const catalog = JSON.parse(line.slice(prefix.length));
+    if (catalog?.providers && catalog?.models) return catalog;
   } catch {
-    /* Treat unreadable auth.json as no detected providers. */
+    // Raw diagnostic streams can include unrelated local output.
   }
-  return keys;
+  throw new Error("Pi returned an unreadable provider catalog.");
 }
 
-export interface DetectedProvider {
-  readonly preset: Exclude<ProviderPresetName, "session">;
-  readonly label: string;
-  readonly source: "env" | "auth.json";
-}
-
-export function detectConfiguredProviders(env: NodeJS.ProcessEnv = process.env): DetectedProvider[] {
-  const authKeys = readAuthProviderKeys(env);
-  const found: DetectedProvider[] = [];
-  for (const probe of PROVIDER_PROBES) {
-    if (probe.envKeys.some((k) => Boolean(env[k]?.trim()))) {
-      found.push({ preset: probe.preset, label: probe.label, source: "env" });
-    } else if (probe.authKeys.some((k) => authKeys.has(k))) {
-      found.push({ preset: probe.preset, label: probe.label, source: "auth.json" });
+export function buildAutoPreset(catalog: ProviderCatalog) {
+  const detected: { preset: ProviderPresetName; label: string; source: string; models: EcosystemModelsConfig }[] = [];
+  const diagnostics: string[] = [];
+  for (const preset of providerOrder) {
+    const provider = preset === "open-weight" ? "fireworks" : preset;
+    const status = catalog.providers[provider];
+    if (!status) continue;
+    if (!status.configured) {
+      if (status.source === "stored")
+        diagnostics.push(provider + ": stored credential did not resolve to available chat models");
+      continue;
     }
+    const preferred = PROVIDER_PRESETS[preset].models;
+    const models: EcosystemModelsConfig = {};
+    for (const tier of tiers) {
+      const options = [preferred[tier], ...Object.values(preferred)];
+      for (const spec of options) {
+        if (!spec) continue;
+        const efforts = catalog.models[spec] ?? [];
+        if (!efforts.length || (tier === "fast" && !efforts.includes("off"))) continue;
+        models[tier] = spec;
+        break;
+      }
+      if (!models[tier])
+        diagnostics.push(
+          provider + ": no available preset model for " + tier + (tier === "fast" ? " with thinking off" : ""),
+        );
+    }
+    if (Object.keys(models).length) detected.push({ preset, label: provider, source: status.source ?? "Pi", models });
   }
-  return found;
-}
-
-export function buildAutoPreset(env: NodeJS.ProcessEnv = process.env): {
-  preset: ProviderPresetName;
-  detected: DetectedProvider[];
-  fallbacks: EcosystemModelFallbacks;
-} {
-  const detected = detectConfiguredProviders(env);
-  if (detected.length === 0) {
-    return { preset: "session", detected, fallbacks: {} };
-  }
-  const [primary, ...secondary] = detected;
+  const primary = detected[0];
   const fallbacks: EcosystemModelFallbacks = {};
-  for (const tier of ["fast", "work", "strong"] as const) {
-    const chain = secondary
-      .map((item) => PROVIDER_PRESETS[item.preset].models[tier])
-      .filter((m): m is string => Boolean(m));
-    chain.push("session");
-    fallbacks[tier] = [...new Set(chain)];
+  const models: EcosystemModelsConfig = {};
+  for (const tier of tiers) {
+    const candidates = [...new Set(detected.flatMap((entry) => (entry.models[tier] ? [entry.models[tier]!] : [])))];
+    const first = candidates.shift();
+    if (first) models[tier] = first;
+    if (primary) fallbacks[tier] = [...candidates, "session"];
   }
-  return { preset: primary.preset, detected, fallbacks };
+  return { preset: primary?.preset ?? "session", models, detected, fallbacks, diagnostics };
 }
