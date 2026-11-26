@@ -23,6 +23,14 @@ import { recordLines } from "../test/record-fixtures.ts";
 
 // ADR-0076 PR 3d: ledger files are record envelopes; these fixtures still describe the bodies.
 const rawLines = (...json: string[]) => recordLines(...json.map((j) => JSON.parse(j) as unknown));
+const v3Decision = (n: number) => ({
+  ledgerVersion: 3,
+  event: "capability_decision",
+  executionId: `exec:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+  parentExecutionId: null,
+  executor: "process",
+  taskDigest: "a".repeat(64),
+});
 
 after(cleanupTempDirs);
 
@@ -208,6 +216,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
       // fails to parse is indistinguishable from a spawn that never happened. Its bytes stay private.
       recordLines(
         {
+          ...v3Decision(1),
           ts: new Date().toISOString(),
           parentId: "d0",
           childId: "d0.1",
@@ -265,20 +274,28 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     await writeFile(
       ledger,
       rawLines(
-        // A mixed record — two capabilities, two sources — plus a legacy line that must not be believed.
+        // A mixed record — two capabilities, two sources — plus an unattributed record without approvalSources.
         JSON.stringify({
+          ...v3Decision(10),
           ...base,
           childId: "d0.1",
           approved: ["tool:bash", "tool:write"],
           approvalSources: { "tool:bash": "persisted", "tool:write": "prompt" },
         }),
         JSON.stringify({
+          ...v3Decision(11),
           ...base,
           childId: "d0.2",
           approved: ["tool:bash"],
           approvalSources: { "tool:bash": "persisted" },
         }),
-        JSON.stringify({ ...base, childId: "d0.3", approved: ["tool:bash"], approvalSource: "prompt" }),
+        JSON.stringify({
+          ...v3Decision(12),
+          ...base,
+          childId: "d0.3",
+          approved: ["tool:bash"],
+          approvalSource: "prompt",
+        }),
       ),
       "utf8",
     );
@@ -313,8 +330,10 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     const cwd = await projectOnce();
     const dir = await tempDir("grants-it-digest-");
     const ledger = join(dir, "ledger.jsonl");
+    let seq = 20;
     const line = (sha: string, childId: string) =>
       JSON.stringify({
+        ...v3Decision(++seq),
         ts: new Date().toISOString(),
         parentId: "d0",
         childId,
@@ -471,9 +490,9 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     await writeFile(
       ledger,
       rawLines(
-        JSON.stringify({ ...base, childId: "d0.1", agentType: "deploy" }),
-        JSON.stringify({ ...base, childId: "d0.2", agentType: "deploy" }),
-        JSON.stringify({ ...base, childId: "d0.3", agentType: "deploy" }),
+        JSON.stringify({ ...v3Decision(30), ...base, childId: "d0.1", agentType: "deploy" }),
+        JSON.stringify({ ...v3Decision(31), ...base, childId: "d0.2", agentType: "deploy" }),
+        JSON.stringify({ ...v3Decision(32), ...base, childId: "d0.3", agentType: "deploy" }),
       ),
       "utf8",
     );
@@ -715,6 +734,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     await writeFile(
       ledger,
       recordLines({
+        ...v3Decision(40),
         ts: new Date().toISOString(),
         parentId: "d0",
         childId: "d0.1",
