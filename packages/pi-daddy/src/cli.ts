@@ -50,6 +50,9 @@ Usage:
                   [--group-by definition|model|thinking] [--json]
   pi-daddy outcomes                       append changed episode outcomes from Git and CI
   pi-daddy diagnostics export <selection.json> <new-directory>  private filtered local evidence
+  pi-daddy setup [--preset <name>] [--pinned | --skip-install]
+  pi-daddy doctor
+  pi-daddy panel [<url>]
   pi-daddy --help | --version
 
 init references skills already enabled in Pi at their installed or local paths. Legacy unregistered npm
@@ -76,6 +79,7 @@ export interface ParsedArgs {
   panelUrl?: string;
   preset?: string;
   skipInstall?: boolean;
+  pinned?: boolean;
   importTarget?: string;
   selectionPath?: string;
   exportDirectory?: string;
@@ -124,12 +128,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (command === "setup") {
     let preset: string | undefined;
     let skipInstall = false;
+    let pinned = false;
     for (let i = 0; i < tail.length; i++) {
-      if (tail[i] === "--preset" && tail[i + 1]) preset = tail[++i];
+      if (tail[i] === "--preset" && tail[i + 1] && !tail[i + 1].startsWith("--")) preset = tail[++i];
       else if (tail[i] === "--skip-install") skipInstall = true;
+      else if (tail[i] === "--pinned") pinned = true;
       else return { command: "help", force: false, errors: [`unknown setup option: ${tail[i]}`] };
     }
-    return { command: "setup", force: false, errors: [], preset, skipInstall };
+    if (pinned && skipInstall) {
+      return { command: "setup", force: false, errors: ["--pinned and --skip-install are mutually exclusive"] };
+    }
+    return { command: "setup", force: false, errors: [], preset, skipInstall, ...(pinned ? { pinned } : {}) };
   }
   if (command === "diagnostics") {
     const [verb, selectionPath, exportDirectory, ...extra] = tail;
@@ -446,7 +455,7 @@ export async function main(
   }
   if (parsed.command === "setup") {
     const { runEcosystemSetup } = await import("./products/setup-doctor.ts");
-    return runEcosystemSetup({ preset: parsed.preset, skipInstall: parsed.skipInstall });
+    return runEcosystemSetup({ preset: parsed.preset, skipInstall: parsed.skipInstall, pinned: parsed.pinned });
   }
   if (parsed.command === "doctor") {
     const { runEcosystemDoctor } = await import("./products/setup-doctor.ts");

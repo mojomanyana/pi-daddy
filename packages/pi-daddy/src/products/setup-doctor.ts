@@ -4,6 +4,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   ecosystemConfigPath,
   readEcosystemConfig,
@@ -14,6 +15,7 @@ import {
 } from "../kernel/ecosystem-config.ts";
 import release from "./ecosystem-release.json" with { type: "json" };
 import { compareStableVersions } from "../kernel/stable-version.ts";
+import { agentDir, piProjectDir } from "../kernel/project-paths.ts";
 import {
   buildAutoPreset,
   detectConfiguredProviders,
@@ -105,7 +107,7 @@ function checkPi() {
   };
 }
 
-export function runEcosystemSetup(options: { preset?: string; skipInstall?: boolean } = {}): number {
+export function runEcosystemSetup(options: { preset?: string; skipInstall?: boolean; pinned?: boolean } = {}): number {
   const { preset } = options;
   if (preset !== undefined && !validPresetOption(preset)) {
     const choices = ["auto", ...Object.keys(PROVIDER_PRESETS)].join(", ");
@@ -130,12 +132,16 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
       console.error(`pi-daddy setup: ${piCheck.output}. Install or update @earendil-works/pi-coding-agent.`);
       return 1;
     }
-    // src/products and dist/products are both two directories below the launcher's installed package.
-    const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
-    const pins: Record<string, string> = { ...release.publicVersions, "pi-daddy": version };
+    let pins: Record<string, string> | undefined;
+    if (options.pinned) {
+      // The snapshot uses the invoking release's Daddy paired with the tested companion versions.
+      const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+      pins = { ...release.publicVersions, "pi-daddy": version };
+    }
     for (const name of release.normalCliInstalls) {
-      const pkg = `npm:${name}@${pins[name]}`;
+      const pkg = pins ? `npm:${name}@${pins[name]}` : `npm:${name}`;
       console.log(`  installing ${pkg}...`);
+      // Pi updates existing declarations by package identity, preserving any resource filters.
       const res = spawnSync("pi", ["install", pkg], {
         stdio: "inherit",
         shell: process.platform === "win32",
@@ -170,9 +176,34 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
   console.log(
     options.skipInstall
       ? "Preset settings saved. Package installation skipped."
-      : "\nSetup complete! Start `pi` in any git repo and run `/dashboard split` or `pi-daddy panel`.",
+      : "\nSetup complete! Start `pi` and run `/dashboard split` or `/dashboard open`.",
   );
+  if (!options.skipInstall) {
+    console.log(
+      options.pinned
+        ? "Installed the pinned snapshot. Run setup without --pinned to enable extension updates."
+        : "Update the ecosystem with `pi update --extensions`.",
+    );
+  }
   return 0;
+}
+
+function reportPackagePins(path: string, local: boolean): void {
+  let settings: { packages?: Array<string | { source?: string }> };
+  try {
+    settings = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.log(`  ? Cannot read ${path}: ${String(error)}`);
+    return;
+  }
+  if (!Array.isArray(settings?.packages)) return;
+  for (const entry of settings.packages) {
+    const source = typeof entry === "string" ? entry : entry?.source;
+    const match = typeof source === "string" ? /^npm:([^@]+)@(\d+\.\d+\.\d+(?:[-+][\w.+-]+)?)$/.exec(source) : null;
+    if (!match || !release.normalCliInstalls.includes(match[1])) continue;
+    const unpinned = `pi install ${local ? "--local " : ""}npm:${match[1]}`;
+    console.log(`  ! Pinned source ${source} in ${path}. To track updates, run \`${unpinned}\`.`);
+  }
 }
 
 export function runEcosystemDoctor(): number {
@@ -193,7 +224,7 @@ export function runEcosystemDoctor(): number {
     if (!c.ok && !c.optional) failed = true;
     console.log(`  ${mark} ${c.name.padEnd(36)} ${c.output || c.detail || "not found"}`);
   }
-  console.log(`  ✓ ${"Terminal auto-split support".padEnd(36)} ${splitters.join(", ") || "manual (`pi-daddy panel`)"}`);
+  console.log(`  ✓ ${"Terminal auto-split support".padEnd(36)} ${splitters.join(", ") || "use /dashboard open in Pi"}`);
   console.log(
     `  ${providers.length ? "✓" : "○"} ${"Detected model providers".padEnd(36)} ${
       providers.map((p) => `${p.label} (${p.source})`).join(", ") || "none detected (using session model)"
@@ -209,5 +240,7 @@ export function runEcosystemDoctor(): number {
     console.log(`  ✗ ${"Ecosystem config".padEnd(36)} ${String(error)}`);
     failed = true;
   }
+  reportPackagePins(join(agentDir(), "settings.json"), false);
+  reportPackagePins(join(piProjectDir(process.cwd()), "settings.json"), true);
   return failed ? 1 : 0;
 }

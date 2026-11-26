@@ -50,7 +50,7 @@ function fixture(t: TestContext) {
   const output: string[] = [];
   t.mock.method(console, "log", (message: string) => output.push(message));
   t.mock.method(console, "error", (message: string) => output.push(message));
-  return { file: join(root, "ecosystem.json"), calls, output };
+  return { file: join(root, "ecosystem.json"), settings: join(root, "settings.json"), calls, output };
 }
 
 test("malformed config survives setup, skip-install and panel writes byte for byte", (t) => {
@@ -119,7 +119,17 @@ test("an interrupted package update leaves existing settings intact and can be r
   assert.equal(readFileSync(calls, "utf8").trim().split(/\r?\n/).length, 1 + release.normalCliInstalls.length);
 });
 
-test("fresh setup uses this launcher for Daddy and the tested release pins for all companions", (t) => {
+test("normal setup uses the updateable Pi sources for every package", (t) => {
+  const { calls, output } = fixture(t);
+  assert.equal(runEcosystemSetup(), 0);
+  assert.deepEqual(
+    readFileSync(calls, "utf8").trim().split(/\r?\n/),
+    release.normalCliInstalls.map((name) => `install npm:${name}`),
+  );
+  assert.ok(output.some((line) => line.includes("pi update --extensions")));
+});
+
+test("pinned setup uses this launcher for Daddy and tested release pins for all companions", (t) => {
   const { calls } = fixture(t);
   const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const previous = release.publicVersions["pi-daddy"];
@@ -127,12 +137,32 @@ test("fresh setup uses this launcher for Daddy and the tested release pins for a
   t.after(() => {
     release.publicVersions["pi-daddy"] = previous;
   });
-  assert.equal(runEcosystemSetup(), 0);
+  assert.equal(runEcosystemSetup({ pinned: true }), 0);
   const expected: Record<string, string> = { ...release.publicVersions, "pi-daddy": version };
   assert.deepEqual(
     readFileSync(calls, "utf8").trim().split(/\r?\n/),
     release.normalCliInstalls.map((name) => `install npm:${name}@${expected[name]}`),
   );
+});
+
+test("doctor reports exact ecosystem pins alongside their migration commands", (t) => {
+  const { settings, output } = fixture(t);
+  writeFileSync(
+    settings,
+    JSON.stringify({
+      packages: [
+        { source: "npm:pi-daddy@1.0.2", extensions: [] },
+        "npm:pi-bookie",
+        "npm:skill-harness@^1.0.1",
+        "npm:unrelated@1.0.2",
+      ],
+    }),
+  );
+  runEcosystemDoctor();
+  const pins = output.filter((line) => line.includes("Pinned source"));
+  assert.equal(pins.length, 1);
+  assert.ok(pins[0].includes(settings));
+  assert.match(pins[0], /pi-daddy@1\.0\.2.*pi install npm:pi-daddy/);
 });
 
 test("explicit preset changes update managed tiers and preserve deliberate per-tier and boolean overrides", (t) => {

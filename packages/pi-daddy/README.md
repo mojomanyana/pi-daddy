@@ -12,8 +12,8 @@ This file is the product description, present tense. If code and this file disag
 
 ## Highlights
 
-- **One-command setup & diagnostics:** `pi-daddy setup [--preset auto|open-weight|google|openrouter|deepseek|anthropic|openai-codex|openai|session]` installs all 5 ecosystem packages and writes `~/.pi/agent/ecosystem.json` (with optional ordered `modelFallbacks` chains); `pi-daddy doctor` checks Node, `pi`, `git`, Docker, detected providers, terminal split support, and config.
-- **5-Tab Terminal & Web Side-Panel Dashboard:** run `/dashboard split` inside Pi (auto-splits tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, or Windows Terminal, falling back cleanly to the URL on spawn/launch failure) or bare `pi-daddy panel` in a second pane (auto-attaches via per-project locator).
+- **One-command setup & diagnostics:** `npx --yes pi-daddy@latest setup --preset auto` installs updateable Pi sources and writes `~/.pi/agent/ecosystem.json`. Use `pi update --extensions` for later updates and `npx --yes pi-daddy@latest doctor` to check runtime requirements and package pins. Install Daddy on its own with `pi install npm:pi-daddy`.
+- **5-Tab Terminal & Web Side-Panel Dashboard:** `/dashboard split` launches the CLI bundled with the loaded extension. Use `/dashboard open` for the browser view or `/dashboard` for the URL and the command for a second terminal.
 - **Cross-OS `delegate` (`portable-child.ts` + `inprocess-readonly.ts`):** native sub-agent execution on macOS, Windows, and Linux x64, plus sub-150ms in-process `quick_review`.
 - **Parallel Worktree Tournaments (`delegate_tournament`), Smart Auto-Escalation & 2-Stage Classifier Auto-Harvesting:** parallel isolated git-worktree candidates with cold-judge selection, 1-shot strong-model rescue on `principal:thrash-detected:v1` or manual `[x]`, and fail-closed 2-stage fast-LLM session harvesting into `~/.pi/agent/pi-daddy/harvested-evals/<repo>/` (`[h]` hotkey).
 - **`principal-pi-skills@6.x` binding:** validates both v6 3-phase (`build`, `review`, `debug`) and legacy v5 manifests in `principal-agents.json`.
@@ -200,7 +200,7 @@ pi
 Open Pi and start your task. An interactive parent discovers the agents Pi has selected and restores the
 project's saved permissions automatically. Additional agents supplied by extensions become available before
 the first task. In a fresh project the session uses its observed tools and the existing permission gates.
-Run `/dashboard split` or `pi-daddy panel` from a second terminal pane to open the 5-tab side panel alongside Pi.
+Run `/dashboard split` in Pi to open the 5-tab side panel. Run `/dashboard` for the browser URL and the command for a second terminal.
 
 Use `/grants` to inspect access. To explicitly save a different project ceiling and enable the project governance
 ledger, use `/grants init`. It also creates the review copy at `.pi/pi-daddy/settings.json` and stores the enforced
@@ -719,6 +719,9 @@ advisor call or training pipeline is installed. Dataset consent, supported train
 separate qualification.
 
 ## Command-line reference
+
+Use `npx --yes pi-daddy@latest <command>` for standalone commands. For the ledger viewer,
+use `npx --yes --package pi-daddy@latest -- pi-daddy-dashboard`.
 
 ```text
 pi-daddy init [--force] [--dir <path>]

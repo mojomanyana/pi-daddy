@@ -96,7 +96,7 @@ test("a newer launcher alone is informational and can be explicitly qualified", 
   const before = snapshot();
   const check = run("--check-latest", registry);
   assert.equal(check.status, 0, check.stderr);
-  assert.match(check.stdout, /launcher-matched Daddy 1\.0\.3.*reproduction uses 1\.0\.2.*--refresh/);
+  assert.match(check.stdout, /reproduction uses pi-daddy 1\.0\.2.*--refresh to qualify 1\.0\.3/);
   assert.deepEqual(snapshot(), before);
   const refresh = run("--refresh", registry);
   assert.equal(refresh.status, 0, refresh.stderr);

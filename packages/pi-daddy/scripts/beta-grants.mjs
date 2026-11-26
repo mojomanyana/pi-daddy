@@ -1,8 +1,10 @@
 // A successful `pi install` does not mean the installed Daddy can bind the installed Principal agents.
 // Exercise the public slash command in the fresh beta profile. An approval gate is not a missing role.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createAgentSession, RpcClient, SessionManager } from "@earendil-works/pi-coding-agent";
 import release from "../src/products/ecosystem-release.json" with { type: "json" };
 
@@ -10,8 +12,27 @@ const profile = process.env.PI_CODING_AGENT_DIR;
 assert.ok(profile, "Point PI_CODING_AGENT_DIR at the fresh setup profile");
 const configured = JSON.parse(readFileSync(join(profile, "settings.json"), "utf8")).packages;
 const expectedVersions = { ...release.publicVersions };
-if (process.argv[3]) expectedVersions["pi-daddy"] = process.argv[3];
-assert.deepEqual(configured.toSorted(), Object.entries(expectedVersions).map(([n, v]) => `npm:${n}@${v}`).sort());
+const candidateVersion = process.argv[3];
+if (candidateVersion) expectedVersions["pi-daddy"] = candidateVersion;
+const sources = configured.map((entry) => typeof entry === "string" ? entry : entry.source);
+assert.deepEqual(sources.toSorted(), Object.entries(expectedVersions)
+  .map(([name, version]) => candidateVersion ? `npm:${name}` : `npm:${name}@${version}`).sort());
+for (const [name, expected] of Object.entries(expectedVersions)) {
+  const manifest = JSON.parse(readFileSync(join(profile, "npm", "node_modules", name, "package.json"), "utf8"));
+  assert.equal(manifest.version, expected, `Installed version of ${name}`);
+}
+if (candidateVersion) {
+  const root = join(profile, "npm", "node_modules", "pi-daddy");
+  const { planTerminalSplit } = await import(pathToFileURL(join(root, "dist", "products", "terminal-split.js")).href);
+  const url = "http://127.0.0.1:45720/?token=fixture";
+  const split = planTerminalSplit(url, { PATH: "", TMUX: "fixture" }, "linux");
+  assert.ok(split, "tmux must have an installed panel launch plan");
+  assert.deepEqual(split.args.slice(4), [process.execPath, join(root, "dist", "cli.js"), "panel", url]);
+  const [node, cli] = split.args.slice(4);
+  const panelCli = spawnSync(node, [cli, "--version"], { encoding: "utf8", env: { ...process.env, PATH: "" } });
+  assert.equal(panelCli.status, 0, panelCli.stderr);
+  assert.equal(panelCli.stdout.trim(), expectedVersions["pi-daddy"]);
+}
 
 const phases = ["build", "review", "debug"];
 const client = new RpcClient({ cliPath: process.argv[2], args: ["--offline", "--no-session", "--no-approve"] });

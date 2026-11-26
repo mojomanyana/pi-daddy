@@ -207,6 +207,11 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
+**2026-11-26 - Pi owns ecosystem installation and updates.** Normal setup registers unversioned npm
+sources through Pi and keeps existing package filters. Setup is a convenience for installing the full
+ecosystem and choosing a preset. Exact versions are used for the reproducible snapshot. Dashboard
+splits start the CLI shipped with the loaded Daddy extension through the current Node executable.
+
 **2026-11-21 — Principal’s delivery status is a current task observation.** Principal owns required outcomes,
 evidence and the user handoff. Daddy binds the report to the same owner and matching Bookie selection when
 present. Native tool activity joins by the Pi turn captured at publication. Turn settlement, a reported handoff
