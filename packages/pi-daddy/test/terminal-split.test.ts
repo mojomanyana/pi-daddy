@@ -1,5 +1,6 @@
 /** Unit tests for Bucket 2B & Issue #4: cross-OS terminal split planning & non-crashing failure handling. */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -71,13 +72,64 @@ test("planTerminalSplit covers WezTerm, macOS iTerm2, Windows Terminal, and retu
     args: ["-w", "0", "sp", "-V", "-s", "0.38", ...panel],
     windowsHide: true,
   });
-  assert.deepEqual(planTerminalSplit(URL, { WT_SESSION: "guid-1", WSL_DISTRO_NAME: "Test Ubuntu" }, "linux"), {
-    kind: "wt",
-    command: "wt.exe",
-    args: ["-w", "0", "sp", "-V", "-s", "0.38", "wsl.exe", "--distribution", "Test Ubuntu", "--exec", ...panel],
-  });
+  const wsl = planTerminalSplit(URL, { WT_SESSION: "guid-1", WSL_DISTRO_NAME: "Test Ubuntu" }, "linux")!;
+  assert.equal(wsl.kind, "wt");
+  assert.equal(wsl.command, "powershell.exe");
+  assert.equal(wsl.waitForExit, true);
+  assert.deepEqual(wsl.args.slice(0, -1), ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+  const script = Buffer.from(wsl.args.at(-1)!, "base64").toString("utf16le");
+  assert.match(script, /& wt\.exe @terminalArgs; exit \$LASTEXITCODE/);
+  const data = script.match(/FromBase64String\('([^']+)'\)/)![1];
+  assert.deepEqual(JSON.parse(Buffer.from(data, "base64").toString("utf8")).argv, [
+    "-w",
+    "0",
+    "sp",
+    "-V",
+    "-s",
+    "0.38",
+    "wsl.exe",
+    "--distribution",
+    "Test Ubuntu",
+    "--exec",
+    ...panel,
+  ]);
   assert.equal(planTerminalSplit(URL, {}, "linux"), undefined);
 });
+
+test(
+  "the Windows PowerShell bridge forwards a flat argv without evaluating it",
+  { skip: process.platform !== "win32" },
+  () => {
+    const distro = "Test Ubuntu’s shell; $literal";
+    const plan = planTerminalSplit(URL, { WT_SESSION: "fixture", WSL_DISTRO_NAME: distro }, "linux")!;
+    const script = Buffer.from(plan.args.at(-1)!, "base64").toString("utf16le");
+    const probe =
+      "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " +
+      "function wt.exe { ConvertTo-Json -Compress -InputObject @($args); $global:LASTEXITCODE = 0 }; ";
+    const encoded = Buffer.from(probe + script, "utf16le").toString("base64");
+    const systemRoot = process.env.SystemRoot ?? "C:/Windows";
+    const powershell = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const result = spawnSync(powershell, [...plan.args.slice(0, -1), encoded], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 10_000,
+    });
+    assert.equal(result.status, 0, result.error?.message ?? result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout.trim()), [
+      "-w",
+      "0",
+      "sp",
+      "-V",
+      "-s",
+      "0.38",
+      "wsl.exe",
+      "--distribution",
+      distro,
+      "--exec",
+      ...panel,
+    ]);
+  },
+);
 
 test("detectSupportedSplitters reports Kitty and Ghostty alongside tmux, WezTerm, iTerm2, and wt", () => {
   const found = detectSupportedSplitters((cmd) => cmd === "kitty" || cmd === "ghostty" || cmd === "tmux", {}, "darwin");
