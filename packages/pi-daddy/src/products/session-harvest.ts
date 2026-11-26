@@ -57,7 +57,7 @@ export function hasHarvestSignal(s: TurnHarvestSignals): boolean {
 }
 
 const QUOTED_SECRET_KEY_VALUE =
-  /((["'])[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|auth|credential)[A-Za-z0-9_.-]*\2\s*:\s*)(?:"[^"\r\n]+"|'[^'\r\n]+')/gi;
+  /((["'])[A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|auth|credential)[A-Za-z0-9_.-]*\2\s*:\s*)(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*')/gi;
 
 export function redactHarvestText(input: string): string {
   return input
@@ -68,7 +68,7 @@ export function redactHarvestText(input: string): string {
     .replace(/\b(Basic\s+)[A-Za-z0-9+/=]{12,}/gi, "$1[REDACTED_TOKEN]")
     .replace(/([a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)([^/\s@]+)(@)/gi, "$1[REDACTED]$3")
     .replace(
-      /\b([A-Z0-9_]*(?:API[_-]?KEY|ACCESS[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH)[A-Z0-9_]*)\s*([:=])\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s"'`;]+)/gi,
+      /\b([A-Z0-9_]*(?:API[_-]?KEY|ACCESS[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|CREDENTIAL)[A-Z0-9_]*)\s*([:=])\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s"'`;,}\]]+)/gi,
       "$1$2[REDACTED]",
     );
 }
@@ -168,17 +168,26 @@ export async function classifyHarvestCandidate(input: {
   const picked = selectRegistryModel(input.registry, candidates, input.fallbackModel);
   if (!picked.model || typeof input.registry?.streamSimple !== "function") return skip("classifier-unavailable");
 
-  const digest = redactHarvestText(
-    [
-      `Prompt: ${input.signals.prompt.slice(0, 800)}`,
-      `Signals: thrash=${input.signals.thrashDetected} escalated=${input.signals.escalated}` +
-        ` blockers=${input.signals.reviewBlockers} steered=${input.signals.userSteered}` +
-        ` toolFailEdit=${input.signals.toolFailedAndEdited}`,
-      `Edited files: ${input.signals.editedFiles.slice(0, 10).join(", ") || "(none)"}`,
-      `Verify cmds: ${input.signals.verifyCommands.slice(0, 5).join(" ; ") || "(none)"}`,
-      `Failure summary: ${input.signals.failureSummary.slice(0, 900) || "(none)"}`,
-    ].join("\n"),
-  );
+  const redactedPrompt = redactHarvestText(input.signals.prompt).slice(0, 800);
+  const redactedEdits = input.signals.editedFiles
+    .slice(0, 10)
+    .map((f) => redactHarvestText(f))
+    .join(", ");
+  const redactedVerify = input.signals.verifyCommands
+    .slice(0, 5)
+    .map((c) => redactHarvestText(c))
+    .join(" ; ");
+  const redactedFailure = redactHarvestText(input.signals.failureSummary).slice(0, 900);
+
+  const digest = [
+    `Prompt: ${redactedPrompt}`,
+    `Signals: thrash=${input.signals.thrashDetected} escalated=${input.signals.escalated}` +
+      ` blockers=${input.signals.reviewBlockers} steered=${input.signals.userSteered}` +
+      ` toolFailEdit=${input.signals.toolFailedAndEdited}`,
+    `Edited files: ${redactedEdits || "(none)"}`,
+    `Verify cmds: ${redactedVerify || "(none)"}`,
+    `Failure summary: ${redactedFailure || "(none)"}`,
+  ].join("\n");
 
   const instruction = [
     "You triage completed coding-agent turns for a regression benchmark suite (`skill-harness`).",
@@ -440,14 +449,14 @@ export function createTurnHarvestTracker() {
     },
     markThrash(detail: string) {
       thrashDetected = true;
-      failureSummary = detail.slice(0, 400);
+      failureSummary = redactHarvestText(detail).slice(0, 400);
     },
     markEscalated() {
       escalated = true;
     },
     markReviewBlocker(feedback?: string) {
       reviewBlockers++;
-      if (feedback) failureSummary = feedback.slice(0, 400);
+      if (feedback) failureSummary = redactHarvestText(feedback).slice(0, 400);
     },
     markUserSteer() {
       userSteered = true;

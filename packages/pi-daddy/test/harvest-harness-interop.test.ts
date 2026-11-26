@@ -1,5 +1,6 @@
 /** Cross-package Daddy -> real Harness harvest interop test (runs when sibling skill-harness checkout is built). */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -39,16 +40,19 @@ test(
     const env: NodeJS.ProcessEnv = { ...process.env, PI_CODING_AGENT_DIR: agent };
 
     const quotedSecret = "synthetic-review-value";
+    const escapedHead = "synthetic-escaped-head";
+    const escapedTail = "synthetic-escaped-tail";
+    const escapedJson = `{"token":"${quotedSecret}","password":"${escapedHead}\\"${escapedTail}"}`;
     const turn1: TurnHarvestSignals = {
-      prompt: `${dashPrompt} with {"token":"${quotedSecret}"}`,
+      prompt: `${dashPrompt} with ${escapedJson}`,
       thrashDetected: true,
       escalated: false,
       reviewBlockers: 0,
       userSteered: false,
       toolFailedAndEdited: true,
-      failureSummary: `First turn retry defect {"token":"${quotedSecret}"}`,
+      failureSummary: `First turn retry defect ${escapedJson}`,
       editedFiles: ["src/queue.ts"],
-      verifyCommands: [`TOKEN=synthetic-interop-secret-4242 npm test -- queue '{"token":"${quotedSecret}"}'`],
+      verifyCommands: [`TOKEN=synthetic-interop-secret-4242 npm test -- queue '${escapedJson}'`],
     };
     const turn2: TurnHarvestSignals = {
       prompt: dashPrompt,
@@ -85,7 +89,7 @@ test(
                     category: "thrash",
                     confidence: 0.9,
                     scenarioId: maxId,
-                    reason: `Queue bug {"token":"${quotedSecret}"}`,
+                    reason: `Queue bug ${escapedJson}`,
                   }),
                 },
               ],
@@ -95,18 +99,17 @@ test(
       },
     });
     assert.equal(classified.harvest, true);
-    assert.ok(!classifierSeen.includes(quotedSecret), "quoted JSON credential must be absent from classifier request");
-    assert.ok(
-      !classified.reason.includes(quotedSecret),
-      "quoted JSON credential must be absent from classifier reason",
-    );
+    for (const secret of [quotedSecret, escapedHead, escapedTail]) {
+      assert.ok(!classifierSeen.includes(secret), `${secret} must be absent from classifier request`);
+      assert.ok(!classified.reason.includes(secret), `${secret} must be absent from classifier reason`);
+    }
 
-    // 1) Real Harness CLI handoff (plus direct JSON output check)
+    // 1) Real Harness CLI handoff (plus direct raw JSON stdout check with unredacted escaped-quote input)
     const r1 = saveHarvestedEval({
       cwd: repo,
       scenarioId: maxId,
       signals: turn1,
-      reason: `Queue ordering bug {"token":"${quotedSecret}"}`,
+      reason: `Queue ordering bug ${escapedJson}`,
       env,
       outDirOverride: outSpaces,
       cliCommand: process.execPath,
@@ -123,12 +126,30 @@ test(
       cliArgsPrefix: [harnessCliEntry],
     });
 
-    // 2) Built-in writer spec check for the same quoted JSON secret
+    const rawCli = spawnSync(
+      process.execPath,
+      [harnessCliEntry, "harvest", "--turn-json", "-", "--out", outSpaces, "--unique", "--json"],
+      {
+        input: JSON.stringify({
+          scenarioId: "raw-escaped-json-check",
+          prompt: `Fix escaped password ${escapedJson}`,
+          verifyCommands: [`npm test -- '${escapedJson}'`],
+        }),
+        encoding: "utf8",
+        shell: false,
+        env,
+      },
+    );
+    assert.equal(rawCli.status, 0, rawCli.stderr);
+    const rawCliParsed = JSON.parse(rawCli.stdout.trim()) as { specPath: string };
+    assert.ok(existsSync(rawCliParsed.specPath));
+
+    // 2) Built-in writer spec check for the same escaped-quote JSON secret
     const b1 = saveHarvestedEval({
       cwd: repo,
       scenarioId: maxId,
       signals: turn1,
-      reason: `Queue ordering bug {"token":"${quotedSecret}"}`,
+      reason: `Queue ordering bug ${escapedJson}`,
       env,
       outDirOverride: outSpaces,
       preferCli: false,
@@ -142,17 +163,16 @@ test(
     assert.equal(b1.via, "builtin");
     assert.ok(r1.path && r2.path && b1.path && new Set([r1.path, r2.path, b1.path]).size === 3);
     assert.ok(r1.path.includes("harvested evals dir"));
-    assert.ok(!JSON.stringify(r1).includes("synthetic-interop-secret-4242"));
-    assert.ok(!JSON.stringify(r1).includes(quotedSecret), "Harness JSON output must not contain quoted JSON secret");
-    assert.ok(!readFileSync(r1.path, "utf8").includes("synthetic-interop-secret-4242"));
-    assert.ok(
-      !readFileSync(r1.path, "utf8").includes(quotedSecret),
-      "Harness CLI YAML must not contain quoted JSON secret",
-    );
-    assert.ok(
-      !readFileSync(b1.path, "utf8").includes(quotedSecret),
-      "Built-in YAML must not contain quoted JSON secret",
-    );
+    for (const secret of ["synthetic-interop-secret-4242", quotedSecret, escapedHead, escapedTail]) {
+      assert.ok(!JSON.stringify(r1).includes(secret), `Daddy->Harness result must not contain ${secret}`);
+      assert.ok(!rawCli.stdout.includes(secret), `Harness raw JSON stdout must not contain ${secret}`);
+      assert.ok(!readFileSync(r1.path, "utf8").includes(secret), `Harness CLI YAML must not contain ${secret}`);
+      assert.ok(
+        !readFileSync(rawCliParsed.specPath, "utf8").includes(secret),
+        `Direct Harness CLI YAML must not contain ${secret}`,
+      );
+      assert.ok(!readFileSync(b1.path, "utf8").includes(secret), `Built-in YAML must not contain ${secret}`);
+    }
 
     const spec1 = harnessCore.loadSpec(r1.path);
     const spec2 = harnessCore.loadSpec(r2.path);

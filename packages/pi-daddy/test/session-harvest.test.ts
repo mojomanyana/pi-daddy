@@ -246,8 +246,64 @@ test("P2: built-in writer preserves uniqueness suffix for two saves with the sam
   assert.ok(yaml2.includes("vitest run two.test.ts"));
   assert.ok(!yaml2.includes("npm test -- one"));
   assert.ok(!redactHarvestText('{"token":"synthetic-review-value"}').includes("synthetic-review-value"));
+  assert.ok(
+    !redactHarvestText('{"password":"synthetic-esc-head\\"synthetic-esc-tail"}').includes("synthetic-esc-tail"),
+  );
   assert.ok(!redactHarvestText("https://alice:topsecret@example.com/api").includes("topsecret"));
   assert.ok(harvestOutputDir(repo, env).startsWith(agent));
+});
+
+test("P1 cutoff redaction: redacts JSON credentials straddling the 800-char prompt limit and 900-char failure-summary limit", async (t) => {
+  const { env } = tempDirs(t);
+  const fastModel = { provider: "google", id: "gemini-3.5-flash-lite" };
+  let classifierDigest = "";
+  const registry = {
+    find: () => fastModel,
+    hasConfiguredAuth: () => true,
+    streamSimple: (_m: unknown, ctx: { messages: Array<{ content: Array<{ text: string }> }> }) => {
+      classifierDigest = ctx.messages[0].content[0].text;
+      return {
+        result: async () => ({
+          stopReason: "stop",
+          content: [
+            {
+              type: "text",
+              text: '{"harvest":false,"category":"trivial","confidence":0.1,"scenarioId":"noop","reason":"ok"}',
+            },
+          ],
+        }),
+      };
+    },
+  };
+
+  // Place closing quote AFTER char 800 in prompt and AFTER char 900 in failureSummary!
+  const promptWithCutoffSecret =
+    "p".repeat(780) + '{"password":"synthetic-prompt-cutoff-head\\"synthetic-prompt-cutoff-tail"}';
+  const failureWithCutoffSecret =
+    "f".repeat(880) + '{"password":"synthetic-failure-cutoff-head\\"synthetic-failure-cutoff-tail"}';
+  assert.ok(promptWithCutoffSecret.length > 820);
+  assert.ok(failureWithCutoffSecret.length > 920);
+
+  await classifyHarvestCandidate({
+    signals: {
+      ...baseSignals,
+      prompt: promptWithCutoffSecret,
+      failureSummary: failureWithCutoffSecret,
+    },
+    registry,
+    fallbackModel: fastModel,
+    env,
+  });
+
+  assert.ok(classifierDigest.length > 0, "classifier must have been called");
+  for (const fragment of [
+    "synthetic-prompt-cutoff-head",
+    "synthetic-prompt-cutoff-tail",
+    "synthetic-failure-cutoff-head",
+    "synthetic-failure-cutoff-tail",
+  ]) {
+    assert.ok(!classifierDigest.includes(fragment), `cutoff credential fragment ${fragment} leaked to classifier`);
+  }
 });
 
 test("P2: suggest mode saves the exact classified turn A even after turn B starts, then manual harvest saves turn B", async (t) => {
