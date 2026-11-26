@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { compareStableVersions } from "../src/kernel/stable-version.ts";
 import release from "../src/products/ecosystem-release.json" with { type: "json" };
 
 const profile = process.env.PI_CODING_AGENT_DIR;
@@ -39,17 +40,6 @@ setup();
 assert.deepEqual(sources(), expected);
 assert.deepEqual(json(settings).packages.find((p) => p.source === "npm:pi-daddy"), { source: "npm:pi-daddy", ...filters });
 
-// Restore older bytes without changing Pi's managed source. A no-op update cannot pass.
-const previous = "1.1.1";
-assert.notEqual(current, previous);
-execFileSync("npm", ["install", "--no-audit", "--no-fund", "pi-daddy@" + previous], {
-  cwd: managed, stdio: "inherit", shell: process.platform === "win32",
-});
-assert.equal(version(), previous);
-pi("update", "--extensions");
-assert.equal(version(), current);
-assert.deepEqual(sources(), expected);
-
 process.env.PI_OFFLINE = "1";
 const sdkUrl = pathToFileURL(resolve(dirname(cli), "../index.js")).href;
 const sdk = await import(sdkUrl);
@@ -77,6 +67,21 @@ try {
   const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
   assert.ok(response.ok);
   assert.equal((await response.json()).sessionId, next);
+  if (process.env.DADDY_TEST_TMUX === "1") {
+    const tmux = (...args) => execFileSync("tmux", args, { encoding: "utf8" }).trim();
+    const panes = () => tmux("list-panes", "-F", "#{pane_id}").split("\n");
+    const before = new Set(panes());
+    assert.equal(await client.prompt("/dashboard split"), "handled");
+    const deadline = Date.now() + 12000;
+    let rendered = false;
+    do {
+      const fresh = panes().filter((pane) => !before.has(pane));
+      assert.ok(fresh.length <= 1, "Dashboard must open only one new pane");
+      rendered = fresh.length === 1 && tmux("capture-pane", "-p", "-t", fresh[0]).includes("TERMINAL SIDE PANEL");
+      if (!rendered) await new Promise((done) => setTimeout(done, 150));
+    } while (!rendered && Date.now() < deadline);
+    assert.ok(rendered, "The installed dashboard must render inside the new pane");
+  }
   await client.prompt("/dashboard stop");
 } finally {
   await client.stop();
@@ -124,4 +129,17 @@ const { resolveHarnessCliCommand } = await import(pathToFileURL(join(daddy, "dis
 const harness = resolveHarnessCliCommand({ PATH: "", PI_CODING_AGENT_DIR: profile });
 assert.ok(harness, "The installed Daddy must discover Harness with no global CLI");
 execFileSync(harness.cmd, [...harness.argsPrefix, "--help"], { stdio: "pipe" });
+// Restore older bytes without changing Pi's managed source. A no-op update cannot pass.
+const previous = "1.1.2";
+delete process.env.PI_OFFLINE;
+assert.ok(compareStableVersions(current, previous) > 0, "The published release must be newer than the upgrade fixture");
+execFileSync("npm", ["install", "--no-audit", "--no-fund", "pi-daddy@" + previous], {
+  cwd: managed, stdio: "inherit", shell: process.platform === "win32",
+});
+assert.equal(version(), previous);
+pi("update", "--extensions");
+assert.equal(version(), current);
+console.log("Verified pi update --extensions:", previous, "->", current);
+assert.deepEqual(sources(), expected);
+
 console.log("Clean install, migration, update, dashboard and companion checks passed.");
