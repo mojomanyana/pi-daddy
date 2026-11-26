@@ -32,7 +32,6 @@ import {
   projectLedgerPath,
 } from "./kernel/project-paths.ts";
 import { repairLedger } from "./governance/record.ts";
-import { importLegacyLedger } from "./governance/ledger.ts";
 import { commitsForRepo, renderEpisodeReport, reportEpisodes, type EpisodeGroupBy } from "./products/episode-report.ts";
 import { updateEpisodeOutcomes } from "./products/episode-outcomes.ts";
 
@@ -45,7 +44,6 @@ Usage:
   pi-daddy init [--force] [--dir <path>]   prepare ${SETTINGS_REL} from enabled installed
                                            packages that declare skills (package.json "pi": {"skills": …})
   pi-daddy ledger repair <path> [--yes]   show the damaged tail of a ledger; --yes truncates it (ADR-0076)
-  pi-daddy ledger import <source> <target> copy a pre-format ledger into the record format; the source is untouched
   pi-daddy report [--since <date>] [--definition <name>] [--model <id>]
                   [--group-by definition|model|thinking] [--json]
   pi-daddy outcomes                       append changed episode outcomes from Git and CI
@@ -67,7 +65,6 @@ export interface ParsedArgs {
   command:
     | "init"
     | "ledger-repair"
-    | "ledger-import"
     | "report"
     | "outcomes"
     | "diagnostics-export"
@@ -80,7 +77,6 @@ export interface ParsedArgs {
   preset?: string;
   skipInstall?: boolean;
   pinned?: boolean;
-  importTarget?: string;
   selectionPath?: string;
   exportDirectory?: string;
   /** `ledger repair <path>`: the ledger file; `yes` applies, otherwise preview only. */
@@ -154,19 +150,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { command: "diagnostics-export", force: false, errors: [], selectionPath, exportDirectory };
   }
   if (command === "ledger") {
-    // ADR-0076 PR 3d: `ledger repair <path> [--yes]` previews, --yes truncates; `ledger import <source> <target>`.
+    // ADR-0076 PR 3d: `ledger repair <path> [--yes]` previews, --yes truncates.
     const [verb, target, ...flags] = tail;
-    if (verb === "import") {
-      const [source, dest, ...extra] = tail.slice(1);
-      if (!source || !dest || source.startsWith("-") || dest.startsWith("-") || extra.length)
-        return { command: "help", force: false, errors: ["ledger import needs: <source> <target>"] };
-      return { command: "ledger-import", force: false, errors: [], ledgerPath: source, importTarget: dest };
-    }
     if (verb !== "repair" || !target || target.startsWith("-"))
       return {
         command: "help",
         force: false,
-        errors: ["ledger needs: repair <path> [--yes] | import <source> <target>"],
+        errors: ["ledger needs: repair <path> [--yes]"],
       };
     const unknown = flags.filter((f) => f !== "--yes");
     if (unknown.length) return { command: "help", force: false, errors: [`unknown option "${unknown[0]}"`] };
@@ -506,24 +496,6 @@ export async function main(
     console.log(renderEpisodeReport(output, parsed.json === true).trimEnd());
     return 0;
   }
-  if (parsed.command === "ledger-import") {
-    const source = resolvePath(process.cwd(), parsed.ledgerPath!),
-      target = resolvePath(process.cwd(), parsed.importTarget!);
-    const result = await importLegacyLedger(source, target);
-    if (result.skipped === "source-missing") {
-      console.error(`pi-daddy: no such file: ${source}`);
-      return 1;
-    }
-    if (result.skipped === "target-exists") {
-      console.error(`pi-daddy: ${target} already exists; import writes only into a new file`);
-      return 1;
-    }
-    console.log(
-      `pi-daddy: imported ${result.imported} record(s) from ${source} into ${target}; the source is untouched` +
-        (result.stoppedAt !== null ? `. Stopped at unparsable source line ${result.stoppedAt}.` : "."),
-    );
-    return result.stoppedAt === null ? 0 : 1;
-  }
   if (parsed.command === "ledger-repair") {
     const path = resolvePath(process.cwd(), parsed.ledgerPath!);
     const preview = await repairLedger(path, { apply: false });
@@ -534,7 +506,7 @@ export async function main(
     if (preview.preFormat) {
       console.error(
         `pi-daddy: ${path} predates the record format; repairing it would delete it whole. ` +
-          `Run \`pi-daddy ledger import ${path} <target>\` instead. Nothing was changed.`,
+          `Move it aside or use a new record-v1 ledger path instead. Nothing was changed.`,
       );
       return 1;
     }

@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-- Open `/dashboard settings` to select a harvest classifier, retain thresholds by provider and model, and test a synthetic turn. Optional session routing comparisons record the first tool and first eligible Principal delegation for later review.
+- Configure Scout, model tiers, and harvest classifiers in the terminal and browser dashboards. A working classifier can retry the pending harvest in its original session.
+
+## 1.1.4 - 2026-11-26
+
+- Report grant decisions as permission requests in Pi terminals (#176) and verify the published upgrade and bundled dashboard split (#177).
+- Fix `/grants dashboard` returning standalone Side Panel guidance cleanly and remove all remaining Herdr code, test, comment, doc, and CI references (#178).
+- Require Pi `1.6.1+` (`ecosystem-release.json` `piSdk` and `minimumRuntime.pi` now set to `1.6.1`; previously `1.6.0`) and remove pre-envelope/legacy compatibility shims (`pi-daddy ledger import`, pre-0.30 store notices, retired `check_receipt`/`workflow_fact` and v2 ledger fallback parsing, `retired-inputs.ts`, and pre-#139 operation reuse); guard `initializeSessionAutoMode` failure against stale reload owners (#180).
 
 ## 1.1.3 - 2026-11-26
 

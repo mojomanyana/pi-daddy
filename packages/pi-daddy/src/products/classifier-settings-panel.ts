@@ -1,7 +1,8 @@
 export const classifierPanel = `<div class="card" id="classifiers">
   <h2>Decision classifiers</h2>
   <p>Pi finishes your coding turn first. When a turn shows a problem, the classifier scores whether to keep it as a regression example.
-  A score at or above the threshold qualifies. Suggest lets you review it, Auto saves it, and Off skips automatic classification. After an outage, saving a working classifier retries the latest affected turn in this session.</p>
+  A score at or above the threshold qualifies. Suggest lets you review it, Auto saves it, and Off skips automatic classification.
+  After an outage, saving a working classifier retries the latest affected turn in this session.</p>
   <p role="status" hidden id="classifier-recovery">A turn is waiting for a working classifier. Select a model and save to score that turn.</p>
   <button id="load-classifiers" onclick="loadClassifiers()">Open classifier settings</button>
   <div id="classifier-fields" hidden>

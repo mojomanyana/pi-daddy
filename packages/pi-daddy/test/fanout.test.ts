@@ -116,23 +116,23 @@ test("F8: sibling ids are distinct, hierarchical and reproducible", () => {
  * aggregation is now a pure module and these are unit tests of it.
  */
 test("every sibling's infrastructure error survives, not just the first", () => {
-  const first = new Error("herdr writer tab would not close");
+  const first = new Error("writer cleanup failed");
   const second = new Error("workspace lease went stale");
   const outcomes = [childFailureOutcome(first, 1), childFailureOutcome(second, 1)];
 
   assert.doesNotThrow(() => throwFanoutInfrastructure(outcomes, [first, second]));
   assert.equal(outcomes.length, 2);
-  assert.match(outcomes[0].reason!, /herdr writer tab would not close/);
+  assert.match(outcomes[0].reason!, /writer cleanup failed/);
   assert.match(outcomes[1].reason!, /workspace lease went stale/);
   const report = buildFanoutReport(outcomes, [{}, {}]);
   assert.match(report, /child 1 — FAILED/);
   assert.match(report, /child 2 — FAILED/);
-  assert.match(report, /herdr writer tab would not close/);
+  assert.match(report, /writer cleanup failed/);
   assert.match(report, /workspace lease went stale/);
 });
 
 test("a critical-assurance block outranks infrastructure noise without hiding it", () => {
-  const retained = new Error("herdr writer tab would not close — lease retained");
+  const retained = new Error("writer cleanup failed — lease retained");
   const blocked = {
     ok: false,
     text: "BLOCKED_CRITICAL_ASSURANCE gate not satisfied",

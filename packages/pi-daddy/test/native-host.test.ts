@@ -26,7 +26,6 @@ for(const e of [header,{type:'agent_start'},{type:'message_end',message:user},{t
   await chmod(join(bin, "pi"), 0o700);
   const env = {
     PATH: bin,
-    PI_DADDY_HERDR: "0",
     PI_DADDY_GRANT: "tool:delegate",
     PI_DADDY_MAX_DEPTH: "2",
     PI_DADDY_RETAIN_NATIVE_SESSIONS: "1",

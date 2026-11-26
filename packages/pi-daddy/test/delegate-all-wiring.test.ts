@@ -92,13 +92,6 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
   const dir = existingDir ?? (await tempDir("grants-fanout-"));
   for (const k of KEYS) if (!saved.has(k)) saved.set(k, process.env[k]);
   for (const k of KEYS) delete process.env[k];
-  // `PI_DADDY_HERDR=0` by DEFAULT, and this line is load-bearing rather than tidy-up.
-  //
-  // ADR-0031 made an unset variable mean *probe*, and `resolveExecutor` runs inside `session_start` — which
-  // this harness calls. Leaving it unset would run a real `herdr tab list` against whatever is on the
-  // developer's machine, so this suite would select panes here and subprocesses in CI, from the same source.
-  // A test whose outcome depends on which daemons happen to be running is not a test. `0` skips the probe
-  // entirely; a test that wants the other paths overrides it and says why.
   if (durable && !saved.has("PI_CODING_AGENT_DIR")) saved.set("PI_CODING_AGENT_DIR", process.env.PI_CODING_AGENT_DIR);
   Object.assign(process.env, { ...(durable ? { PI_CODING_AGENT_DIR: dir } : {}), ...env });
 
@@ -1236,11 +1229,7 @@ test("ADR-0042: a delegated child inherits a NARROWED destination pin on the spa
   }
 });
 
-test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parses", async () => {
-  // The field is REQUIRED in TypeScript and absent from every line 0.15.0 wrote. A reviewer proved the read path
-  // does not care (`verifyLedger` validates only `Array.isArray(parsed.denied)`) — but nothing pinned it, so a
-  // future `if (!parsed.executor) throw` would silently reclassify every older ledger as corrupt with a green
-  // suite. This is that pin.
+test("a pre-v3 ledger line without ledgerVersion 3 is rejected as corrupt", async () => {
   const dir = await tempDir("grants-legacy-ledger-");
   const ledger = join(dir, "ledger.jsonl");
   const legacy = {
@@ -1260,8 +1249,8 @@ test("ADR-0031: a pre-0.16 ledger line, which has no executor field, still parse
   await writeFile(ledger, recordLines(legacy));
 
   const report = await verifyLedger(ledger);
-  assert.equal(report.ok, true, "a line without `executor` must not read as corrupt");
-  assert.equal(report.records, 1, "and it must still be counted");
+  assert.equal(report.ok, false, "unversioned pre-v3 lines are rejected");
+  assert.equal(report.records, 0);
 });
 
 test("a complete final too large for required handoff blocks only the dependent step", async () => {

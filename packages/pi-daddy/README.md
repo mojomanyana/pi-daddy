@@ -404,8 +404,7 @@ When configured, `.pi/pi-daddy/grants.jsonl` holds capability decisions, child l
 and session configuration, and episode outcomes. Each line is a **record envelope**
 `{v, seq, prev, at, kind, id, body, digest}`: `prev` is the hash of the previous line, `digest` the hash of the record.
 A damaged file is read up to the damage; the writer then refuses with `LEDGER_DAMAGED` until `pi-daddy ledger repair
-<path> --yes` drops the damaged tail. A ledger written before the envelope existed is imported once at session start
-(`pi-daddy ledger import <source> <target>` does it by hand) and never repaired. `/grants ledger` reports records,
+<path> --yes` drops the damaged tail. `/grants ledger` reports records,
 escalation attempts, integrity, executors and which definition bodies ran, by digest.
 
 The activity timeline (`activity.jsonl`, parent turns, child lifecycles, runtime-skill reads) uses the same envelope
@@ -726,7 +725,6 @@ use `npx --yes --package pi-daddy@latest -- pi-daddy-dashboard`.
 ```text
 pi-daddy init [--force] [--dir <path>]
 pi-daddy ledger repair <path> [--yes]
-pi-daddy ledger import <source> <target>
 pi-daddy report [--since <date>] [--definition <name>] [--model <id>]
                 [--group-by definition|model|thinking] [--json]
 pi-daddy outcomes
@@ -764,7 +762,7 @@ npm run typecheck
 npm test
 npm run build --workspace=pi-daddy
 npm run test:integration:ci --workspace=pi-daddy # model-free CI subset
-npm run test:integration --workspace=pi-daddy    # real Pi; Herdr creates and stops only its own named test server
+npm run test:integration --workspace=pi-daddy    # real Pi integration suite (model-free)
 npm run test:smoke --workspace=pi-daddy          # pack, install into a scratch project, import and use it
 PI_DADDY_IT_MODEL=1 npm run test:integration --workspace=pi-daddy # opt-in real-model tier; consumes tokens
 ```

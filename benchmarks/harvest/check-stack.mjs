@@ -11,6 +11,14 @@ const peers = resolve(process.argv[2] ?? join(process.env.PI_CODING_AGENT_DIR ||
 const packages = [join(root,"packages/pi-daddy"),resolve(root,"../pi-harvest-scout"),
   ...["pi-bookie","principal-pi-skills","skill-harness"].map(name=>join(peers,name))];
 for (const path of packages) assert(existsSync(join(path,"package.json")), "Missing package at " + path);
+const version = path => JSON.parse(readFileSync(join(path,"package.json"),"utf8")).version;
+const sdk = version(join(root,"node_modules/@earendil-works/pi-coding-agent"));
+const release = JSON.parse(readFileSync(join(root,"packages/pi-daddy/src/products/ecosystem-release.json"),"utf8"));
+assert.equal(sdk,release.piSdk,"Refresh the checkout dependencies before testing the ecosystem");
+console.log("Testing Pi " + sdk + " with " + packages.map(path=>{
+  const {name,version} = JSON.parse(readFileSync(join(path,"package.json"),"utf8"));
+  return name + "@" + version;
+}).join(", "));
 const temp = mkdtempSync(join(tmpdir(),"pi-ecosystem-check-"));
 try {
   const profile = join(temp,"profile"), cwd = join(temp,"workspace"), session = join(temp,"session.jsonl");

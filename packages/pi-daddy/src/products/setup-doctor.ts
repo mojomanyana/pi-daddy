@@ -175,7 +175,10 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
     try {
       catalog = loadProviderCatalog(requestedModels);
     } catch (error) {
-      if (preset === "auto") console.log("  Connect a provider with /login and select a model with /model. Fresh profiles follow that model.");
+      if (preset === "auto")
+        console.log(
+          "  Connect a provider with /login and select a model with /model. Fresh profiles follow that model.",
+        );
       console.log("  Model availability could not be verified: " + String(error));
     }
     if (preset === "auto" && catalog) {

@@ -377,19 +377,16 @@ export async function acquireWorkspaceLease(input: {
        * (`init`) and can neither hold a lease nor open a pane.
        *
        * Unref rather than close, because the lock must outlive this call: when the parent does exit, the
-       * helper sees EOF and runs the path it was written for — bounded `herdr tab close` attempts, a marker
-       * file, then release anyway (R-102: an unreleasable lock strands a worktree with no in-product
-       * recovery, which is strictly worse than a recorded failure to close). Narrowed to this path on
+       * helper sees EOF and releases cleanly (R-102: an unreleasable lock strands a worktree with no in-product
+       * recovery). Narrowed to this path on
        * purpose: at spawn it would remove the accidental guarantee that a process cannot exit while a lease
        * is still ACTIVE, which is a different decision and not this fix.
        */
       /**
        * **Terminal (R-146).** `releasing` stops a late `holder.close` being reported as a lost lease, and
-       * `settled` stops a later `release()` running the clean handshake — which it did: measured, it returned
-       * `released`, overwrote `retained:herdr-close-failed` with `completed`, and sent `{release:true}` so the
-       * helper exited `clean` and never attempted the close. The pane retention exists to protect was
-       * abandoned silently, and the ledger asserted a clean handover for a lease kept *because* a pane would
-       * not close. No in-tree caller does this — but `WorkspaceLease` is a public export and
+       * `settled` stops a later `release()` running the clean handshake — which previously returned `released`,
+       * overwrote the retained reason with `completed`, and sent `{release:true}` so the helper exited `clean`.
+       * No in-tree caller does this — but `WorkspaceLease` is a public export and
        * `try { … } finally { await lease.release() }` is the obvious shape for the external controllers this
        * whole fix is for.
        */

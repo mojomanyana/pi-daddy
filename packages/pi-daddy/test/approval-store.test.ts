@@ -429,7 +429,7 @@ test("ADR-0021: sanitise strips an undeclared field on the way out", async () =>
 
 test("R-67: a pre-load failure of ANY kind reports busy, not a claim about the entry", async () => {
   // The `busy` state keyed off `LockTimeoutError`, which looked right and was not: `EMFILE` — the classic
-  // transient, and one a fan-out of children plus herdr panes produces — fails before the load exactly as a
+  // transient under child fan-out — fails before the load exactly as a
   // timeout does, and took the `failed` branch. That branch asserts the approval "is still in effect" about
   // an entry nobody looked for. Here the store directory is a FILE, so `mkdir` fails before the lock: a
   // different error, the same "nothing was read" fact, and the outcome must follow the fact.

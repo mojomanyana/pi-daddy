@@ -198,9 +198,6 @@ export async function claimDelegationOperation(
         )
         .digest("hex");
     const requestDigest = digest(request);
-    const definition = spec.agent ? session.definitions.get(spec.agent) : undefined;
-    const { definitionId: _definitionId, ...legacyRequest } = asked;
-    const legacyRequestDigest = definition && !definition.binding ? digest(legacyRequest) : undefined;
     const identity = {
       operationId,
       requestDigest,
@@ -216,7 +213,6 @@ export async function claimDelegationOperation(
       () => operations.claim(identity, signal),
       operationScope,
       { agent, summary },
-      legacyRequestDigest,
       observe,
     );
   };
@@ -284,16 +280,8 @@ export function existingOperationOutcome(claim: OperationClaim, depth: number): 
       `No new child started. Operation ${claim.operation.operationId} already exists (${claim.operation.state}), execution ${claim.operation.executionId}. ` +
       (active
         ? "Follow the original operation; this reference is not its final result."
-        : claim.legacyResult
-          ? "Historical completed result from before the definition-binding update. " +
-            "The old record did not capture the full definition identity; this is not new execution or current approval.\n\n" +
-            claim.legacyResult.text
-          : "No mutation result was replayed. Inspect the original outcome before an intentional new attempt with a new operation_id."),
-    reason: active
-      ? "existing-operation"
-      : claim.legacyResult
-        ? "legacy-completed-operation"
-        : "operation-already-ended",
+        : "No mutation result was replayed. Inspect the original outcome before an intentional new attempt with a new operation_id."),
+    reason: active ? "existing-operation" : "operation-already-ended",
     granted: [],
     depth,
     exitCode: null,

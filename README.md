@@ -44,7 +44,7 @@ Setup is optional. Install any component directly with Pi, for example `pi insta
 **Reproduce the tested install:** Use the explicit pins below or pass `--pinned` to setup. If a project has its own package declaration, `pi install --local npm:<package>` switches that entry to tracking.
 
 <!-- verified-beta-install:start -->
-Requires Node 24+ and stable Pi 1.6.0+. Tested with Pi 1.6.0.
+Requires Node 24+ and stable Pi 1.6.1+. Tested with Pi 1.6.1.
 
 ```bash
 pi install npm:pi-bookie@1.0.4
@@ -423,8 +423,7 @@ When configured, `.pi/pi-daddy/grants.jsonl` holds capability decisions, child l
 and session configuration, and episode outcomes. Each line is a **record envelope**
 `{v, seq, prev, at, kind, id, body, digest}`: `prev` is the hash of the previous line, `digest` the hash of the record.
 A damaged file is read up to the damage; the writer then refuses with `LEDGER_DAMAGED` until `pi-daddy ledger repair
-<path> --yes` drops the damaged tail. A ledger written before the envelope existed is imported once at session start
-(`pi-daddy ledger import <source> <target>` does it by hand) and never repaired. `/grants ledger` reports records,
+<path> --yes` drops the damaged tail. `/grants ledger` reports records,
 escalation attempts, integrity, executors and which definition bodies ran, by digest.
 
 The activity timeline (`activity.jsonl`, parent turns, child lifecycles, runtime-skill reads) uses the same envelope
@@ -729,7 +728,6 @@ use `npx --yes --package pi-daddy@latest -- pi-daddy-dashboard`.
 ```text
 pi-daddy init [--force] [--dir <path>]
 pi-daddy ledger repair <path> [--yes]
-pi-daddy ledger import <source> <target>
 pi-daddy report [--since <date>] [--definition <name>] [--model <id>]
                 [--group-by definition|model|thinking] [--json]
 pi-daddy outcomes

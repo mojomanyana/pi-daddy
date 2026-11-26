@@ -1,6 +1,7 @@
-/** Unit tests for 5-tab Side-Panel Steering & Configuration Dashboard (no Herdr; macOS/Linux/Windows). */
+/** Unit tests for 5-tab Side-Panel Steering & Configuration Dashboard (cross-OS: macOS/Linux/Windows). */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { handleConnectedCommand } from "../extensions/grants-connected-command.ts";
 import {
   startWebDashboard,
   type WebDashboardConfigUpdate,
@@ -47,7 +48,7 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
 
   const handle = await startWebDashboard({
     getState: makeState,
-    onPreferences: (input) => ({action:input.action, current:"fixture/agent"}),
+    onPreferences: (input) => ({ action: input.action, current: "fixture/agent" }),
     onClassifierSettings: async (input) => ({ action: input.action, selected: "local/kev" }),
     onWorkModeChange: (sel) => {
       currentMode = sel;
@@ -90,7 +91,10 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
       action: "list",
       selected: "local/kev",
     });
-    assert.deepEqual(await (await post("/api/preferences",{action:"list"})).json(),{action:"list",current:"fixture/agent"});
+    assert.deepEqual(await (await post("/api/preferences", { action: "list" })).json(), {
+      action: "list",
+      current: "fixture/agent",
+    });
     const client = await (await fetch(handle.url)).text();
     assert.match(client, /id="ecosystem-settings"/);
     assert.match(client, /id="classifier-threshold"/);
@@ -131,9 +135,35 @@ test("side-panel dashboard enforces token auth and supports steering, auto, work
     const compact = renderTerminalPanel(s, "", 42, 5, 14);
     assert.match(compact, /\[c\] Select model/);
     assert.ok(compact.split("\n").length <= 14);
-    assert.ok(compact.split("\n").every(line => [...line].length <= 42));
+    assert.ok(compact.split("\n").every((line) => [...line].length <= 42));
     assert.match(renderTerminalPanel(s, "", 42, 5, 14, 999), /Optional tools/);
   } finally {
     await handle.close();
   }
+});
+
+test("/grants dashboard notifies with standalone Side Panel guidance and reports errors", async () => {
+  const notices: Array<{ message: string; level: "info" | "error" }> = [];
+  const ui = { notify: (message: string, level: "info" | "error") => notices.push({ message, level }) };
+  assert.equal(
+    await handleConnectedCommand("dashboard", {
+      openDashboard: async () => "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.",
+      ui,
+    }),
+    true,
+  );
+  assert.equal(
+    await handleConnectedCommand("dashboard", {
+      openDashboard: async () => {
+        throw new Error("socket closed");
+      },
+      ui,
+    }),
+    true,
+  );
+  assert.equal(await handleConnectedCommand("other", { openDashboard: async () => "x", ui }), false);
+  assert.deepEqual(notices, [
+    { message: "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.", level: "info" },
+    { message: "grants: dashboard unavailable — socket closed", level: "error" },
+  ]);
 });

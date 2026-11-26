@@ -13,7 +13,7 @@ for option in "$@"; do
   esac
 done
 cd -- "$root"
-if [[ ! -f node_modules/typescript/bin/tsc ]]; then npm ci; fi
+bash "$here/pilot-deps.sh"
 node node_modules/typescript/bin/tsc -p packages/pi-daddy/tsconfig.json
 node node_modules/typescript/bin/tsc -p packages/pi-daddy/tsconfig.check.json
 node --test benchmarks/harvest/*.test.mjs packages/pi-daddy/test/{decision-classifier,session-harvest,web-dashboard,ecosystem-setup-config}.test.ts "$scout"/tests/{research-model,worker-failure}.test.mjs

@@ -7,7 +7,7 @@ import type { GrantsSession } from "../extensions/session.ts";
 import { tempDir, cleanupTempDirs } from "./tmp.ts";
 after(cleanupTempDirs);
 
-test("runtime rebinding and reload keep one current native prompt listener and balance Herdr waits", async () => {
+test("runtime rebinding and reload keep one current native prompt listener", async () => {
   const root = await tempDir("dashboard-prompt-bind-");
   const alias = join(await tempDir("dashboard-prompt-alias-"), "workspace");
   await symlink(root, alias);
@@ -15,7 +15,6 @@ test("runtime rebinding and reload keep one current native prompt listener and b
   process.env.PI_CODING_AGENT_DIR = root;
   const hooks = new Map<string, Set<(...args: any[]) => void>>();
   const events = new Map<string, Set<(...args: any[]) => void>>();
-  const signals: boolean[] = [];
   const subscribe = (map: typeof hooks, name: string, fn: (...args: any[]) => void) => {
     const listeners = map.get(name) ?? new Set();
     listeners.add(fn);
@@ -27,7 +26,7 @@ test("runtime rebinding and reload keep one current native prompt listener and b
     events: {
       on: (name: string, fn: (...args: any[]) => void) => subscribe(events, name, fn),
       emit(name: string, value: any) {
-        if (name === "herdr:blocked") signals.push(value.active);
+        if (name.includes("blocked")) assert.fail(`unexpected legacy blocked event emitted: ${name}`);
         for (const fn of events.get(name) ?? []) fn(value);
       },
     },
@@ -69,7 +68,6 @@ test("runtime rebinding and reload keep one current native prompt listener and b
     assert.equal(session.dashboardPrompt?.(), undefined);
     assert.equal(hooks.get("ui_prompt_start")?.size, 0);
     assert.equal(hooks.get("ui_prompt_end")?.size, 0);
-    assert.deepEqual(signals, []);
   } finally {
     session.reloadLifecycle.runtimeSnapshotUnsubscribe?.();
     if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;

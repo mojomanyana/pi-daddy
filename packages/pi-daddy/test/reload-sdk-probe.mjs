@@ -11,7 +11,7 @@ const sdk = await import(pathToFileURL(join(fixture, "@earendil-works/pi-coding-
 const ai = await import(pathToFileURL(join(fixture, "@earendil-works/pi-ai/dist/index.js")).href);
 const grantsPath = join(process.cwd(), "extensions/grants.ts");
 const root = await mkdtemp(join(tmpdir(), "pi-daddy-sdk-reload-"));
-const keys = ["PI_DADDY_GRANT", "PI_DADDY_DEPTH", "PI_DADDY_MAX_DEPTH", "PI_DADDY_APPROVED", "PI_DADDY_HERDR"];
+const keys = ["PI_DADDY_GRANT", "PI_DADDY_DEPTH", "PI_DADDY_MAX_DEPTH", "PI_DADDY_APPROVED"];
 const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 const ui = notices => ({
   notify: message => notices.push(message), select: async () => undefined, confirm: async () => false, input: async () => undefined,
@@ -26,7 +26,7 @@ const modelRuntime = await sdk.ModelRuntime.create({
   allowModelNetwork: false, refreshOnCreate: false,
 });
 async function make(name, grant, maxDepth) {
-  Object.assign(process.env, { PI_DADDY_GRANT: grant, PI_DADDY_DEPTH: "0", PI_DADDY_MAX_DEPTH: maxDepth, PI_DADDY_HERDR: "0" });
+  Object.assign(process.env, { PI_DADDY_GRANT: grant, PI_DADDY_DEPTH: "0", PI_DADDY_MAX_DEPTH: maxDepth });
   const cwd = join(root, name), agentDir = join(cwd, "agent");
   await mkdir(agentDir, { recursive: true, mode: 0o700 });
   const settings = sdk.SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false, maxRetries: 0 } });

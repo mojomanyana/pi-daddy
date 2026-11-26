@@ -214,7 +214,7 @@ const why = {
   cancelled: "the sub-agent was cancelled",
   spawn: "the sub-agent could not be started: ownership directory unavailable before helper launch: Error: EACCES",
   noFinal: "the sub-agent has no attributable complete final: Error: current run is not settled",
-  launcherDeath: "the sub-agent could not be started: Error: Herdr launcher closed without a complete result/ownership",
+  launcherDeath: "the sub-agent could not be started: Error: launcher closed without a complete result/ownership",
 };
 /** The final reason a real child stopped mid-run leaves (timeout, abort, signal, exit 0 without settling). */
 const noFinal = { state: "unavailable" as const, reason: "Error: current run is not settled" };
@@ -346,8 +346,8 @@ const states: Array<{ name: string; outcome: DelegationOutcome; summary: Record<
     },
   },
   // Review of 2026-11-17: these three were indistinguishable from their neighbours without the receipt's cause and
-  // signal. Shaped as the real runs were (the delegate tool with inert children on the process executor, and
-  // `herdr-owned.test.ts` "launcher death"): reasons, exit codes and receipts as recorded there.
+  // signal. Shaped as real runs were (inert children on the process executor and launcher-death owner loss):
+  // reasons, exit codes and receipts as recorded there.
   {
     name: "worker killed by SIGKILL",
     outcome: {
@@ -386,7 +386,7 @@ const states: Array<{ name: string; outcome: DelegationOutcome; summary: Record<
     },
   },
   {
-    name: "Herdr launcher death: the worker ran and was reaped on owner loss",
+    name: "launcher death: the worker ran and was reaped on owner loss",
     outcome: {
       ...outcome(),
       ...stopped,

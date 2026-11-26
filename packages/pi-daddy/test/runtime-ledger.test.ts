@@ -176,7 +176,7 @@ test("invalid versioned lines and unsupported explicit versions are corrupt rath
   assert.deepEqual(report.lifecycle, { starting: 0, running: 0, completed: 0, failed: 0 });
 });
 
-test("legacy grant records remain readable beside v2 events", async () => {
+test("unversioned legacy grant records are rejected as corrupt", async () => {
   const path = join(await tempDir("runtime-ledger-legacy-"), "ledger.jsonl");
   const { writeFile } = await import("node:fs/promises");
   await writeFile(
@@ -192,7 +192,7 @@ test("legacy grant records remain readable beside v2 events", async () => {
     }),
   );
   const report = await verifyLedger(path);
-  assert.equal(report.ok, true);
-  assert.equal(report.records, 1);
-  assert.equal(report.events, 1);
+  assert.equal(report.ok, false);
+  assert.equal(report.records, 0);
+  assert.equal(report.corrupt.length, 1);
 });

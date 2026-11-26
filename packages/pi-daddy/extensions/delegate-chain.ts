@@ -61,7 +61,6 @@ import { planChain, type GateRequest } from "./chain-plan.ts";
 import { contextShape } from "./context-shape.ts";
 import { preflightModel, runtimePairUnavailable } from "../src/kernel/model-preflight.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
-import { withoutRetiredDelegationArguments } from "./retired-inputs.ts";
 import { assertDelegationAuthority } from "./delegation-authority.ts";
 
 /** One chain step is one execution occurrence, however many capability dialogs contributed to its answer. */
@@ -138,7 +137,6 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       "governed exactly as a single `delegate` is: it holds only what you grant it, and you cannot grant what you " +
       "do not hold. A failed step ABORTS the rest, and you still receive everything that completed.",
     parameters: params,
-    prepareArguments: withoutRetiredDelegationArguments,
     async execute(_toolCallId, args, signal, onUpdate, ctx) {
       // A step that throws stops the chain; the steps that ran are reported through Pi's tool_result hook.
       const taskAdmission = session.taskDispatch?.capture();
@@ -152,11 +150,10 @@ export function registerChainTool(pi: ExtensionAPI, session: GrantsSession): voi
       const steps = bound.specs;
       assertDefinitionInputsBeforeAdmission(session, steps, bound.bindings);
 
-      // **Every cheap refusal happens before any human is asked.** Yesterday's lesson on the `delegate` path: with
-      // `PI_DADDY_HERDR=1` and herdr down, the gate ran first, an operator approved `bash`, a 30-day entry was
-      // written, and the delegation was then refused anyway. `runOneDelegation` checks the executor before its own
-      // gate; a chain hoists its gate above `runOneDelegation`, so the check has to be repeated here or that
-      // ordering is simply bypassed.
+      // **Every cheap refusal happens before any human is asked.** If the executor is refused, the gate must
+      // not prompt first, bank a 30-day approval, and then fail anyway. `runOneDelegation` checks the executor
+      // before its own gate; a chain hoists its gate above `runOneDelegation`, so the check has to be repeated
+      // here or that ordering is simply bypassed.
       if (session.executor.refusal)
         throw new GovernanceRefusal(refusal("EXECUTOR_UNAVAILABLE", `chain refused: ${session.executor.refusal}`));
 

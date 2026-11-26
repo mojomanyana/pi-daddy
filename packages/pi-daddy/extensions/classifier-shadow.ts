@@ -15,8 +15,12 @@ function append(row: Row & Record<string, unknown>) {
   appendFileSync(shadowLog(), JSON.stringify({ at: new Date().toISOString(), ...row }) + "\n", { mode: 0o600 });
 }
 
-export function registerClassifierShadow(pi: ExtensionAPI, session: GrantsSession, selected: () => string | undefined,
-  report?: (detail: string, ctx: ExtensionContext) => void) {
+export function registerClassifierShadow(
+  pi: ExtensionAPI,
+  session: GrantsSession,
+  selected: () => string | undefined,
+  report?: (detail: string, ctx: ExtensionContext) => void,
+) {
   let prompt = "",
     toolObserved = false,
     delegateObserved = false;
@@ -72,13 +76,20 @@ export function registerClassifierShadow(pi: ExtensionAPI, session: GrantsSessio
           predicted: match?.[0] ?? null,
           elapsedMs: Math.round(performance.now() - start),
         });
-        if (!sessionSignal.aborted && selected() === model) report?.(
-          `Routing comparison · ${base.kind}: Pi chose ${actual}; classifier ${match ? "chose " + match[0] : "abstained"}`, ctx);
+        if (!sessionSignal.aborted && selected() === model)
+          report?.(
+            `Routing comparison · ${base.kind}: Pi chose ${actual}; classifier ${match ? "chose " + match[0] : "abstained"}`,
+            ctx,
+          );
       })
       .catch(() => {
         try {
           append({ ...base, event: "prediction-unavailable" });
-          if (!sessionSignal.aborted && selected() === model) report?.("Routing comparison · classifier unavailable. Choose a working classifier in /dashboard settings.", ctx);
+          if (!sessionSignal.aborted && selected() === model)
+            report?.(
+              "Routing comparison · classifier unavailable. Choose a working classifier in /dashboard settings.",
+              ctx,
+            );
         } catch {}
       });
   };

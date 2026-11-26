@@ -12,13 +12,12 @@ import { workModeSnapshot } from "../../extensions/work-mode.ts";
 import { textStep } from "./scripted-provider.ts";
 
 test("native command and request hooks keep Standard unchanged, consume one-shot guidance and restore the base prompt", async () => {
-  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_HERDR", "PI_DADDY_ACTIVITY_TIMELINE", "HERDR_ENV"];
+  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_ACTIVITY_TIMELINE"];
   const saved = new Map(keys.map((key) => [key, process.env[key]]));
   let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
   let current: GrantsSession | undefined;
   try {
     for (const key of keys) delete process.env[key];
-    process.env.PI_DADDY_HERDR = "0";
     process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
     fixture = await createFixture({
       prepare: async (root) => {

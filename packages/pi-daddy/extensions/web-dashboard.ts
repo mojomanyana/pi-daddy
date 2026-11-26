@@ -4,6 +4,7 @@
  * Bookie/Scout observations, auto-split (tmux, WezTerm, Kitty, Ghostty, macOS iTerm2, Windows Terminal),
  * strong-model escalation, and 2-stage classifier-driven session harvesting.
  */
+import { ecosystemToolLabel, summarizeObservations } from "./dashboard-activity.ts";
 import { ecosystemPreferences } from "./ecosystem-preferences.ts";
 import { thresholdFor } from "../src/products/decision-classifier.ts";
 import { createClassifierSettings } from "./classifier-settings.ts";
@@ -47,15 +48,6 @@ const MAX_TASKS = 30;
 const OPTIONAL_TOOLS = ["delegate_tournament", "quick_review", "delegate_all", "delegate_chain"] as const;
 const THINKING_ALLOWED = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
-function ecosystemToolLabel(name: string, agent?: unknown): string | undefined {
-  if (name === "delegate" && typeof agent === "string" && /^[\w.-]{1,80}$/.test(agent)) return "Delegate · " + agent;
-  if (name.startsWith("delegate") || name === "quick_review") return "Daddy · " + name;
-  if (name.startsWith("bookie_")) return "Bookie · " + name.slice(7).replaceAll("_", " ");
-  if (name.startsWith("scout_") || name.startsWith("research_"))
-    return "Scout · " + name.replace(/^(scout|research)_/, "").replaceAll("_", " ");
-  if (name.startsWith("skill_")) return "Skill Harness · " + name.slice(6).replaceAll("_", " ");
-}
-
 function openInBrowser(url: string): void {
   try {
     const command =
@@ -70,26 +62,6 @@ function openInBrowser(url: string): void {
   } catch {
     /* Best-effort browser open; URL is always printed. */
   }
-}
-
-function summarizeObservations(session: GrantsSession): { memoryLines: string[]; researchLines: string[] } {
-  const memoryLines: string[] = [];
-  const researchLines: string[] = [];
-  try {
-    const obs = session.dashboardObservations?.();
-    for (const src of obs?.sources ?? []) {
-      const producer = String((src as { producer?: string }).producer ?? "").toLowerCase();
-      const target = producer.includes("scout") ? researchLines : producer.includes("bookie") ? memoryLines : undefined;
-      if (!target) continue;
-      const items = (src as { items?: Array<{ label?: string; state?: string }> }).items ?? [];
-      for (const item of items.slice(0, 6)) {
-        target.push(`${item.label ?? producer} (${item.state ?? "observed"})`);
-      }
-    }
-  } catch {
-    /* Observations are optional. */
-  }
-  return { memoryLines, researchLines };
 }
 
 export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): void {

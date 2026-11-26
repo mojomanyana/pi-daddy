@@ -378,8 +378,8 @@ test("the closed v3 schema accepts fixtures and rejects v2, extra fields and mis
       ...lifecycle,
       state: "running",
       executor: "process",
-      herdrPaneId: "w1:p2",
-      herdrAgentName: "review-d0-1",
+      unknownPaneId: "w1:p2",
+      unknownAgentName: "review-d0-1",
     }),
     false,
   );
@@ -455,7 +455,7 @@ test("the v3 schema exhaustively matches production fields and finite vocabulari
   assert.deepEqual(fields("approvalUse"), [...APPROVAL_USE_FIELDS].sort());
 });
 
-test("every v3 builder emits explicit execution identity, including a running Herdr pane", () => {
+test("every v3 builder emits explicit execution identity", () => {
   const now = new Date("2026-08-28T12:00:00.000Z");
   const result = { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] };
   const decision = buildRecord({

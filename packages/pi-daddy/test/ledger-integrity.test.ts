@@ -204,6 +204,9 @@ test("appendRecord in non-strict mode swallows the failure", async () => {
 //     to children, so a subtree can have many processes appending to one file.
 // ---------------------------------------------------------------------------
 
+const v3Id = (n: number) => `exec:00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const v3TaskDigest = "a".repeat(64);
+
 test("F13: a ledger of concurrent appends is fully parseable", async () => {
   const dir = await tempDir("grants-concurrent-");
   const path = join(dir, "ledger.jsonl");
@@ -215,6 +218,8 @@ test("F13: a ledger of concurrent appends is fully parseable", async () => {
       appendRecord(
         { path, strict: true },
         buildRecord({
+          executionId: v3Id(i + 1),
+          parentExecutionId: null,
           parentId: "d0",
           childId: `d0.${i + 1}`,
           depth: 1,
@@ -223,6 +228,7 @@ test("F13: a ledger of concurrent appends is fully parseable", async () => {
           result: { effective: big, denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
           blocked: false,
           executor: "process",
+          taskDigest: v3TaskDigest,
           now: new Date(),
         }),
       ),
@@ -242,6 +248,8 @@ test("verifyLedger reports a torn line instead of ignoring it", async () => {
   await appendRecord(
     { path },
     buildRecord({
+      executionId: v3Id(101),
+      parentExecutionId: null,
       parentId: "d0",
       childId: "d0.1",
       depth: 1,
@@ -250,6 +258,7 @@ test("verifyLedger reports a torn line instead of ignoring it", async () => {
       result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
       blocked: false,
       executor: "process",
+      taskDigest: v3TaskDigest,
       now: new Date(),
     }),
   );
@@ -275,10 +284,12 @@ test("verifyLedger on a missing ledger is not an error", async () => {
 test("verifyLedger counts escalation attempts, so the one signal is readable", async () => {
   const dir = await tempDir("grants-esc-");
   const path = join(dir, "ledger.jsonl");
-  for (const denied of [[], ["tool:write"], []]) {
+  for (const [index, denied] of [[], ["tool:write"], []].entries()) {
     await appendRecord(
       { path },
       buildRecord({
+        executionId: v3Id(200 + index),
+        parentExecutionId: null,
         parentId: "d0",
         childId: "d0.1",
         depth: 1,
@@ -287,6 +298,7 @@ test("verifyLedger counts escalation attempts, so the one signal is readable", a
         result: { effective: [], denied, clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
         blocked: denied.length > 0,
         executor: "process",
+        taskDigest: v3TaskDigest,
         now: new Date(),
       }),
     );
@@ -301,10 +313,13 @@ test("ADR-0020: verifyLedger tallies where each yes came from, per capability", 
   // one is a prompt the operator never saw, so it is the size of what deleting the layer would cost.
   const dir = await tempDir("grants-sources-");
   const path = join(dir, "ledger.jsonl");
+  let seq = 300;
   const record = (approvalSources: Record<string, string>, humanDenied = false) =>
     appendRecord(
       { path },
       buildRecord({
+        executionId: v3Id(++seq),
+        parentExecutionId: null,
         parentId: "d0",
         childId: "d0.1",
         depth: 1,
@@ -313,6 +328,7 @@ test("ADR-0020: verifyLedger tallies where each yes came from, per capability", 
         result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
         blocked: false,
         executor: "process",
+        taskDigest: v3TaskDigest,
         now: new Date(),
         approvalSources: approvalSources as never,
         ...(humanDenied ? { humanDenied: true } : {}),
@@ -341,10 +357,13 @@ test("ADR-0020: records are counted separately from distinct capability@subject 
   // favour of keeping the thing under evaluation.
   const dir = await tempDir("grants-pairs-");
   const path = join(dir, "ledger.jsonl");
+  let seq = 400;
   const spawn = (agentType: string) =>
     appendRecord(
       { path },
       buildRecord({
+        executionId: v3Id(++seq),
+        parentExecutionId: null,
         parentId: "d0",
         childId: "d0.1",
         depth: 1,
@@ -354,6 +373,7 @@ test("ADR-0020: records are counted separately from distinct capability@subject 
         result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
         blocked: false,
         executor: "process",
+        taskDigest: v3TaskDigest,
         now: new Date(),
         approvalSources: { "tool:write": "persisted" } as never,
       } as never),
@@ -372,15 +392,18 @@ test("ADR-0020: records are counted separately from distinct capability@subject 
 });
 
 test("R-64: a malformed approvalSources cannot corrupt the tally or delete the report", async () => {
-  // Found by an independent pass over the same day's work, and every case confirmed by execution first.
-  // These shapes arrive from a torn, hand-edited or foreign line — the input class `verifyLedger` EXISTS
-  // for — so "this package never writes that" is not a defence.
   const dir = await tempDir("grants-malformed-");
   const base = {
+    ledgerVersion: 3,
+    event: "capability_decision",
+    executionId: v3Id(500),
+    parentExecutionId: null,
     ts: "2026-08-14T00:00:00.000Z",
     parentId: "d0",
     childId: "d0.1",
     depth: 1,
+    executor: "process",
+    taskDigest: v3TaskDigest,
     requested: [],
     parentGrant: [],
     effective: [],
@@ -392,52 +415,60 @@ test("R-64: a malformed approvalSources cannot corrupt the tally or delete the r
   const write = async (name: string, records: object[]) => {
     const p = join(dir, name);
     await writeFile(p, recordLines(...records), "utf8");
-    return (await verifyLedger(p)).approvals;
+    return verifyLedger(p);
   };
 
-  // `{}` beside a non-empty `approved` was counted NOWHERE — silently shrinking the sample that
-  // `unattributed` exists to keep visible, which is the exact promise the field's doc comment makes.
+  // `{}` beside a non-empty `approved` counts as unattributed rather than silently shrinking the sample.
   const empty = await write("empty.jsonl", [{ ...base, approved: ["tool:write", "tool:bash"], approvalSources: {} }]);
-  assert.equal(empty.unattributed, 2, "an empty map is an ABSENT map, not a map saying nothing");
+  assert.equal(empty.approvals.unattributed, 2, "an empty map is an ABSENT map, not a map saying nothing");
 
-  // An array passed `typeof === "object"` and was tallied with numeric indices as capability names —
-  // inventing a `0@deploy` pair and inflating `persisted`, which is R-63's direction.
+  // Malformed approvalSources shapes (array, prototype key) are rejected as corrupt by strict v3 validation
+  // while valid sibling records still tally cleanly.
   const arr = await write("array.jsonl", [
     { ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: ["persisted"] as never },
   ]);
-  assert.equal(arr.bySource.persisted, 0, "an array is not a source map");
-  assert.equal(arr.unattributed, 1, "and it is counted, not dropped");
+  assert.equal(arr.approvals.bySource.persisted, 0, "an array is not a source map");
+  assert.equal(arr.corrupt.length, 1);
 
-  // **The one that deleted the whole measurement.** `source in bySource` walks the PROTOTYPE, so a source
-  // of `"toString"` passed the check, `bySource.toString += 1` wrote a string into a counter, and
-  // `attributed` — a sum in the renderer — became a string, so `attributed > 0` was false and the entire
-  // approvals block vanished. The intact records beside it were reported as corrupt at the same time.
   const proto = await write("proto.jsonl", [
     { ...base, approved: ["tool:write"], approvalSources: { "tool:write": "toString" } },
-    { ...base, agentType: "deploy", approved: ["tool:write"], approvalSources: { "tool:write": "persisted" } },
+    {
+      ...base,
+      executionId: v3Id(501),
+      agentType: "deploy",
+      approved: ["tool:write"],
+      approvalSources: { "tool:write": "persisted" },
+    },
   ]);
-  assert.deepEqual(proto.bySource, { prompt: 0, session: 0, persisted: 1, inherited: 0, auto: 0 }, "no prototype key");
-  assert.equal(proto.unattributed, 1, "the unknown source is counted as unattributed");
+  assert.deepEqual(
+    proto.approvals.bySource,
+    { prompt: 0, session: 0, persisted: 1, inherited: 0, auto: 0 },
+    "no prototype key",
+  );
+  assert.equal(proto.corrupt.length, 1, "unknown source is rejected as corrupt");
   assert.equal(
-    typeof Object.values(proto.bySource).reduce((s, n) => s + n, 0),
+    typeof Object.values(proto.approvals.bySource).reduce((s, n) => s + n, 0),
     "number",
     "the renderer sums these — a string here deletes the report it was added to produce",
   );
 });
 
 test("R-64: the tools: form is keyed to <delegate>, the subject the approval layer actually uses", async () => {
-  // The pair key claimed to match `approvalKey` and did not: the approval subject is `DELEGATE_SUBJECT`
-  // (`<delegate>`) while the ledger writes `agentType: spec.agent ?? "delegate"` — the bare word. The old
-  // test asserted the mapping using a record with NO agentType, a shape production has never written, so
-  // it passed while proving nothing about the real one.
   const dir = await tempDir("grants-subject-key-");
   const path = join(dir, "ledger.jsonl");
+  let seq = 600;
   const rec = (agentType: string | undefined, capability: string) =>
     JSON.stringify({
+      ledgerVersion: 3,
+      event: "capability_decision",
+      executionId: v3Id(++seq),
+      parentExecutionId: null,
       ts: "2026-08-14T00:00:00.000Z",
       parentId: "d0",
       childId: "d0.1",
       depth: 1,
+      executor: "process",
+      taskDigest: v3TaskDigest,
       ...(agentType ? { agentType } : {}),
       requested: [],
       parentGrant: [],
@@ -525,10 +556,8 @@ test("R-69: unsatisfied gate outcomes remain distinct in the record", async () =
 test("ADR-0031: a record names the executor, because the argv differs between them", () => {
   // The production change that breaks this: dropping `executor` from buildRecord, or making it optional.
   //
-  // Why it must be recorded at all: before ADR-0031 the executor was a variable an operator set, so "which one
-  // ran?" was answerable from configuration afterwards. It is now decided by a runtime probe at session start,
-  // and the herdr plan withholds `--print` — so two records with identical capabilities can describe different
-  // argv, and nothing outside the record preserves which.
+  // Why it must be recorded at all: recording `executor` on every event keeps the audit trail self-contained
+  // without relying on external configuration to determine how the child ran.
   const shape = {
     parentId: "d0",
     childId: "d0.1",
@@ -568,6 +597,8 @@ test("ADR-0031: the executor survives a round trip through the ledger file", asy
   await appendRecord(
     { path },
     buildRecord({
+      executionId: v3Id(700),
+      parentExecutionId: null,
       parentId: "d0",
       childId: "d0.1",
       depth: 1,
@@ -576,6 +607,7 @@ test("ADR-0031: the executor survives a round trip through the ledger file", asy
       result: { effective: [], denied: [], clipped: [], gatedBlocked: [], universal: [], subsumedBy: [] },
       blocked: false,
       executor: "process",
+      taskDigest: v3TaskDigest,
       now: new Date(),
     }),
   );

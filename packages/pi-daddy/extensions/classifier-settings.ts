@@ -1,5 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { readEcosystemConfig, saveEcosystemConfig, type EcosystemHarvestConfig } from "../src/kernel/ecosystem-config.ts";
+import {
+  readEcosystemConfig,
+  saveEcosystemConfig,
+  type EcosystemHarvestConfig,
+} from "../src/kernel/ecosystem-config.ts";
 import { classifierCatalog, harvestProbability, thresholdFor } from "../src/products/decision-classifier.ts";
 import { harvestClassifierDigest } from "../src/products/session-harvest.ts";
 
@@ -32,7 +36,12 @@ export function createClassifierSettings(getContext: () => ExtensionContext | un
         };
       }
       const model = input.model;
-      if (typeof model !== "string" || (model && !catalog.has(model) && !(input.action === "save" && input.mode === "off" && model === harvest.classifier)))
+      if (
+        typeof model !== "string" ||
+        (model &&
+          !catalog.has(model) &&
+          !(input.action === "save" && input.mode === "off" && model === harvest.classifier))
+      )
         throw Error("Refresh the catalog and select an available classifier.");
       const threshold = input.threshold;
       if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0 || threshold > 1)

@@ -69,11 +69,11 @@ jobs:
           PI_DADDY_REQUIRE_DESCRIBE: "1"
         run: npm test
 
-      - name: harvest benchmark offline controls
-        run: node --test benchmarks/harvest/benchmark.test.mjs
+      - name: Harvest benchmark offline controls
+        run: node --test benchmarks/harvest/*.test.mjs
 
-      # Model-free and Herdr-free. The devDependency supplies the real pi process; these are not fakes and
-      # spend no model tokens. The live-Herdr and PI_DADDY_IT_MODEL tiers remain local-only below.
+      # Model-free. The devDependency supplies the real pi process; these are not fakes and
+      # spend no model tokens. The PI_DADDY_IT_MODEL tier remains local-only below.
       - name: real-pi integration tests
         working-directory: packages/pi-daddy
         env:
@@ -122,7 +122,5 @@ jobs:
 # **What this does NOT cover, because a CI badge that implies more than it checks is the defect this project
 # keeps recording.**
 #
-#  - `npm run test:integration` additionally exercises a real Herdr server. CI runs the real-pi subset above;
-#    the Herdr tier stays a local gate because no daemon is provisioned here.
 #  - `PI_DADDY_IT_MODEL=1` costs money and is never run unattended.
 #  - `main` has no branch protection; both legs are advisory to the operator who merges (measured 2026-09-22).

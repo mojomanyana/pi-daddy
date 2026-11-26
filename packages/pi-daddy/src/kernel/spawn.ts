@@ -109,7 +109,7 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
 
   // R-32. `--no-extensions` governs EXTENSIONS ONLY — measured, not assumed: a child spawned with
   // `--tools read` still loaded all eight of the operator's skills and `CLAUDE.md`
-  // (probe `g16-herdr` §4-5). Skills are injected into the system prompt rather than passed as
+  // (probe `g16` §4-5). Skills are injected into the system prompt rather than passed as
   // tools, so `--tools` cannot reach them and the `skill:` namespace enforced nothing at all.
   //
   // `--no-skills` is unconditional and `--skill` is added on top, because that is exactly how pi
@@ -139,8 +139,7 @@ export function planSpawn(input: SpawnPlanInput): SpawnPlan {
   // Prompt templates are the third resource class that `--no-extensions` does not cover — found in the
   // banner of the very run that verified the two above. Lower risk than skills (a template is expanded
   // when a human invokes `/name`, not injected into the system prompt) but withheld for consistency:
-  // under a herdr backend a governed child runs in an attachable pane WITH a human, so "only what the
-  // grant names" must not depend on which executor ran it.
+  // "only what the grant names" should hold unconditionally across all spawned children.
   args.push("--no-prompt-templates");
 
   // A definition's body, so the child IS the reviewer rather than merely holding a reviewer's tools.

@@ -22,7 +22,7 @@ import {
   verifyInherited,
   type InheritableApproval,
 } from "../src/kernel/approval.ts";
-import { approvalsPath, legacyApprovalsPath } from "../src/governance/approval-store.ts";
+import { approvalsPath } from "../src/governance/approval-store.ts";
 import { resolveApprovals } from "../src/kernel/approval.ts";
 
 const inheritable = (over: Partial<InheritableApproval> = {}): InheritableApproval => ({
@@ -48,13 +48,6 @@ test("the approvals store lives outside the governed workspace", () => {
     !approvalsPath(cwd).startsWith(cwd),
     "an agent that may write in the workspace must not be able to write its own approval",
   );
-});
-
-test("the legacy in-workspace path is still nameable, so it can be reported", () => {
-  // Deliberately NOT auto-imported: migrating it would import exactly the entries we stopped trusting.
-  // Naming it lets the extension tell an operator that an old file exists and is being ignored.
-  const cwd = "/home/someone/project";
-  assert.equal(legacyApprovalsPath(cwd), `${cwd}/.pi/grants-approvals.json`);
 });
 
 // ── scope must survive the boundary ──────────────────────────────────────────────────────────────

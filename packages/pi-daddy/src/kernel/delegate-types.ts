@@ -156,11 +156,8 @@ export interface DelegationContext {
   /** Known `SKILL.md` definitions by name, for `DelegationRequest.agent` (ADR-0016). */
   definitions?: Map<string, SkillDefinition>;
   /**
-   * Build an INTERACTIVE plan — no `--print` — for an executor that drives the child after starting it.
-   *
-   * `runHerdrPane` requires this: `--print` makes pi process the prompt and exit, so it never reaches the
-   * interactive readiness `herdr agent start` waits for and the agent is never detected. Default is the
-   * non-interactive plan, because a governed child should not sit waiting for a human by accident.
+   * Build an INTERACTIVE plan — no `--print` — for callers that drive the child interactively after starting it.
+   * Default is the non-interactive plan, because a governed child should not sit waiting for a human by accident.
    */
   interactive?: boolean;
   /** Explicit host-owned pi persistence target; never model-facing and never enabled by archive observation. */

@@ -15,13 +15,12 @@ const quote = (s: string) => "'" + s.replaceAll("'", "'\"'\"'") + "'";
 test("prepared handoff corrects inputs, executes once and retains the same native operation", async () => {
   if (!principal) throw Error("PRINCIPAL_CANDIDATE is required");
   const workflow = (await import(pathToFileURL(join(principal, "extensions/workflow.ts")).href)).default;
-  const keys = ["PI_DADDY_GRANT", "PI_DADDY_GATED", "PI_DADDY_HERDR", "PI_CODING_AGENT_DIR", "PI_DADDY_LEDGER", "PATH"];
+  const keys = ["PI_DADDY_GRANT", "PI_DADDY_GATED", "PI_CODING_AGENT_DIR", "PI_DADDY_LEDGER", "PATH"];
   const before = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   try {
     Object.assign(process.env, {
       PI_DADDY_GRANT: "tool:*,agent:*,context:files",
       PI_DADDY_GATED: "",
-      PI_DADDY_HERDR: "0",
     });
     delete process.env.PI_DADDY_LEDGER;
     let nextCall = { name: "principal_workflow", args: { action: "snapshot" } as Record<string, unknown> };

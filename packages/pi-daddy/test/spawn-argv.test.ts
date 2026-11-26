@@ -72,7 +72,7 @@ test("neutralisation is the last argv element, after every flag", () => {
 // ---------------------------------------------------------------------------
 // R-32 — a governed child inherited every skill the operator had, and CLAUDE.md.
 //
-// Measured in probe `g16-herdr`: a child spawned with `--tools read` printed
+// Measured in probe `g16`: a child spawned with `--tools read` printed
 //   [Context] CLAUDE.md
 //   [Skills]  architect, build, debug, decide, git-ops, plan, review, skill-harness
 // because `planSpawn` passed `--no-extensions` and nothing else. pi has SEPARATE
@@ -138,9 +138,8 @@ test("R-32: prompt templates are withheld too", () => {
   // The same class as skills and context files, found the same way — the fixed child's banner still
   // showed `[Prompts] /bugfix, /feature`. The risk is genuinely LOWER than skills': a template is
   // expanded when a human invokes `/name`, not injected into the system prompt, and a `--print` child
-  // has no human. It is withheld anyway for one reason: under a herdr backend a governed child runs in
-  // an attachable pane WITH a human, and "only what the grant names" should not depend on which
-  // executor ran it.
+  // has no human. It is withheld anyway so "only what the grant names" holds consistently across all
+  // spawned children.
   const plan = planSpawn({ effective: ["tool:read"], prompt: "x" });
   assert.ok(plan.args.includes("--no-prompt-templates"));
 });

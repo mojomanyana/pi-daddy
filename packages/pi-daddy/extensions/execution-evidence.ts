@@ -146,7 +146,7 @@ function operationSummary(value: NonNullable<CompleteOutcome["operation"]>) {
 /**
  * How a settled worker stopped, only when it was not an ordinary exit (review of 2026-11-17): the receipt's cause
  * unless it is `worker-exit`, and a non-zero signal, at their version 1 paths. Without them a helper interrupted by
- * a signal, a worker that exited without a final, a SIGKILLed worker and a Herdr worker reaped on owner loss read
+ * a signal, a worker that exited without a final, a SIGKILLed worker, and a worker reaped on owner loss read
  * alike. Both are fixed values from Daddy's verified receipt, never child text.
  */
 function receiptSummary(value: CompleteOutcome["cleanup"]) {

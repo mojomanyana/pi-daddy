@@ -116,14 +116,6 @@ export const acceptedWorkspacesPath = (registryPath: string, env?: NodeJS.Proces
 
 export const workspaceLeasesDir = (env?: NodeJS.ProcessEnv) => join(userStateDir(env), USER_DIRS.workspaceLeases);
 
-/** Where the same stores lived before ADR-0076 PR 3c. Reported when found, never read (ADR-0020 precedent). */
-export const legacyUserGrantStorePath = (cwd: string, env?: NodeJS.ProcessEnv) =>
-  join(agentDir(env), "grants", projectFileName(cwd));
-export const legacyUserApprovalsPath = (cwd: string, env?: NodeJS.ProcessEnv) =>
-  join(agentDir(env), "grants-approvals", projectFileName(cwd));
-export const legacyProjectLedgerPath = (cwd: string) => join(piProjectDir(cwd), "grants.jsonl");
-export const legacyGrantEnvPath = (cwd: string) => join(piProjectDir(cwd), "grants.env");
-
 /** Private producer results, separate from optional execution diagnostics. */
 export const operationArtifactsDir = (directory = agentDir()) =>
   join(directory, PROJECT_STATE_DIRNAME, "operation-results");

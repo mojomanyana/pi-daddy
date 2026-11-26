@@ -100,20 +100,6 @@ export interface SessionDiscovery extends CatalogLoaders {
   canonicalise?: (path: string) => Promise<string>;
 }
 
-/**
- * Run governed children in herdr panes instead of captured child processes.
- *
- * **Three-state as of ADR-0031, and absent means PROBE.** It was opt-in under ADR-0016 point 6, on the
- * reasoning that *"a run that silently relocates because a binary appeared is exactly the kind of invisible
- * change this package exists to prevent"* — and that sentence is still honoured, because nothing is detected
- * from `herdr` being on `PATH`. What changed is that a **server which answers** is a different and stronger
- * test, and the "silently" half is discharged by the disclosure line ADR-0032 adds at session start and in
- * `/grants`. Both executors still enforce the identical grant: the plan is the same, only the place it runs
- * differs.
- *
- * The table itself is a pure function in `src/executors/executor.ts`; re-exported here because this is where every
- * other `PI_DADDY_*` name lives and a reader looking for it will look here.
- */
 import {
   ENV_ACTIVITY_PARENT_TASK,
   ENV_ACTIVITY_PATH,

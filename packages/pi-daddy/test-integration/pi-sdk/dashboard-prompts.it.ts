@@ -14,11 +14,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-test("real Pi SDK question events reach the dashboard and Herdr while the native UI is pending, with no provider requests", async () => {
+test("real Pi SDK question events reach the dashboard while the native UI is pending, with no provider requests", async () => {
   let owner: DashboardSourceOwner | undefined;
   let prompts: ReturnType<typeof registerDashboardPrompts> | undefined;
-  const signals: { active: boolean; label?: string }[] = [];
   const answers: unknown[] = [];
+  const unexpectedEvents: string[] = [];
   let entered = deferred<void>(),
     answer = deferred<unknown>();
   const waitForAnswer = () => {
@@ -28,13 +28,15 @@ test("real Pi SDK question events reach the dashboard and Herdr while the native
   const fixture = await createFixture({
     mode: "tui",
     extension: () => (pi) => {
+      const originalEmit = pi.events.emit.bind(pi.events);
+      pi.events.emit = ((name: string, value: unknown) => {
+        if (name.includes("blocked")) unexpectedEvents.push(name);
+        return originalEmit(name, value);
+      }) as typeof pi.events.emit;
       prompts = registerDashboardPrompts(pi, () => owner);
       pi.on("session_start", (_event, ctx) => {
         prompts!.reset();
         owner = { sessionId: ctx.sessionManager.getSessionId(), cwd: ctx.cwd };
-      });
-      pi.events.on("herdr:blocked", (event) => {
-        signals.push(event as (typeof signals)[number]);
       });
       pi.registerCommand("input-probe", {
         description: "Isolated native UI probe",
@@ -90,7 +92,7 @@ test("real Pi SDK question events reach the dashboard and Herdr while the native
     await info;
     await setImmediate();
     assert.deepEqual(answers, ["Friday", false, undefined, "Private draft", undefined]);
-    assert.deepEqual(signals, []);
+    assert.deepEqual(unexpectedEvents, []);
     assert.equal(fixture.requests.length, 0);
     assert.deepEqual(fixture.errors, []);
   } finally {

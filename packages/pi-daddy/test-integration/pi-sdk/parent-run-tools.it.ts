@@ -108,7 +108,6 @@ async function runRoot(env: Record<string, string> = {}) {
         PI_SKIP_VERSION_CHECK: "1",
         NO_COLOR: "1",
         TERM: "dumb",
-        PI_DADDY_HERDR: "0",
         PI_DADDY_AUTO_MODE: "0",
         PI_DADDY_LEAN_TOOLS: "0",
         PI_DADDY_ACTIVITY_TIMELINE: "off",

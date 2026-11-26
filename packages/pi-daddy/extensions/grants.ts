@@ -70,8 +70,6 @@ import { taskInlineControl } from "./task-inline-control.ts";
 import { SPAWN_TOOLS, tripwireReason } from "./tripwire.ts";
 import { reportGrantStoreRefusal } from "./grant-store-refusal.ts";
 import { registerActivityTimeline } from "./activity-timeline.ts";
-import { importLegacyLedger } from "../src/governance/ledger.ts";
-import { legacyProjectLedgerPath, projectLedgerPath } from "../src/kernel/project-paths.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import { changeSessionModels, renderSessionModels } from "./session-model-prompt.ts";
 import { registerChildUsageReport } from "./child-usage-report.ts";
@@ -157,32 +155,12 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
       try {
         const nativeId = (owner as { getSessionId?: () => string }).getSessionId?.() ?? session.episodeId;
         await initializeSessionAutoMode(session, reload.environment, nativeId);
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         beginWorkMode(ctx, event?.reason ?? "startup", reload.environment);
       } catch (error) {
+        if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         session.autoModeFailure = `Daddy Auto mode unavailable: ${String(error)}`;
         throw error;
-      }
-      // ADR-0076 PR 3d: a pre-format project ledger is imported once into the record envelope, bodies verbatim, each
-      // record marked with its source line; the old file is left untouched. Happens before any spawn can append.
-      if (session.governed) {
-        // R-60: its own try — a failed import must not take session start down; it is reported and governance
-        // continues against the new ledger path (an append there still fails closed if that path is unwritable).
-        try {
-          const imported = await importLegacyLedger(legacyProjectLedgerPath(ctx.cwd), projectLedgerPath(ctx.cwd));
-          if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-          if (imported.imported > 0 || imported.stoppedAt !== null)
-            ctx.ui.notify(
-              `grants: imported ${imported.imported} record(s) from ${legacyProjectLedgerPath(ctx.cwd)} into ${projectLedgerPath(ctx.cwd)}` +
-                (imported.stoppedAt !== null
-                  ? `; stopped at unparsable source line ${imported.stoppedAt} (kept)`
-                  : "") +
-                "; the old file is untouched.",
-              imported.stoppedAt !== null ? "warning" : "info",
-            );
-        } catch (error) {
-          if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-          ctx.ui.notify(`grants: legacy ledger import failed: ${String(error)}`, "error");
-        }
       }
       // The owner-bound reconciliation already selected ctx.cwd before registering delegation tools.
       // Preserve exact store identity; aliases do not silently borrow another spelling's saved authority.
@@ -230,10 +208,8 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
           );
       }
       if (session.reloadLifecycle !== reload.lifecycle) return undefined;
-      // ADR-0031: probe once, HERE, before anything reports — so the disclosure line can name the executor,
-      // and so a demanded-but-unreachable herdr is reported before the operator's first prompt rather than at
-      // their first delegation. Its own try, because a failure here must not cancel the controls after it
-      // (R-60), and `probeHerdr` is documented as never throwing precisely so this is belt-and-braces.
+      // Resolve the executor once before reporting so the disclosure line can name it before the operator's
+      // first prompt. Its own try, because a failure here must not cancel the controls after it (R-60).
       try {
         await resolveExecutor(session);
         if (session.reloadLifecycle === reload.lifecycle) await runtimeSnapshot.bind(ctx);
