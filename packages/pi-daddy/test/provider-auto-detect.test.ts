@@ -1,6 +1,6 @@
 /** Unit tests for Bucket 2A: provider auto-detection, ordered tier fallback arrays, and --preset auto/session. */
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -12,9 +12,7 @@ import {
   saveEcosystemConfig,
   selectRegistryModel,
 } from "../src/kernel/ecosystem-config.ts";
-import { buildAutoPreset, detectConfiguredProviders } from "../src/products/provider-detect.ts";
-import { runEcosystemSetup } from "../src/products/setup-doctor.ts";
-import release from "../src/products/ecosystem-release.json" with { type: "json" };
+import { buildAutoPreset, type ProviderCatalog } from "../src/products/provider-detect.ts";
 
 function tempAgent(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "pi-daddy-auto-provider-"));
@@ -108,125 +106,28 @@ test("modelFallbacks validate strictly and resolve in priority order across env,
   assert.throws(() => readEcosystemConfig(env), /Expected an array of non-empty strings for modelFallbacks\.fast/);
 });
 
-test("detectConfiguredProviders and buildAutoPreset detect auth.json and env providers without exposing secrets", (t) => {
-  const dir = tempAgent(t);
-  const empty = buildAutoPreset({ PI_CODING_AGENT_DIR: dir });
-  assert.equal(empty.preset, "session");
-  assert.deepEqual(empty.detected, []);
-  assert.deepEqual(empty.fallbacks, {});
-
-  writeFileSync(
-    join(dir, "auth.json"),
-    JSON.stringify({ "google-gemini-cli": { access: "secret-oauth-token" }, anthropic: { key: "sk-ant-secret" } }),
-  );
-  const env: NodeJS.ProcessEnv = { PI_CODING_AGENT_DIR: dir, OPENROUTER_API_KEY: "sk-or-secret" };
-  const detected = detectConfiguredProviders(env);
-  assert.deepEqual(
-    detected.map((d) => [d.label, d.source]),
-    [
-      ["openrouter", "env"],
-      ["google", "auth.json"],
-      ["anthropic", "auth.json"],
-    ],
-  );
-  assert.ok(!JSON.stringify(detected).includes("secret"));
-
-  const auto = buildAutoPreset(env);
-  assert.equal(auto.preset, "openrouter");
-  assert.deepEqual(auto.fallbacks.fast, ["google/gemini-3.5-flash-lite", "anthropic/claude-haiku-4-5", "session"]);
-  assert.deepEqual(auto.fallbacks.strong, ["google/gemini-3.8-flash", "anthropic/claude-sonnet-4-5", "session"]);
-});
-
-test("pi-daddy setup --preset auto writes detected primary + fallback chain or session-only when none configured", (t) => {
-  const dir = tempAgent(t);
-  const savedEnv = { ...process.env };
-  const nodeDesc = Object.getOwnPropertyDescriptor(process.versions, "node")!;
-  Object.defineProperty(process.versions, "node", { ...nodeDesc, value: `${release.minimumRuntime.nodeMajor}.0.0` });
-  t.after(() => {
-    Object.defineProperty(process.versions, "node", nodeDesc);
-    for (const k of [
-      "PI_CODING_AGENT_DIR",
-      "FIREWORKS_API_KEY",
-      "OPENROUTER_API_KEY",
-      "DEEPSEEK_API_KEY",
-      "GEMINI_API_KEY",
-      "GOOGLE_API_KEY",
-      "ANTHROPIC_API_KEY",
-      "OPENAI_API_KEY",
-    ]) {
-      if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k];
-    }
-  });
-  for (const k of [
-    "FIREWORKS_API_KEY",
-    "OPENROUTER_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "GEMINI_API_KEY",
-    "GOOGLE_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "OPENAI_API_KEY",
-  ]) {
-    delete process.env[k];
-  }
-  process.env.PI_CODING_AGENT_DIR = dir;
-  t.mock.method(console, "log", () => {});
-
-  // 0 providers -> session preset (empty models so Bookie/Scout use active session model cleanly)
-  assert.equal(runEcosystemSetup({ preset: "auto", skipInstall: true }), 0);
-  const sessionCfg = JSON.parse(readFileSync(join(dir, "ecosystem.json"), "utf8"));
-  assert.equal(sessionCfg.setupPreset.name, "session");
-  assert.deepEqual(sessionCfg.models, {});
-
-  // Multi-provider env -> auto-selects top provider + populates fallbacks
-  process.env.GEMINI_API_KEY = "test-gemini";
-  process.env.ANTHROPIC_API_KEY = "test-anthropic";
-  assert.equal(runEcosystemSetup({ preset: "auto", skipInstall: true }), 0);
-  const autoCfg = JSON.parse(readFileSync(join(dir, "ecosystem.json"), "utf8"));
-  assert.equal(autoCfg.setupPreset.name, "google");
-  assert.equal(autoCfg.models.fast, "google/gemini-3.5-flash-lite");
-  assert.deepEqual(autoCfg.modelFallbacks.fast, ["anthropic/claude-haiku-4-5", "session"]);
-});
-
-test("Issue #3: Codex-only OAuth auth.json selects openai-codex subscription model rather than metered openai API", (t) => {
-  const dir = tempAgent(t);
-  const savedEnv = { ...process.env };
-  const nodeDesc = Object.getOwnPropertyDescriptor(process.versions, "node")!;
-  Object.defineProperty(process.versions, "node", { ...nodeDesc, value: `${release.minimumRuntime.nodeMajor}.0.0` });
-  const envKeys = [
-    "PI_CODING_AGENT_DIR",
-    "FIREWORKS_API_KEY",
-    "OPENROUTER_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "GEMINI_API_KEY",
-    "GOOGLE_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "OPENAI_API_KEY",
-  ];
-  t.after(() => {
-    Object.defineProperty(process.versions, "node", nodeDesc);
-    for (const k of envKeys) {
-      if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k];
-    }
-  });
-  for (const k of envKeys) delete process.env[k];
-  process.env.PI_CODING_AGENT_DIR = dir;
-  t.mock.method(console, "log", () => {});
-
-  writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { access: "synthetic-codex-oauth" } }));
-  const detected = detectConfiguredProviders({ PI_CODING_AGENT_DIR: dir });
-  assert.deepEqual(detected, [{ preset: "openai-codex", label: "openai-codex", source: "auth.json" }]);
-
-  assert.equal(runEcosystemSetup({ preset: "auto", skipInstall: true }), 0);
-  const cfg = JSON.parse(readFileSync(join(dir, "ecosystem.json"), "utf8"));
-  assert.equal(cfg.setupPreset.name, "openai-codex");
-  assert.equal(cfg.models.fast, "openai-codex/gpt-5.6-sol");
-  assert.equal(cfg.models.work, "openai-codex/gpt-5.6-sol");
-  assert.equal(cfg.models.strong, "openai-codex/gpt-5.6-sol");
-
-  // Direct OPENAI_API_KEY stays distinct from openai-codex OAuth
-  const apiDir = tempAgent(t);
-  const apiDetected = detectConfiguredProviders({ PI_CODING_AGENT_DIR: apiDir, OPENAI_API_KEY: "synthetic-api-key" });
-  assert.deepEqual(apiDetected, [{ preset: "openai", label: "openai", source: "env" }]);
+test("automatic tiers exclude unresolved credentials, unavailable models and unsupported thinking levels", () => {
+  const catalog: ProviderCatalog = {
+    providers: {
+      anthropic: { configured: false, source: "stored" },
+      google: { configured: true, source: "environment" },
+      "openai-codex": { configured: true, source: "stored" },
+    },
+    models: {
+      "google/gemini-3.5-flash-lite": ["off", "low"],
+      "openai-codex/gpt-6.2-sol": ["low", "high"],
+    },
+  };
+  const plan = buildAutoPreset(catalog);
+  assert.equal(plan.preset, "google");
+  assert.deepEqual(plan.fallbacks.fast, ["session"]);
+  assert.deepEqual(plan.fallbacks.work, ["openai-codex/gpt-6.2-sol", "session"]);
+  assert.equal(plan.models.strong, "google/gemini-3.5-flash-lite");
+  assert.ok(plan.diagnostics.some((reason) => reason.includes("anthropic: stored credential")));
+  assert.ok(plan.diagnostics.some((reason) => reason.includes("openai-codex") && reason.includes("thinking off")));
+  const codex = buildAutoPreset({ ...catalog, providers: { "openai-codex": catalog.providers["openai-codex"] } });
+  assert.equal(codex.preset, "openai-codex");
+  assert.equal(codex.models.fast, undefined);
+  assert.equal(codex.models.work, "openai-codex/gpt-6.2-sol");
+  assert.deepEqual(buildAutoPreset({ providers: {}, models: {} }).models, {});
 });

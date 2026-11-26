@@ -23,12 +23,12 @@ function fixture(t: TestContext) {
   if (process.platform === "win32") {
     writeFileSync(
       join(bin, "pi.cmd"),
-      '@echo off\r\nif "%1"=="--version" (echo %DADDY_TEST_PI% & exit /b 0)\r\necho %*>>"%DADDY_TEST_CALLS%"\r\nexit /b %DADDY_TEST_STATUS%\r\n',
+      '@echo off\r\nif "%1"=="--offline" (echo PI_DADDY_CATALOG {"providers":{},"models":{}} & exit /b 0)\r\nif "%1"=="--version" (echo %DADDY_TEST_PI% & exit /b 0)\r\necho %*>>"%DADDY_TEST_CALLS%"\r\nexit /b %DADDY_TEST_STATUS%\r\n',
     );
   } else {
     writeFileSync(
       join(bin, "pi"),
-      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "$DADDY_TEST_PI"; exit 0; fi\nprintf "%s\\n" "$*" >> "$DADDY_TEST_CALLS"\nexit "$DADDY_TEST_STATUS"\n',
+      '#!/bin/sh\nif [ "$1" = "--offline" ]; then echo \'PI_DADDY_CATALOG {"providers":{},"models":{}}\'; exit 0; fi\nif [ "$1" = "--version" ]; then echo "$DADDY_TEST_PI"; exit 0; fi\nprintf "%s\\n" "$*" >> "$DADDY_TEST_CALLS"\nexit "$DADDY_TEST_STATUS"\n',
       { mode: 0o700 },
     );
   }
