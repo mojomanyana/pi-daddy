@@ -69,6 +69,9 @@ jobs:
           PI_DADDY_REQUIRE_DESCRIBE: "1"
         run: npm test
 
+      - name: harvest benchmark offline controls
+        run: node --test benchmarks/harvest/benchmark.test.mjs
+
       # Model-free and Herdr-free. The devDependency supplies the real pi process; these are not fakes and
       # spend no model tokens. The live-Herdr and PI_DADDY_IT_MODEL tiers remain local-only below.
       - name: real-pi integration tests

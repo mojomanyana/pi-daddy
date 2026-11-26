@@ -146,6 +146,29 @@ export function resolveHarnessCliCommand(
   return undefined;
 }
 
+export function harvestClassifierDigest(signals: TurnHarvestSignals): string {
+  const redactedPrompt = redactHarvestText(signals.prompt).slice(0, 800);
+  const redactedEdits = signals.editedFiles
+    .slice(0, 10)
+    .map((f) => redactHarvestText(f))
+    .join(", ");
+  const redactedVerify = signals.verifyCommands
+    .slice(0, 5)
+    .map((c) => redactHarvestText(c))
+    .join(" ; ");
+  const redactedFailure = redactHarvestText(signals.failureSummary).slice(0, 900);
+
+  return [
+    `Prompt: ${redactedPrompt}`,
+    `Signals: thrash=${signals.thrashDetected} escalated=${signals.escalated}` +
+      ` blockers=${signals.reviewBlockers} steered=${signals.userSteered}` +
+      ` toolFailEdit=${signals.toolFailedAndEdited}`,
+    `Edited files: ${redactedEdits || "(none)"}`,
+    `Verify cmds: ${redactedVerify || "(none)"}`,
+    `Failure summary: ${redactedFailure || "(none)"}`,
+  ].join("\n");
+}
+
 export async function classifyHarvestCandidate(input: {
   readonly signals: TurnHarvestSignals;
   readonly registry?: HarvestClassifierRegistry;
@@ -174,26 +197,7 @@ export async function classifyHarvestCandidate(input: {
       return skip("classifier-thinking-off-unavailable");
   }
 
-  const redactedPrompt = redactHarvestText(input.signals.prompt).slice(0, 800);
-  const redactedEdits = input.signals.editedFiles
-    .slice(0, 10)
-    .map((f) => redactHarvestText(f))
-    .join(", ");
-  const redactedVerify = input.signals.verifyCommands
-    .slice(0, 5)
-    .map((c) => redactHarvestText(c))
-    .join(" ; ");
-  const redactedFailure = redactHarvestText(input.signals.failureSummary).slice(0, 900);
-
-  const digest = [
-    `Prompt: ${redactedPrompt}`,
-    `Signals: thrash=${input.signals.thrashDetected} escalated=${input.signals.escalated}` +
-      ` blockers=${input.signals.reviewBlockers} steered=${input.signals.userSteered}` +
-      ` toolFailEdit=${input.signals.toolFailedAndEdited}`,
-    `Edited files: ${redactedEdits || "(none)"}`,
-    `Verify cmds: ${redactedVerify || "(none)"}`,
-    `Failure summary: ${redactedFailure || "(none)"}`,
-  ].join("\n");
+  const digest = harvestClassifierDigest(input.signals);
 
   const instruction = [
     "You triage completed coding-agent turns for a regression benchmark suite (`skill-harness`).",
