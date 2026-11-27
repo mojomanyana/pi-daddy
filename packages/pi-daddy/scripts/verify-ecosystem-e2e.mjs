@@ -448,13 +448,19 @@ try {
       assert.equal(allowed.result.specialist, "investigate");
       assert.match(allowed.result.excerpt, /Node 24 LTS/);
       assert.ok(attribution.some((e) => e.specialist === "investigate" && /investigate read brief/.test(e.detail)));
+      const deniedOmitted = await ask({ attachedBriefSha256: undefined });
+      assert.equal(deniedOmitted.ok, false);
+      assert.equal(deniedOmitted.status, "denied");
+      const deniedEmpty = await ask({ attachedBriefSha256: [] });
+      assert.equal(deniedEmpty.ok, false);
+      assert.equal(deniedEmpty.status, "denied");
       const deniedUnattached = await ask({ attachedBriefSha256: ["0".repeat(64)] });
       assert.equal(deniedUnattached.ok, false);
       assert.equal(deniedUnattached.status, "denied");
       const deniedWrongCwd = await ask({ cwd: tmpdir() });
       assert.equal(deniedWrongCwd.ok, false);
       assert.equal(deniedWrongCwd.status, "denied");
-      return "investigate read attached brief across ollama/qwen3:32b with attribution; unattached & wrong-cwd denied";
+      return "investigate read attached brief across ollama/qwen3:32b with attribution; omitted, empty, unattached & wrong-cwd denied";
     } finally {
       if (prevBriefs === undefined) delete process.env.PI_SCOUT_BRIEFS;
       else process.env.PI_SCOUT_BRIEFS = prevBriefs;
@@ -503,13 +509,29 @@ try {
       scenarios: [{ id: "A1", verdict: "FAIL", expected: ["cite exact file:line"], observed: "missing line number" }],
     });
     const beforeSettle = handlers.get("agent_before_settle")?.[0];
-    const blocked = await beforeSettle({ entries: [] }, ctx);
-    assert.equal(blocked?.continue, true, "failed Skill Harness scenario MUST keep task open at agent_before_settle");
-    assert.match(blocked.entries[0].content, /A1/);
-    assert.match(blocked.entries[0].content, /cite exact file:line/);
-    assert.match(blocked.entries[0].content, /missing line number/);
+    const blocked1 = await beforeSettle({ entries: [] }, ctx);
+    assert.equal(blocked1?.continue, true, "failed Skill Harness scenario MUST keep task open at agent_before_settle");
+    assert.match(blocked1.entries[0].content, /A1/);
+    assert.match(blocked1.entries[0].content, /cite exact file:line/);
+    assert.match(blocked1.entries[0].content, /missing line number/);
 
-    // Fix skill and rerun -> Skill Harness emits PASS (keepTaskOpen: false) -> settlement succeeds!
+    // Passing unrelated scenario B1 MUST NOT clear failing A1
+    settleBus.emit("skill-harness:eval-result:v1", {
+      version: 1,
+      skill: "investigate",
+      keepTaskOpen: false,
+      coverage: { scope: "focused", label: "focused coverage (1/2 scenarios)", scenariosRun: ["B1"] },
+      scenarios: [{ id: "B1", verdict: "PASS" }],
+    });
+    const blocked2 = await beforeSettle({ entries: [] }, ctx);
+    assert.equal(blocked2?.continue, true, "passing B1 must not clear failing A1");
+    const blocked3 = await beforeSettle({ entries: [] }, ctx);
+    assert.equal(blocked3?.continue, true);
+    const unresolved = await beforeSettle({ entries: [] }, ctx);
+    assert.equal(unresolved?.continue, false, "exhausted retries must surface explicit unresolved decision");
+    assert.equal(unresolved?.entries?.[0]?.customType, "pi-daddy-skill-harness-unresolved");
+
+    // Fix skill and rerun matching A1 -> PASS -> settlement succeeds!
     settleBus.emit("skill-harness:eval-result:v1", {
       version: 1,
       skill: "investigate",
@@ -518,8 +540,8 @@ try {
       scenarios: [{ id: "A1", verdict: "PASS" }],
     });
     const allowed = await beforeSettle({ entries: [] }, ctx);
-    assert.equal(allowed, undefined, "task must settle cleanly after rerun PASS");
-    return "agent_before_settle mechanically held task open on FAIL and settled after rerun PASS";
+    assert.equal(allowed, undefined, "task must settle cleanly after matching scenario A1 passes");
+    return "A1 fail -> B1 pass still held -> bounded retries -> unresolved decision -> A1 pass settled";
   });
 
   // =========================================================================

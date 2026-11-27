@@ -72,7 +72,7 @@ test("work mode transport requires current owner and explicit valid selection wi
     assert.deepEqual(applied.settings?.jev, initial.settings?.jev);
     assert.equal(applied.settings?.wallSeconds, initial.settings?.wallSeconds);
     assert.equal(applied.settings?.idleSeconds, initial.settings?.idleSeconds);
-    assert.equal(applied.settings?.descendants, initial.settings?.descendants);
+    assert.equal(applied.settings?.descendants, 24, "Ambitious mode widens active fanout budget to 24");
     assert.deepEqual(applied.rows, initial.rows);
     assert.equal(records.length, 1);
     beginWorkModeRequest(session);

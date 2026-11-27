@@ -1,12 +1,6 @@
 /** Session-owned optional guidance. Selection is operator input, never a model tool or memory inference. */
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-
-const execFileAsync = promisify(execFile);
 import type { GrantsSession } from "./session.ts";
 import {
   ENV_WORK_MODE,
@@ -16,7 +10,6 @@ import {
   type WorkModeSelection,
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
-import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
 import { AMBITIOUS_FANOUT_BUDGET, STANDARD_FANOUT_BUDGET } from "../src/kernel/fanout.ts";
 import { ENV_FANOUT } from "../src/kernel/env-names.ts";
 import {
@@ -25,6 +18,10 @@ import {
   selectRegistryModel,
 } from "../src/kernel/ecosystem-config.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
+import { collectReviewDiff, formatReviewScopeBanner, resolveReviewScope, type ReviewScope } from "./review-scope.ts";
+import { createSkillHarnessGate } from "./skill-harness-gate.ts";
+
+export { collectReviewDiff, formatReviewScopeBanner, resolveReviewScope, type ReviewScope };
 
 export const WORK_MODE_ENTRY = "pi-daddy:work-mode:v1";
 interface PendingMode {
@@ -232,101 +229,24 @@ export function capturedWorkMode(session: GrantsSession): WorkModeSelection | un
   return selected?.mode === "ambitious" ? clone(selected) : undefined;
 }
 
-const WHOLE_REPO_REQUEST_RE =
-  /\b(whole\s+repo|entire\s+repo|full\s+repo|all\s+repos|multi-repo|across\s+all\s+repos)\b/i;
-
-export interface ReviewScope {
-  readonly mode: "workspace" | "whole-repo";
-  readonly cwd: string;
-  readonly label: string;
-}
-
-/** Scope automatic review to the directory where Pi started unless the prompt explicitly widens to whole/multi-repo. */
-export function resolveReviewScope(cwd: string, prompt: string): ReviewScope {
-  if (WHOLE_REPO_REQUEST_RE.test(prompt)) {
-    return { mode: "whole-repo", cwd, label: `whole-repo (widened by request from ${cwd})` };
-  }
-  return { mode: "workspace", cwd, label: `workspace (${cwd})` };
-}
-
-export async function collectReviewDiff(
-  cwd: string,
-  scopeMode: "workspace" | "whole-repo" = "workspace",
-): Promise<string> {
-  const parts: string[] = [];
-  let diff = "";
-  const pathspec = scopeMode === "workspace" ? ["--", "."] : [];
-  try {
-    const out = await execFileAsync("git", ["diff", "--no-color", "HEAD", ...pathspec], {
-      cwd,
-      timeout: 5000,
-      maxBuffer: 256 * 1024,
-    });
-    diff = out.stdout.trim();
-  } catch {
-    // Unborn HEAD (fresh git init with 0 commits): fall back to staged diff.
-    try {
-      const out = await execFileAsync("git", ["diff", "--no-color", "--cached", ...pathspec], {
-        cwd,
-        timeout: 5000,
-        maxBuffer: 256 * 1024,
-      });
-      diff = out.stdout.trim();
-    } catch {
-      diff = "";
-    }
-  }
-  if (diff) parts.push(diff);
-
-  // Include untracked non-ignored files strictly under the effective scope (never sibling/parent folders).
-  try {
-    const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard", ...pathspec], {
-      cwd,
-      timeout: 5000,
-      maxBuffer: 64 * 1024,
-    });
-    const untracked = stdout
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter((s) => s && !s.startsWith(".") && !s.startsWith("../") && !s.endsWith(".log") && !isUnderPiProjectDir(s))
-      .slice(0, 12);
-    let extraBytes = 0;
-    for (const rel of untracked) {
-      if (extraBytes >= 12_000) break;
-      try {
-        const full = join(cwd, rel);
-        const info = await stat(full);
-        if (!info.isFile() || info.size === 0 || info.size > 32 * 1024) continue;
-        const raw = await readFile(full, "utf8");
-        if (raw.includes("\0")) continue;
-        const snippet = raw.slice(0, Math.min(raw.length, 12_000 - extraBytes));
-        extraBytes += snippet.length;
-        parts.push(`--- /dev/null\n+++ b/${rel}\n${snippet}`);
-      } catch {
-        /* Skip unreadable untracked file. */
-      }
-    }
-  } catch {
-    /* Non-git workspace or git unavailable. */
-  }
-  return parts.join("\n\n").trim();
-}
-
 async function runColdDiffReview(
   ctx: ExtensionContext,
   originalPrompt: string,
   model: unknown,
   signal?: AbortSignal,
   pi?: ExtensionAPI,
+  explicitRoots?: readonly string[],
 ): Promise<{ pass: boolean; feedback?: string; scope: ReviewScope }> {
-  const scope = resolveReviewScope(ctx.cwd, originalPrompt);
+  const scope = resolveReviewScope(ctx.cwd, originalPrompt, explicitRoots);
   try {
-    const trimmed = await collectReviewDiff(ctx.cwd, scope.mode);
+    const banner = formatReviewScopeBanner(scope);
+    if (ctx.hasUI) ctx.ui?.notify?.(banner, "info");
+    const trimmed = await collectReviewDiff(ctx.cwd, scope);
     if (!trimmed) return { pass: true, scope };
-    if (ctx.hasUI) ctx.ui?.notify?.(`Review scope: ${scope.label}`, "info");
     pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
       producer: "principal",
       kind: "review-started",
+      roots: scope.roots,
       detail: `Principal · cold review started (${scope.label})`,
     });
     const registry = (ctx as any).modelRegistry;
@@ -395,30 +315,10 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   let lastCtx: ExtensionContext | undefined;
   let coldReviewRanForTurn = false;
   let escalatedForTurn = false;
-  let harnessHoldsForTurn = 0;
-  const failedSkillEvals = new Map<
-    string,
-    { skill: string; coverageLabel: string; failed: Array<{ id: string; expected?: string[]; observed?: string }> }
-  >();
+  const skillHarnessGate = createSkillHarnessGate();
 
   pi.events?.on?.("skill-harness:eval-result:v1", (payload: unknown) => {
-    const ev = payload as {
-      skill?: string;
-      keepTaskOpen?: boolean;
-      coverage?: { label?: string };
-      scenarios?: Array<{ id: string; verdict: string; expected?: string[]; observed?: string }>;
-    };
-    if (!ev || typeof ev.skill !== "string") return;
-    if (ev.keepTaskOpen) {
-      const failed = (ev.scenarios ?? []).filter((s) => s.verdict !== "PASS");
-      failedSkillEvals.set(ev.skill, {
-        skill: ev.skill,
-        coverageLabel: ev.coverage?.label ?? "focused",
-        failed,
-      });
-    } else {
-      failedSkillEvals.delete(ev.skill);
-    }
+    skillHarnessGate.recordResult(payload);
   });
 
   const runRescueEscalation = async (reason: string) => {
@@ -489,8 +389,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     lastPrompt = "";
     coldReviewRanForTurn = false;
     escalatedForTurn = false;
-    harnessHoldsForTurn = 0;
-    failedSkillEvals.clear();
+    skillHarnessGate.resetSession();
   };
 
   for (const ev of ["session_start", "session_switch", "session_fork", "session_shutdown"]) {
@@ -501,7 +400,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     lastCtx = ctx;
     coldReviewRanForTurn = false;
     escalatedForTurn = false;
-    harnessHoldsForTurn = 0;
+    skillHarnessGate.resetTurn();
     lastPrompt = typeof (event as any).prompt === "string" ? (event as any).prompt : "";
     const selected = beginWorkModeRequest(session, true);
     if (current(session)?.inherited) return;
@@ -561,31 +460,49 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     }
   });
 
-  // Mechanical lever 2: Skill Harness failure gate (keeps task open in both Standard and Ambitious
-  // modes until failed scenarios are fixed and rerun to PASS) + automatic scoped cold diff review.
+  // Mechanical lever 2: Skill Harness failure gate (tracked by skill + scenario; bounded
+  // automatic retries, then explicit unresolved operator decision) + automatic scoped cold diff review.
   (pi as any).on("agent_before_settle", async (event: any, ctx: ExtensionContext) => {
-    if (failedSkillEvals.size > 0 && harnessHoldsForTurn < 3) {
-      harnessHoldsForTurn++;
-      const details = [...failedSkillEvals.values()].map((item) => {
-        const rows = item.failed.map(
-          (f) => `  - ${f.id}: expected [${(f.expected ?? []).join(" | ")}], observed [${f.observed ?? "FAIL"}]`,
-        );
-        return `Skill "${item.skill}" (${item.coverageLabel}) has failing scenario(s):\n${rows.join("\n")}`;
-      });
-      const content = [
-        "Skill Harness reported failed evaluation scenario(s); this task remains open:",
-        "",
-        ...details,
-        "",
-        "Fix the in-scope skill regression and rerun the affected scenario(s) with skill_check_run, " +
-          "or explain why the evaluation needs updating before changing it if behavior intentionally changed.",
-      ].join("\n");
+    const harnessDecision = skillHarnessGate.onBeforeSettle();
+    if (harnessDecision.action === "hold") {
       return {
         entries: [
           ...(Array.isArray(event?.entries) ? event.entries : []),
-          { type: "custom_message", customType: "pi-daddy-skill-harness-gate", content, display: false },
+          {
+            type: "custom_message",
+            customType: harnessDecision.customType,
+            content: harnessDecision.content,
+            display: false,
+          },
         ],
         continue: true,
+      };
+    }
+    if (harnessDecision.action === "unresolved-decision") {
+      const list = harnessDecision.remaining.map((f) => `${f.skill}:${f.scenarioId}`).join(", ");
+      if (ctx.hasUI) {
+        ctx.ui?.notify?.(
+          `Skill Harness: unresolved failing evaluation(s) after ${harnessDecision.maxRetries} retries (${list}) — operator decision required.`,
+          "warning",
+        );
+      }
+      pi.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+        producer: "skill-harness",
+        kind: "eval-unresolved-decision",
+        remaining: harnessDecision.remaining,
+        detail: `Skill Harness · unresolved failure after ${harnessDecision.maxRetries} retries (${list}) — operator decision required`,
+      });
+      return {
+        entries: [
+          ...(Array.isArray(event?.entries) ? event.entries : []),
+          {
+            type: "custom_message",
+            customType: harnessDecision.customType,
+            content: harnessDecision.content,
+            display: true,
+          },
+        ],
+        continue: false,
       };
     }
     if (coldReviewRanForTurn || !lastPrompt) return;
@@ -598,7 +515,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
       const strong = model as typeof ctx.model;
       if (!strong || (strong.provider === ctx.model?.provider && strong.id === ctx.model?.id)) return;
       const scope = resolveReviewScope(ctx.cwd, lastPrompt);
-      const preview = await collectReviewDiff(ctx.cwd, scope.mode);
+      const preview = await collectReviewDiff(ctx.cwd, scope);
       const fileCount = (preview.match(/^\+\+\+ b\//gm) ?? []).length;
       const lineCount = preview.split("\n").length;
       if (fileCount < 2 && lineCount < 60) return;

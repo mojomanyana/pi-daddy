@@ -6,21 +6,6 @@ export const preferenceFields = [
     "Scout URL fallback",
     "Allow Scout to read supplied public documentation URLs if the Docker worker is unavailable.",
   ],
-  [
-    "maxDepth",
-    "Delegation depth (1-8)",
-    "Maximum specialist nesting depth (main session is 0). Defaults to 4 and survives Standard/Ambitious mode changes.",
-  ],
-  [
-    "inheritContextFiles",
-    "Inherit workspace AGENTS.md in specialists",
-    "In trusted workspaces, specialists inherit root and scoped AGENTS.md instructions by default. Turn off to isolate specialists.",
-  ],
-  [
-    "tournamentTimeoutSec",
-    "Tournament candidate timeout (sec)",
-    "Per-candidate wall-clock timeout in seconds before preserving completed patches and retrying missing candidates.",
-  ],
   ["autoRecall", "Bookie recall", "Bring relevant project memory into a turn when Bookie has access."],
   [
     "autoDistill",
@@ -47,6 +32,21 @@ export const preferenceFields = [
     "autoOnStartup",
     "Start with Daddy Auto",
     "Approve eligible specialist tool requests in new trusted interactive sessions, including shell commands and file edits. Press [a] to change the current session.",
+  ],
+  [
+    "maxDepth",
+    "Delegation depth (1-8)",
+    "Maximum specialist nesting depth (main session is 0). Defaults to 4 and survives Standard/Ambitious mode changes.",
+  ],
+  [
+    "inheritContextFiles",
+    "Inherit workspace AGENTS.md in specialists",
+    "In trusted workspaces, specialists inherit root and scoped AGENTS.md instructions by default. Turn off to isolate specialists.",
+  ],
+  [
+    "tournamentTimeoutSec",
+    "Tournament candidate timeout (sec)",
+    "Per-candidate wall-clock timeout in seconds before preserving completed patches and retrying missing candidates.",
   ],
 ] as const;
 export interface PreferenceCatalog {

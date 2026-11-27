@@ -6,7 +6,7 @@
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { assertNarrowing, type Capability, type ResolveResult, expandSubsumed, resolve } from "./resolve.ts";
-import { childToolDeliveryRefusal, isReadOnlyCapabilitySet } from "./child-tools.ts";
+import { OPTIONAL_RUNTIME_TOOLS, childToolDeliveryRefusal, isReadOnlyCapabilitySet } from "./child-tools.ts";
 import { CROSS_MODEL_PROXIED_TOOLS, parentProxiedTools } from "./parent-tools.ts";
 import { selectedResourcePrompt } from "./selected-resources.ts";
 import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
@@ -239,6 +239,25 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
       },
       "UNKNOWN_TOOL",
     );
+
+  // On the named-definition path, optional Pi runtime tools (`codemode`, `parallel`, `edit-diff`) attenuate
+  // cleanly when the current Pi session's catalog/tool surface does not provide them and the definition also
+  // declares core tools. Explicit `tools: [...]` requests stay strict.
+  if (request.agent !== undefined) {
+    const catalog = ctx.catalog;
+    const childSourceNames = ctx.childToolSources ? new Set(ctx.childToolSources.map((t) => t.name)) : undefined;
+    const hasNonOptionalCore = requested.some((c) => !c.startsWith("tool:") || !OPTIONAL_RUNTIME_TOOLS.has(c.slice(5)));
+    if (hasNonOptionalCore && (catalog || childSourceNames)) {
+      requested = requested.filter((c) => {
+        if (!c.startsWith("tool:")) return true;
+        const name = c.slice(5);
+        if (!OPTIONAL_RUNTIME_TOOLS.has(name)) return true;
+        if (catalog && !catalog.has(c)) return false;
+        if (childSourceNames && !childSourceNames.has(name)) return false;
+        return true;
+      });
+    }
+  }
 
   // ADR-0078. A declared `context:` id is a CEILING, not a request: a definition that permits forking must not
   // fork on every spawn. So the declared modes come out of `requested` and exactly the one this call asked for

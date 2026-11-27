@@ -76,7 +76,7 @@ test("owner-bound reload restores its root while a distinct owner keeps inherite
     bound = bindReloadLifecycle(owner, reloaded.reloadLifecycle);
     reloaded.reconcileEnvironment(bound.environment, bound.lifecycle);
     assert.equal(reloaded.depth, 0, "the same owner recovers its root rather than its child publication");
-    assert.equal(reloaded.maxDepth, 2);
+    assert.equal(reloaded.maxDepth, 4);
     assert.equal(reloaded.episodeId, first.episodeId, "a reload stays in the same episode");
 
     // A root replacement is accepted only when it is not a package publication from any owner.
@@ -217,10 +217,10 @@ test("actual extension reload is owned by its Pi API, not a same-process SDK chi
     // hook since 0.31.0, so a reload is exercised by starting a new API object against the same manager.
     const reloadedApi = makePi(manager);
     const reload = await start(reloadedApi);
-    assert.match(reload, /depth 0\/2/, "Pi's stable SessionManager recovers root identity across a new API object");
+    assert.match(reload, /depth 0\/4/, "Pi's stable SessionManager recovers root identity across a new API object");
     const child = makePi({});
     const childStart = await start(child);
-    assert.match(childStart, /depth 1\/2/, "a different same-process SDK Pi session remains an inherited child");
+    assert.match(childStart, /depth 1\/4/, "a different same-process SDK Pi session remains an inherited child");
   } finally {
     process.chdir(originalCwd);
     for (const key of keys) {

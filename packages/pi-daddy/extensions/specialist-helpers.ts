@@ -12,6 +12,7 @@ import {
   resolveEcosystemModelCandidates,
   selectRegistryModel,
 } from "../src/kernel/ecosystem-config.ts";
+import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
 import type { GrantsSession } from "./session.ts";
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
@@ -107,7 +108,7 @@ export function snapshotWorkspaceDirtyState(cwd: string): Map<string, string> | 
     for (const line of out.split(/\r?\n/)) {
       if (line.length < 4) continue;
       const rel = line.slice(3).trim().replace(/^"|"$/g, "");
-      if (!rel || rel.startsWith(".pi/")) continue;
+      if (!rel || isUnderPiProjectDir(rel)) continue;
       const abs = resolve(cwd, rel);
       try {
         const digest = createHash("sha256").update(readFileSync(abs)).digest("hex");

@@ -218,6 +218,16 @@ export function openParentTools(
   };
 }
 
+function deniedBriefRead(reason: string): ParentToolReply {
+  return {
+    status: "result",
+    isError: true,
+    ...parentToolResultText({
+      content: [{ type: "text", text: JSON.stringify({ ok: false, status: "denied", reason }) }],
+    }),
+  };
+}
+
 async function runSpecialistScoutBriefRead(
   session: GrantsSession,
   host: ParentToolHost,
@@ -225,17 +235,24 @@ async function runSpecialistScoutBriefRead(
   args: Record<string, unknown>,
   specialist: string | undefined,
   attachedBriefs: readonly string[] | undefined,
-): Promise<ParentToolReply | undefined> {
+): Promise<ParentToolReply> {
+  // Fail closed whenever assignment attachment evidence is absent or empty, or when Scout cannot authorize it.
+  if (!Array.isArray(attachedBriefs)) {
+    return deniedBriefRead("brief assignment evidence is absent");
+  }
   const events = sessionEventBus.get(session);
   const sessionId = host.sessionManager?.getSessionId?.();
   const cwd = host.cwd ?? session.cwd;
-  if (!events?.emit || !sessionId || !specialist) return undefined;
-  return new Promise<ParentToolReply | undefined>((resolveDone) => {
+  if (!events?.emit || !sessionId || !specialist) {
+    return deniedBriefRead("specialist brief read requires active Scout assignment authorization");
+  }
+  const explicitAttached = [...attachedBriefs];
+  return new Promise<ParentToolReply>((resolveDone) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
-        resolveDone(undefined);
+        resolveDone(deniedBriefRead("Scout assignment authorization did not respond"));
       }
     }, 2000);
     timer.unref?.();
@@ -246,7 +263,8 @@ async function runSpecialistScoutBriefRead(
       cwd,
       specialist,
       childModel,
-      ...(attachedBriefs?.length ? { attachedBriefSha256: attachedBriefs } : {}),
+      // Explicitly transmit the assignment list (including []) so Scout never sees omitted evidence.
+      attachedBriefSha256: explicitAttached,
       reference: args.reference,
       offset: args.offset,
       maxBytes: args.maxBytes,
@@ -297,17 +315,14 @@ async function runParentTool(
     if (!liveParentTools(session, granted, host, childModel).includes(tool))
       return { status: "refused", reason: PARENT_TOOL_REFUSALS.unavailable };
     if (tool === "scout_brief_read") {
-      const specialistRead = await runSpecialistScoutBriefRead(
-        session,
-        host,
-        childModel,
-        args,
-        specialist,
-        attachedBriefs,
-      );
-      if (specialistRead) return specialistRead;
+      // Never fall through to parent's unscoped host.executeTool("scout_brief_read").
+      return await runSpecialistScoutBriefRead(session, host, childModel, args, specialist, attachedBriefs);
     }
-    const effectiveArgs = tool === "bookie_propose_memory" && specialist ? { ...args, specialist } : args;
+    // Pin child-proxied Bookie proposals to specialist origin so no child can forge coordinator acceptance.
+    const effectiveArgs =
+      tool === "bookie_propose_memory"
+        ? { ...args, source: "specialist", coordinatorAccepted: false, ...(specialist ? { specialist } : {}) }
+        : args;
     const outcome = await host.executeTool!(tool, effectiveArgs, { signal });
     return { status: "result", isError: outcome?.isError === true, ...parentToolResultText(outcome?.result) };
   } catch {

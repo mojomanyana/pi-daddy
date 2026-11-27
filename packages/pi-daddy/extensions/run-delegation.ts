@@ -540,7 +540,8 @@ async function runOneDelegationImplementation(
 
     if (plan.ok) {
       if (spec.agent) plan = { ...plan, specialist: spec.agent };
-      if (attachedBriefSha256.length > 0) plan = { ...plan, attachedBriefSha256 };
+      // Explicitly represent empty assignments as [] so the parent/child proxy never treats absence as unscoped.
+      plan = { ...plan, attachedBriefSha256: [...attachedBriefSha256] };
     }
     if (plan.ok && options.taskAdmission) {
       try {

@@ -39,6 +39,13 @@ const governedTools = new Set([
   "delegate_tournament",
 ]);
 
+/**
+ * Optional Pi 1.6.1+ runtime tools that named specialist definitions may declare alongside core tools.
+ * When absent from the current Pi host's catalog/tool surface, named definitions attenuate them away
+ * cleanly instead of refusing spawn; when present, read-only `codemode`/`parallel` and `edit-diff` flow through.
+ */
+export const OPTIONAL_RUNTIME_TOOLS: ReadonlySet<string> = new Set(["codemode", "parallel", "edit-diff"]);
+
 /** True when a capability set has no file-mutation or shell capabilities, making child `codemode` read-only safe. */
 export function isReadOnlyCapabilitySet(capabilities: readonly Capability[]): boolean {
   return !capabilities.some((c) => mutatingOrShellTools.has(c));

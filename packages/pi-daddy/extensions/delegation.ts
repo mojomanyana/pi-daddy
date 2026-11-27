@@ -26,7 +26,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
 import { ceilingForDefinition } from "../src/kernel/definitions.ts";
-import { childToolDeliveryRefusal, type ChildToolSource } from "../src/kernel/child-tools.ts";
+import { OPTIONAL_RUNTIME_TOOLS, childToolDeliveryRefusal, type ChildToolSource } from "../src/kernel/child-tools.ts";
 import { CROSS_MODEL_PROXIED_TOOLS } from "../src/kernel/parent-tools.ts";
 import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/kernel/fanout.ts";
 import {
@@ -191,6 +191,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       ...parentRun,
     };
     const offeredProxyNames = new Set((parentRun?.parentTools ?? []).map((t) => t.name));
+    const childSourceNames = childToolSources ? new Set(childToolSources.map((t) => t.name)) : undefined;
     const deliverable = (definition: Parameters<typeof ceilingForDefinition>[0]) => {
       try {
         const ceiling = ceilingForDefinition(definition);
@@ -198,7 +199,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
         const hasCore = ceiling.capabilities.some(
           (c) => !c.startsWith("tool:") || !CROSS_MODEL_PROXIED_TOOLS.has(c.slice(5)),
         );
-        const caps = hasCore
+        let caps = hasCore
           ? ceiling.capabilities.filter(
               (c) =>
                 !c.startsWith("tool:") ||
@@ -206,6 +207,13 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
                 offeredProxyNames.has(c.slice(5)),
             )
           : ceiling.capabilities;
+        const hasNonOptionalCore = caps.some((c) => !c.startsWith("tool:") || !OPTIONAL_RUNTIME_TOOLS.has(c.slice(5)));
+        if (hasNonOptionalCore && childSourceNames) {
+          caps = caps.filter(
+            (c) =>
+              !c.startsWith("tool:") || !OPTIONAL_RUNTIME_TOOLS.has(c.slice(5)) || childSourceNames.has(c.slice(5)),
+          );
+        }
         return !childToolDeliveryRefusal(caps, delivery);
       } catch {
         return false; // An unreadable ceiling is not offered; dispatch fails on the same read.
