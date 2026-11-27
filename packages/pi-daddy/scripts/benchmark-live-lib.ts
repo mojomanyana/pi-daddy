@@ -106,12 +106,13 @@ export function evaluateScoutAcceptance(input: {
 
   // Delegation identities for correlation:
   const delCallId = scoutDelegateCall?.toolCallId ?? null;
-  const delExecId =
+  const delParentExecId =
     scoutDelegateCall?.executionId ??
-    scoutDelegateResult?.executionId ??
-    scoutDelegateResult?.details?.executionId ??
-    scoutDelegateResult?.details?.childExecutionId ??
+    scoutDelegateCall?.parentExecutionId ??
+    scoutDelegateResult?.details?.parentExecutionId ??
     null;
+  const delChildExecId =
+    scoutDelegateResult?.details?.childExecutionId ?? scoutDelegateResult?.details?.childId ?? null;
 
   // 2. Correlate successful scout_research start/end pair to the actual scout-public delegation
   const scoutResults = toolResults.filter((r) => r?.tool === "scout_research" && r.isError !== true);
@@ -127,7 +128,7 @@ export function evaluateScoutAcceptance(input: {
       continue;
     }
 
-    const parentCallId =
+    const scoutParentCallId =
       r.parentCallId ??
       r.parentToolCallId ??
       matchingStart.parentCallId ??
@@ -136,23 +137,27 @@ export function evaluateScoutAcceptance(input: {
       r.details?.parentToolCallId ??
       null;
 
-    const execId = r.executionId ?? matchingStart.executionId ?? r.details?.executionId ?? null;
+    const scoutChildId = r.executionId ?? matchingStart.executionId ?? r.details?.executionId ?? null;
 
-    const parentExecId = r.parentExecutionId ?? matchingStart.parentExecutionId ?? r.details?.parentExecutionId ?? null;
+    const scoutParentExecId =
+      r.parentExecutionId ?? matchingStart.parentExecutionId ?? r.details?.parentExecutionId ?? null;
 
-    const correlatedByCall = Boolean(delCallId && parentCallId && parentCallId === delCallId);
-    const correlatedByExec = Boolean(
-      delExecId && ((execId && execId === delExecId) || (parentExecId && parentExecId === delExecId)),
-    );
+    // Check for explicit conflicting linkage:
+    const conflictingCall = Boolean(scoutParentCallId && delCallId && scoutParentCallId !== delCallId);
+    const conflictingParent = Boolean(scoutParentExecId && delParentExecId && scoutParentExecId !== delParentExecId);
+    const conflictingChild = Boolean(delChildExecId && scoutChildId && scoutChildId !== delChildExecId);
 
-    const mismatchedCall = Boolean(parentCallId && delCallId && parentCallId !== delCallId);
-    const mismatchedExec = Boolean(execId && delExecId && execId !== delExecId);
-
-    if (mismatchedCall || mismatchedExec) {
-      // Result explicitly belongs to a different invocation
+    if (conflictingCall || conflictingParent || conflictingChild) {
+      // Explicit parent or child ID conflicts with delegation trace
       continue;
     }
-    if (correlatedByCall || correlatedByExec) {
+
+    // Check for affirmative matching parent or child:
+    const matchesParentCall = Boolean(delCallId && scoutParentCallId && scoutParentCallId === delCallId);
+    const matchesParentExec = Boolean(delParentExecId && scoutParentExecId && scoutParentExecId === delParentExecId);
+    const matchesChildExec = Boolean(delChildExecId && scoutChildId && scoutChildId === delChildExecId);
+
+    if (matchesParentCall || matchesParentExec || matchesChildExec) {
       correlatedPairs.push({ start: matchingStart, result: r });
     }
   }
@@ -327,6 +332,7 @@ export function summarizeAcceptance(assertions: readonly AcceptanceAssertion[]) 
  * Evaluate ordinary unprompted skill-edit behavioral selection:
  * Requires the edit to succeed and requires the skill harness to execute and successfully
  * evaluate the scenario covering the changed behavior (defaulting to "tag-prefix").
+ * Evaluates the latest applicable verdict for the required scenario after the final relevant edit.
  * Any additional scenarios that ran are reported separately.
  */
 export function evaluateOrdinarySkillEdit(input: {
@@ -353,11 +359,64 @@ export function evaluateOrdinarySkillEdit(input: {
     failureReasons.push("Skill harness was never invoked to evaluate the modified skill");
   }
 
-  const verdicts = harnessResults.flatMap((r) =>
-    Array.isArray(r.details?.scenarios)
-      ? r.details.scenarios.map((s: any) => ({ id: String(s.id), verdict: String(s.verdict) }))
-      : [],
-  );
+  // Find index of the final relevant edit in toolCalls
+  let lastEditIndex = -1;
+  for (let i = toolCalls.length - 1; i >= 0; i--) {
+    const call = toolCalls[i];
+    if (call?.tool === "edit" || call?.tool === "write") {
+      lastEditIndex = i;
+      break;
+    }
+  }
+
+  // Find harness calls occurring after the final relevant edit
+  const subsequentHarnessCallsWithIdx = toolCalls
+    .map((call, idx) => ({ call, idx }))
+    .filter(({ call, idx }) => call?.tool === "skill_check_run" && (lastEditIndex === -1 || idx > lastEditIndex));
+
+  const requiredScenario = input.requiredScenarioId ?? "tag-prefix";
+  let requiredScenarioPassed = false;
+  let latestApplicableVerdict: string | null = null;
+  let rerunAfterFinalEdit = false;
+
+  if (lastEditIndex !== -1 && subsequentHarnessCallsWithIdx.length === 0) {
+    failureReasons.push(
+      `Required scenario "${requiredScenario}" was not evaluated after the final relevant edit (insufficient evidence)`,
+    );
+  } else if (subsequentHarnessCallsWithIdx.length > 0) {
+    rerunAfterFinalEdit = true;
+    for (let j = subsequentHarnessCallsWithIdx.length - 1; j >= 0; j--) {
+      const { call } = subsequentHarnessCallsWithIdx[j];
+      const matchResult =
+        toolResults.find(
+          (r) => r?.tool === "skill_check_run" && (call.toolCallId ? r.toolCallId === call.toolCallId : true),
+        ) ?? toolResults.filter((r) => r?.tool === "skill_check_run")[j];
+      const scenarios = Array.isArray(matchResult?.details?.scenarios) ? matchResult.details.scenarios : [];
+      const target = scenarios.find((s: any) => String(s.id) === requiredScenario);
+      if (target) {
+        latestApplicableVerdict = String(target.verdict);
+        break;
+      }
+    }
+    if (latestApplicableVerdict === "PASS") {
+      requiredScenarioPassed = true;
+    } else {
+      failureReasons.push(
+        `Latest applicable verdict for required scenario "${requiredScenario}" after final edit was not PASS (${latestApplicableVerdict ?? "no-verdict"})`,
+      );
+    }
+  } else if (lastEditIndex === -1 && harnessResults.length > 0) {
+    // No edit calls present; check the last verdict available
+    const lastResult = harnessResults[harnessResults.length - 1];
+    const scenarios = Array.isArray(lastResult?.details?.scenarios) ? lastResult.details.scenarios : [];
+    const target = scenarios.find((s: any) => String(s.id) === requiredScenario);
+    if (target) {
+      latestApplicableVerdict = String(target.verdict);
+      requiredScenarioPassed = latestApplicableVerdict === "PASS";
+    }
+  }
+
+  // Collect all scenarios run across all harness results
   const scenariosActuallyRun = [
     ...new Set(
       harnessResults.flatMap((r) =>
@@ -369,22 +428,27 @@ export function evaluateOrdinarySkillEdit(input: {
       ),
     ),
   ];
-
-  const requiredScenario = input.requiredScenarioId ?? "tag-prefix";
-  const requiredScenarioPassed = verdicts.some((v) => v.id === requiredScenario && v.verdict === "PASS");
-  if (!requiredScenarioPassed) {
-    failureReasons.push(
-      `Required scenario "${requiredScenario}" covering changed behavior was not successfully evaluated (verdict != PASS)`,
-    );
-  }
+  const verdicts = harnessResults.flatMap((r) =>
+    Array.isArray(r.details?.scenarios)
+      ? r.details.scenarios.map((s: any) => ({ id: String(s.id), verdict: String(s.verdict) }))
+      : [],
+  );
 
   const extraScenariosRun = scenariosActuallyRun.filter((id) => id !== requiredScenario);
-  const ok = Boolean(processOk && skillEdited && harnessInvoked && requiredScenarioPassed);
+  const ok = Boolean(
+    processOk &&
+    skillEdited &&
+    harnessInvoked &&
+    (lastEditIndex === -1 || rerunAfterFinalEdit) &&
+    requiredScenarioPassed,
+  );
 
   return {
     ok,
     skillEdited,
     harnessInvoked,
+    rerunAfterFinalEdit,
+    latestApplicableVerdict,
     requiredScenarioPassed,
     requiredScenario,
     scenariosActuallyRun,

@@ -111,19 +111,16 @@ function splitPromptClauses(prompt: string): string[] {
 const EXCLUSION_PATTERNS = [
   /\b(?:exclude|excluding|except(?:\s+for)?|ignore|ignoring)\b/i,
   /\b(?:skip(?:ping)?|leave\s+out|leaving\s+out|omit|omitting|without)\b/i,
+  /\b(?:leave|left)\b[^.;\n]{0,40}\bout\b/i,
   /\b(?:do\s+not|don't)\s+(?:review|include|diff)\b/i,
 ];
 
-const CONTEXT_ONLY_PATTERNS = [
-  /\b(?:only\s+for\s+context|for\s+context\s+only|mentioned\s+only\s+for\s+context)\b/i,
-  /\b(?:context\s+only|as\s+context\b|for\s+context\b)\b/i,
-  /\b(?:for\s+reference|reference\s+only|background\s+only|for\s+background)\b/i,
-  /\b(?:is|are)\s+mentioned\s+only\s+for\s+context\b/i,
-  /\bcontext\s*:/i,
-];
+function isExclusionClause(clause: string): boolean {
+  return EXCLUSION_PATTERNS.some((re) => re.test(clause));
+}
 
-function isExclusionOrContextClause(clause: string): boolean {
-  return EXCLUSION_PATTERNS.some((re) => re.test(clause)) || CONTEXT_ONLY_PATTERNS.some((re) => re.test(clause));
+function isAffirmativeReviewSelectionClause(clause: string): boolean {
+  return hasExplicitMultiRepoReviewIntent(clause) && !isExclusionClause(clause);
 }
 
 function resolveAffirmativePromptRoots(cwd: string, prompt: string): string[] {
@@ -132,12 +129,13 @@ function resolveAffirmativePromptRoots(cwd: string, prompt: string): string[] {
   const affirmativeCandidates: string[] = [];
 
   for (const clause of clauses) {
-    if (isExclusionOrContextClause(clause)) {
+    if (isExclusionClause(clause)) {
       const candidates = extractPromptRepoCandidates(cwd, clause);
       for (const root of dedupeGitRoots(cwd, candidates)) {
         excludedRoots.add(root);
       }
-    } else {
+    }
+    if (isAffirmativeReviewSelectionClause(clause)) {
       const candidates = extractPromptRepoCandidates(cwd, clause);
       affirmativeCandidates.push(...candidates);
     }

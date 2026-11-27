@@ -452,7 +452,53 @@ test("Finding 4: explicit multi-repo review selects and displays concrete roots 
   assert.match(explicitPromptMultiDiff, /beta = 2/);
   assert.doesNotMatch(explicitPromptMultiDiff, /gamma = 999/, "unrelated third repo must remain excluded");
 
-  // 1c. PAIRED TEST C: “review across A and B; exclude C” selects ONLY A and B, excludes C from roots and diff
+  // 1c. Exact original regression: “Review across A and B. Leave C out of the review.”
+  const leaveOutCScope = resolveReviewScope(
+    nestedDir,
+    `Review across "${repoA}" and "${repoB}". Leave "${repoC}" out of the review.`,
+  );
+  assert.equal(leaveOutCScope.mode, "multi-repo");
+  assert.deepEqual(
+    [...leaveOutCScope.roots].sort(),
+    [realpathSync(repoA), realpathSync(repoB)].sort(),
+    "review across A and B with 'Leave C out' must select only A and B",
+  );
+  const leaveOutCBanner = formatReviewScopeBanner(leaveOutCScope);
+  assert.match(leaveOutCBanner, /repo-alpha/);
+  assert.match(leaveOutCBanner, /repo-beta/);
+  assert.doesNotMatch(leaveOutCBanner, /repo-gamma/, "excluded repo-gamma must not appear in review scope banner");
+
+  const leaveOutCDiff = await collectReviewDiff(nestedDir, leaveOutCScope);
+  assert.match(leaveOutCDiff, /alpha = 2/);
+  assert.match(leaveOutCDiff, /beta = 2/);
+  assert.doesNotMatch(leaveOutCDiff, /gamma = 999/, "excluded repo-gamma dirty change must not appear in diff");
+
+  // 1d. Neutral follow-up sentence mentioning C must NOT widen scope to C
+  const neutralFollowUpScope = resolveReviewScope(
+    nestedDir,
+    `Review across "${repoA}" and "${repoB}". Note that "${repoC}" was touched yesterday for deployment.`,
+  );
+  assert.equal(neutralFollowUpScope.mode, "multi-repo");
+  assert.deepEqual(
+    [...neutralFollowUpScope.roots].sort(),
+    [realpathSync(repoA), realpathSync(repoB)].sort(),
+    "neutral follow-up mentioning C must not add C to selected roots",
+  );
+  const neutralFollowUpBanner = formatReviewScopeBanner(neutralFollowUpScope);
+  assert.match(neutralFollowUpBanner, /repo-alpha/);
+  assert.match(neutralFollowUpBanner, /repo-beta/);
+  assert.doesNotMatch(
+    neutralFollowUpBanner,
+    /repo-gamma/,
+    "neutral follow-up mention must not appear in review scope banner",
+  );
+
+  const neutralFollowUpDiff = await collectReviewDiff(nestedDir, neutralFollowUpScope);
+  assert.match(neutralFollowUpDiff, /alpha = 2/);
+  assert.match(neutralFollowUpDiff, /beta = 2/);
+  assert.doesNotMatch(neutralFollowUpDiff, /gamma = 999/, "neutral follow-up mention dirty change must not be in diff");
+
+  // 1e. Explicit review with exclusion phrasing selects ONLY A and B
   const excludeCScope = resolveReviewScope(nestedDir, `review across "${repoA}" and "${repoB}"; exclude "${repoC}"`);
   assert.equal(excludeCScope.mode, "multi-repo");
   assert.deepEqual(
@@ -470,28 +516,7 @@ test("Finding 4: explicit multi-repo review selects and displays concrete roots 
   assert.match(excludeCDiff, /beta = 2/);
   assert.doesNotMatch(excludeCDiff, /gamma = 999/, "excluded repo-gamma dirty change must not appear in diff");
 
-  // 1d. PAIRED TEST D: “review across A and B; C is mentioned only for context.” selects ONLY A and B
-  const contextCScope = resolveReviewScope(
-    nestedDir,
-    `review across "${repoA}" and "${repoB}"; "${repoC}" is mentioned only for context.`,
-  );
-  assert.equal(contextCScope.mode, "multi-repo");
-  assert.deepEqual(
-    [...contextCScope.roots].sort(),
-    [realpathSync(repoA), realpathSync(repoB)].sort(),
-    "explicit review with background context mention must only select affirmatively requested roots",
-  );
-  const contextCBanner = formatReviewScopeBanner(contextCScope);
-  assert.match(contextCBanner, /repo-alpha/);
-  assert.match(contextCBanner, /repo-beta/);
-  assert.doesNotMatch(contextCBanner, /repo-gamma/, "context-only repo-gamma must not appear in review scope banner");
-
-  const contextCDiff = await collectReviewDiff(nestedDir, contextCScope);
-  assert.match(contextCDiff, /alpha = 2/);
-  assert.match(contextCDiff, /beta = 2/);
-  assert.doesNotMatch(contextCDiff, /gamma = 999/, "context-only repo-gamma dirty change must not appear in diff");
-
-  // 1e. Explicit multi-repo review naming repo-alpha and repo-beta by folder name from workspace parent
+  // 1f. Explicit multi-repo review naming repo-alpha and repo-beta by folder name from workspace parent
   const multiScope = resolveReviewScope(root, "Perform a multi-repo review across repo-alpha and repo-beta");
   assert.equal(multiScope.mode, "multi-repo");
   assert.deepEqual(
@@ -754,6 +779,126 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
   assert.equal(missingScoutCall.matchingScoutInvocation, false);
   assert.equal(missingScoutCall.validBriefReference, false);
   assert.equal(missingScoutCall.cleanupEvidenceValid, false);
+
+  // POSITIVE: distinct child execution ID with matching parent execution ID passes
+  const okDistinctChildId = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: [
+      { tool: "delegate", toolCallId: "del-1", executionId: "parent-exec-main", args: { agent: "scout-public" } },
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        executionId: "child-exec-distinct-88",
+        parentExecutionId: "parent-exec-main",
+        args: { question: "Node 24" },
+      },
+    ],
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        executionId: "child-exec-distinct-88",
+        parentExecutionId: "parent-exec-main",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+          briefSha256: validRef.sha256,
+        },
+      },
+    ],
+  });
+  assert.equal(okDistinctChildId.ok, true);
+  assert.equal(okDistinctChildId.matchingScoutInvocation, true);
+
+  // NEGATIVE: conflicting explicit parent execution ID fails
+  const conflictingParentExec = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: [
+      { tool: "delegate", toolCallId: "del-1", executionId: "parent-exec-main", args: { agent: "scout-public" } },
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        executionId: "child-exec-distinct-88",
+        parentExecutionId: "parent-exec-WRONG",
+        args: { question: "Node 24" },
+      },
+    ],
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        executionId: "child-exec-distinct-88",
+        parentExecutionId: "parent-exec-WRONG",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+        },
+      },
+    ],
+  });
+  assert.equal(conflictingParentExec.ok, false);
+  assert.equal(conflictingParentExec.matchingScoutInvocation, false);
+
+  // NEGATIVE: ambiguous linkage with multiple scout_research invocations claiming the delegation fails
+  const ambiguousLinkage = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: [
+      { tool: "delegate", toolCallId: "del-1", executionId: "parent-exec-main", args: { agent: "scout-public" } },
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        parentCallId: "del-1",
+        args: { question: "Node 24" },
+      },
+      {
+        tool: "scout_research",
+        toolCallId: "scout-2",
+        parentCallId: "del-1",
+        args: { question: "Node 24 (second attempt)" },
+      },
+    ],
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        parentCallId: "del-1",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+        },
+      },
+      {
+        tool: "scout_research",
+        toolCallId: "scout-2",
+        parentCallId: "del-1",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+        },
+      },
+    ],
+  });
+  assert.equal(ambiguousLinkage.ok, false);
+  assert.equal(ambiguousLinkage.matchingScoutInvocation, false);
+  assert.ok(ambiguousLinkage.failureReasons.some((r) => /ambiguous/i.test(r)));
 
   // POSITIVE 1: Direct HTTPS with structured mode="direct-urls", cleanup={state:"not-started",workerStarted:false}, valid briefReference
   const okDirect = evaluateScoutAcceptance({
@@ -1026,4 +1171,97 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
   assert.equal(okEval.requiredScenarioPassed, true);
   assert.equal(okEval.requiredScenario, "tag-prefix");
   assert.deepEqual(okEval.extraScenariosRun, ["notes-commit"]);
+
+  // Timeline regression 1: PASS → edit → FAIL (must fail)
+  const passEditFail = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [
+      { tool: "skill_check_run", toolCallId: "h-1" },
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-2" },
+    ],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-2",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "FAIL" }] },
+      },
+    ],
+  });
+  assert.equal(passEditFail.ok, false);
+  assert.equal(passEditFail.requiredScenarioPassed, false);
+  assert.equal(passEditFail.latestApplicableVerdict, "FAIL");
+
+  // Timeline regression 2: FAIL → fix → PASS (must pass)
+  const failFixPass = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1" },
+      { tool: "edit", toolCallId: "e-2", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-2", args: { scenarios: ["tag-prefix", "notes-commit"] } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "FAIL" }] },
+      },
+      { tool: "edit", toolCallId: "e-2", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-2",
+        isError: false,
+        details: {
+          scenarios: [
+            { id: "tag-prefix", verdict: "PASS" },
+            { id: "notes-commit", verdict: "PASS" },
+          ],
+          coverage: { scenariosRun: ["tag-prefix", "notes-commit"] },
+        },
+      },
+    ],
+  });
+  assert.equal(failFixPass.ok, true);
+  assert.equal(failFixPass.requiredScenarioPassed, true);
+  assert.equal(failFixPass.latestApplicableVerdict, "PASS");
+  assert.deepEqual(failFixPass.extraScenariosRun, ["notes-commit"]);
+
+  // Timeline regression 3: PASS → edit with no rerun (insufficient evidence / must fail)
+  const passEditNoRerun = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [
+      { tool: "skill_check_run", toolCallId: "h-1" },
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+    ],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+    ],
+  });
+  assert.equal(passEditNoRerun.ok, false);
+  assert.equal(passEditNoRerun.rerunAfterFinalEdit, false);
+  assert.equal(passEditNoRerun.requiredScenarioPassed, false);
+  assert.ok(passEditNoRerun.failureReasons.some((r) => /insufficient evidence/i.test(r)));
 });
