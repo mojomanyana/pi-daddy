@@ -99,6 +99,54 @@ function extractPromptRepoCandidates(cwd: string, prompt: string): string[] {
   return candidates;
 }
 
+function splitPromptClauses(prompt: string): string[] {
+  return prompt
+    .split(
+      /(?:[\r\n]+|;+|(?<=[.!?])\s+|,\s*(?=(?:but\s+)?(?:exclude|excluding|except|ignore|skip|do\s+not|don't|without|context\b|for\s+context|as\s+context)))/i,
+    )
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const EXCLUSION_PATTERNS = [
+  /\b(?:exclude|excluding|except(?:\s+for)?|ignore|ignoring)\b/i,
+  /\b(?:skip(?:ping)?|leave\s+out|leaving\s+out|omit|omitting|without)\b/i,
+  /\b(?:do\s+not|don't)\s+(?:review|include|diff)\b/i,
+];
+
+const CONTEXT_ONLY_PATTERNS = [
+  /\b(?:only\s+for\s+context|for\s+context\s+only|mentioned\s+only\s+for\s+context)\b/i,
+  /\b(?:context\s+only|as\s+context\b|for\s+context\b)\b/i,
+  /\b(?:for\s+reference|reference\s+only|background\s+only|for\s+background)\b/i,
+  /\b(?:is|are)\s+mentioned\s+only\s+for\s+context\b/i,
+  /\bcontext\s*:/i,
+];
+
+function isExclusionOrContextClause(clause: string): boolean {
+  return EXCLUSION_PATTERNS.some((re) => re.test(clause)) || CONTEXT_ONLY_PATTERNS.some((re) => re.test(clause));
+}
+
+function resolveAffirmativePromptRoots(cwd: string, prompt: string): string[] {
+  const clauses = splitPromptClauses(prompt);
+  const excludedRoots = new Set<string>();
+  const affirmativeCandidates: string[] = [];
+
+  for (const clause of clauses) {
+    if (isExclusionOrContextClause(clause)) {
+      const candidates = extractPromptRepoCandidates(cwd, clause);
+      for (const root of dedupeGitRoots(cwd, candidates)) {
+        excludedRoots.add(root);
+      }
+    } else {
+      const candidates = extractPromptRepoCandidates(cwd, clause);
+      affirmativeCandidates.push(...candidates);
+    }
+  }
+
+  const candidateRoots = dedupeGitRoots(cwd, affirmativeCandidates);
+  return candidateRoots.filter((root) => !excludedRoots.has(root));
+}
+
 /**
  * Resolve the concrete review scope:
  * - Explicit `explicitRoots` -> `multi-repo` confined to those Git roots.
@@ -121,7 +169,7 @@ export function resolveReviewScope(cwd: string, prompt: string, explicitRoots?: 
 
   const cwdRoot = canonicalGitRoot(cwd);
   if (hasExplicitMultiRepoReviewIntent(prompt)) {
-    const promptRoots = dedupeGitRoots(cwd, extractPromptRepoCandidates(cwd, prompt));
+    const promptRoots = resolveAffirmativePromptRoots(cwd, prompt);
     if (promptRoots.length >= 2 || (promptRoots.length === 1 && promptRoots[0] !== cwdRoot)) {
       return {
         mode: "multi-repo",

@@ -26,6 +26,7 @@ import { planDelegation } from "../src/kernel/delegate.ts";
 import { buildCatalog } from "../src/kernel/catalog.ts";
 import {
   computeObservedPeakActiveFromLedger,
+  evaluateOrdinarySkillEdit,
   evaluateScoutAcceptance,
   makeSkippedTask,
   summarizeAcceptance,
@@ -451,7 +452,46 @@ test("Finding 4: explicit multi-repo review selects and displays concrete roots 
   assert.match(explicitPromptMultiDiff, /beta = 2/);
   assert.doesNotMatch(explicitPromptMultiDiff, /gamma = 999/, "unrelated third repo must remain excluded");
 
-  // 1c. Explicit multi-repo review naming repo-alpha and repo-beta by folder name from workspace parent
+  // 1c. PAIRED TEST C: “review across A and B; exclude C” selects ONLY A and B, excludes C from roots and diff
+  const excludeCScope = resolveReviewScope(nestedDir, `review across "${repoA}" and "${repoB}"; exclude "${repoC}"`);
+  assert.equal(excludeCScope.mode, "multi-repo");
+  assert.deepEqual(
+    [...excludeCScope.roots].sort(),
+    [realpathSync(repoA), realpathSync(repoB)].sort(),
+    "explicit review with exclusion must only select affirmatively requested roots",
+  );
+  const excludeCBanner = formatReviewScopeBanner(excludeCScope);
+  assert.match(excludeCBanner, /repo-alpha/);
+  assert.match(excludeCBanner, /repo-beta/);
+  assert.doesNotMatch(excludeCBanner, /repo-gamma/, "excluded repo-gamma must not appear in review scope banner");
+
+  const excludeCDiff = await collectReviewDiff(nestedDir, excludeCScope);
+  assert.match(excludeCDiff, /alpha = 2/);
+  assert.match(excludeCDiff, /beta = 2/);
+  assert.doesNotMatch(excludeCDiff, /gamma = 999/, "excluded repo-gamma dirty change must not appear in diff");
+
+  // 1d. PAIRED TEST D: “review across A and B; C is mentioned only for context.” selects ONLY A and B
+  const contextCScope = resolveReviewScope(
+    nestedDir,
+    `review across "${repoA}" and "${repoB}"; "${repoC}" is mentioned only for context.`,
+  );
+  assert.equal(contextCScope.mode, "multi-repo");
+  assert.deepEqual(
+    [...contextCScope.roots].sort(),
+    [realpathSync(repoA), realpathSync(repoB)].sort(),
+    "explicit review with background context mention must only select affirmatively requested roots",
+  );
+  const contextCBanner = formatReviewScopeBanner(contextCScope);
+  assert.match(contextCBanner, /repo-alpha/);
+  assert.match(contextCBanner, /repo-beta/);
+  assert.doesNotMatch(contextCBanner, /repo-gamma/, "context-only repo-gamma must not appear in review scope banner");
+
+  const contextCDiff = await collectReviewDiff(nestedDir, contextCScope);
+  assert.match(contextCDiff, /alpha = 2/);
+  assert.match(contextCDiff, /beta = 2/);
+  assert.doesNotMatch(contextCDiff, /gamma = 999/, "context-only repo-gamma dirty change must not appear in diff");
+
+  // 1e. Explicit multi-repo review naming repo-alpha and repo-beta by folder name from workspace parent
   const multiScope = resolveReviewScope(root, "Perform a multi-repo review across repo-alpha and repo-beta");
   assert.equal(multiScope.mode, "multi-repo");
   assert.deepEqual(
@@ -547,7 +587,12 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
   };
   const baseDelegateCalls = [
     { tool: "delegate", toolCallId: "del-1", args: { agent: "scout-public", task: "Check Node 24" } },
-    { tool: "scout_research", toolCallId: "scout-1", args: { question: "Node 24", scope: "Official" } },
+    {
+      tool: "scout_research",
+      toolCallId: "scout-1",
+      parentCallId: "del-1",
+      args: { question: "Node 24", scope: "Official" },
+    },
   ];
   const settledDaddyDelegate = {
     tool: "delegate",
@@ -567,6 +612,7 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
       {
         tool: "scout_research",
         toolCallId: "scout-1",
+        parentCallId: "del-1",
         isError: false,
         text: "Scout worker cleanup: not-started (direct-urls mode; no Docker worker started).",
         details: { mode: "direct-urls", briefReference: validRef },
@@ -588,6 +634,7 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
       {
         tool: "scout_research",
         toolCallId: "scout-1",
+        parentCallId: "del-1",
         isError: false,
         text: "Scout worker cleanup: confirmed.",
         details: { briefReference: validRef, runtime: { cleanup: { confirmed: false } } },
@@ -606,6 +653,7 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
       {
         tool: "scout_research",
         toolCallId: "scout-1",
+        parentCallId: "del-1",
         isError: false,
         text: "Scout worker cleanup: confirmed.",
         details: {
@@ -618,6 +666,82 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
   });
   assert.equal(dockerWrongMode.ok, false);
   assert.equal(dockerWrongMode.cleanupEvidenceValid, false);
+
+  // NEGATIVE: valid Scout result from a DIFFERENT invocation (parentCallId points to del-2, not del-1)
+  const differentInvocation = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: [
+      { tool: "delegate", toolCallId: "del-1", args: { agent: "scout-public", task: "Check" } },
+      { tool: "delegate", toolCallId: "del-2", args: { agent: "other-agent", task: "Other" } },
+      { tool: "scout_research", toolCallId: "scout-1", parentCallId: "del-2", args: { question: "Node 24" } },
+    ],
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        parentCallId: "del-2",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+        },
+      },
+    ],
+  });
+  assert.equal(differentInvocation.ok, false);
+  assert.equal(differentInvocation.matchingScoutInvocation, false);
+
+  // NEGATIVE: orphan result with no matching start in toolCalls
+  const orphanResult = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: [{ tool: "delegate", toolCallId: "del-1", args: { agent: "scout-public", task: "Check" } }],
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-orphan",
+        parentCallId: "del-1",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+        },
+      },
+    ],
+  });
+  assert.equal(orphanResult.ok, false);
+  assert.equal(orphanResult.matchingScoutInvocation, false);
+
+  // NEGATIVE: Docker with missing affirmative worker execution evidence
+  const dockerMissingExecution = evaluateScoutAcceptance({
+    mode: "docker",
+    processOk: true,
+    toolCalls: baseDelegateCalls,
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        parentCallId: "del-1",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "docker",
+          briefReference: validRef,
+          runtime: { cleanup: { confirmed: true } },
+        },
+      },
+    ],
+  });
+  assert.equal(dockerMissingExecution.ok, false);
+  assert.equal(dockerMissingExecution.cleanupEvidenceValid, false);
 
   // NEGATIVE 3: Daddy settled with prose brief JSON, but NO matching scout_research invocation exists
   const missingScoutCall = evaluateScoutAcceptance({
@@ -641,6 +765,7 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
       {
         tool: "scout_research",
         toolCallId: "scout-1",
+        parentCallId: "del-1",
         isError: false,
         text: "ok",
         details: {
@@ -656,7 +781,7 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
   assert.equal(okDirect.validBriefReference, true);
   assert.equal(okDirect.cleanupEvidenceValid, true);
 
-  // POSITIVE 2: Docker with structured runtime.cleanup.confirmed === true and valid briefReference
+  // POSITIVE 2: Docker with structured affirmative worker execution + cleanup.confirmed === true and valid briefReference
   const okDocker = evaluateScoutAcceptance({
     mode: "docker",
     processOk: true,
@@ -666,12 +791,19 @@ test("Review pass 3: Scout acceptance uses structured evidence from matching sco
       {
         tool: "scout_research",
         toolCallId: "scout-1",
+        parentCallId: "del-1",
         isError: false,
         text: "ok",
         details: {
+          mode: "docker",
           briefReference: validRef,
           briefSha256: validRef.sha256,
-          runtime: { cleanup: { confirmed: true }, modelCallbackSettled: true, discoveryCallbackSettled: true },
+          runtime: {
+            container: "pi-scout-container-1",
+            cleanup: { confirmed: true, containerAbsent: true },
+            modelCallbackSettled: true,
+            discoveryCallbackSettled: true,
+          },
         },
       },
     ],
@@ -687,13 +819,35 @@ test("Review pass 4: benchmark reporting distinguishes skipped checks, selectedC
   assert.equal("ok" in skipped, false);
   assert.equal("expectedFindingsScore" in skipped, false);
 
-  const partialSummary = summarizeAcceptance([
-    { id: "a", required: true, status: "passed", passed: true, detail: "ok" },
-    { id: "b", required: true, status: "skipped", passed: null, detail: "Skipped" },
+  // 1. Required-but-blocked Docker reports blocked, selectedChecksPassed false, fullSuitePassed false
+  const blockedDockerSummary = summarizeAcceptance([
+    { id: "task4.scout.directHttps", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "task4.scout.docker", required: true, status: "blocked", passed: false, detail: "daemon unavailable" },
   ]);
-  assert.equal(partialSummary.selectedChecksPassed, true);
-  assert.equal(partialSummary.fullSuitePassed, false);
-  assert.deepEqual(partialSummary.skippedCheckIds, ["b"]);
+  assert.equal(blockedDockerSummary.selectedChecksPassed, false);
+  assert.equal(blockedDockerSummary.fullSuitePassed, false);
+  assert.deepEqual(blockedDockerSummary.blockedCheckIds, ["task4.scout.docker"]);
+  assert.equal(blockedDockerSummary.failedRequired.length, 1);
+
+  // 2. Executed-but-failed optional Docker preserves selectedChecksPassed true but fullSuitePassed false
+  const optionalFailedDockerSummary = summarizeAcceptance([
+    { id: "task4.scout.directHttps", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "task4.scout.docker", required: false, status: "failed", passed: false, detail: "failed container" },
+  ]);
+  assert.equal(optionalFailedDockerSummary.selectedChecksPassed, true);
+  assert.equal(optionalFailedDockerSummary.fullSuitePassed, false);
+  assert.deepEqual(optionalFailedDockerSummary.failedCheckIds, ["task4.scout.docker"]);
+
+  // 3. Successful deliberately filtered run reports selectedChecksPassed true, fullSuitePassed false
+  const filteredSummary = summarizeAcceptance([
+    { id: "task2c.ordinarySkillEdit.standard", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "task3b.explicitReviewerDelegation.standard", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "task1.simpleEdit.candidate", required: true, status: "skipped", passed: null, detail: "excluded by --only" },
+    { id: "task4.scout.directHttps", required: true, status: "skipped", passed: null, detail: "excluded by --only" },
+  ]);
+  assert.equal(filteredSummary.selectedChecksPassed, true);
+  assert.equal(filteredSummary.fullSuitePassed, false);
+  assert.deepEqual(filteredSummary.skippedCheckIds, ["task1.simpleEdit.candidate", "task4.scout.directHttps"]);
 
   const fullSummary = summarizeAcceptance([
     { id: "a", required: true, status: "passed", passed: true, detail: "ok" },
@@ -805,4 +959,71 @@ test("Finding 6 regression: named Principal roles attenuate absent optional runt
   );
   assert.equal(blockedExplicit.ok, false);
   assert.match(blockedExplicit.reason ?? "", /unknown capability: tool:codemode/);
+});
+
+test("Review pass 5: ordinary skill-edit requires observed Harness verification of changed behavior and reports extra scenarios separately", () => {
+  const beforeText = "# Release Tagger\nPrefix tags with `v`.\n";
+  const afterText = "# Release Tagger\nPrefix tags with lowercase `v` (never uppercase `V`).\n";
+
+  // Regression: edit succeeds but Harness never runs -> behavioral check fails
+  const noHarness = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [{ tool: "edit", args: { path: "SKILL.md" } }],
+    toolResults: [{ tool: "edit", isError: false, text: "ok" }],
+  });
+  assert.equal(noHarness.ok, false);
+  assert.equal(noHarness.skillEdited, true);
+  assert.equal(noHarness.harnessInvoked, false);
+  assert.equal(noHarness.requiredScenarioPassed, false);
+  assert.ok(noHarness.failureReasons.some((r) => /never invoked/i.test(r)));
+
+  // Regression: edit succeeds, Harness runs but does NOT evaluate required scenario "tag-prefix"
+  const missingScenario = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [{ tool: "skill_check_run", args: { scenarios: ["notes-commit"] } }],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        isError: false,
+        details: {
+          scenarios: [{ id: "notes-commit", verdict: "PASS" }],
+          coverage: { scenariosRun: ["notes-commit"] },
+        },
+      },
+    ],
+  });
+  assert.equal(missingScenario.ok, false);
+  assert.equal(missingScenario.harnessInvoked, true);
+  assert.equal(missingScenario.requiredScenarioPassed, false);
+
+  // Positive: edit succeeds, Harness runs required "tag-prefix" (PASS) and extra scenario "notes-commit"
+  const okEval = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [{ tool: "skill_check_run", args: { scenarios: ["tag-prefix", "notes-commit"] } }],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        isError: false,
+        details: {
+          scenarios: [
+            { id: "tag-prefix", verdict: "PASS" },
+            { id: "notes-commit", verdict: "PASS" },
+          ],
+          coverage: { scenariosRun: ["tag-prefix", "notes-commit"] },
+        },
+      },
+    ],
+  });
+  assert.equal(okEval.ok, true);
+  assert.equal(okEval.skillEdited, true);
+  assert.equal(okEval.harnessInvoked, true);
+  assert.equal(okEval.requiredScenarioPassed, true);
+  assert.equal(okEval.requiredScenario, "tag-prefix");
+  assert.deepEqual(okEval.extraScenariosRun, ["notes-commit"]);
 });

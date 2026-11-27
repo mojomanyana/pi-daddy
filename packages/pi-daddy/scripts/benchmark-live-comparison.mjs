@@ -26,6 +26,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   computeObservedPeakActiveFromLedger,
+  evaluateOrdinarySkillEdit,
   evaluateScoutAcceptance,
   makeSkippedTask,
   summarizeAcceptance,
@@ -191,7 +192,14 @@ function runPiJson({ cwd, profileDir, prompt, sessionFile, extraArgs = [], extra
             if (texts.length) finalText = texts.join("\n").trim();
           }
           if (ev.type === "tool_execution_start" && ev.toolName) {
-            toolCalls.push({ tool: ev.toolName, toolCallId: ev.toolCallId, args: ev.args });
+            toolCalls.push({
+              tool: ev.toolName,
+              toolCallId: ev.toolCallId,
+              parentCallId: ev.parentCallId ?? ev.parentToolCallId,
+              executionId: ev.executionId,
+              parentExecutionId: ev.parentExecutionId,
+              args: ev.args,
+            });
           }
           if (ev.type === "tool_execution_end" && ev.toolName) {
             const text = (ev.result?.content ?? [])
@@ -201,6 +209,13 @@ function runPiJson({ cwd, profileDir, prompt, sessionFile, extraArgs = [], extra
             toolResults.push({
               tool: ev.toolName,
               toolCallId: ev.toolCallId,
+              parentCallId:
+                ev.parentCallId ??
+                ev.parentToolCallId ??
+                ev.result?.details?.parentCallId ??
+                ev.result?.details?.parentToolCallId,
+              executionId: ev.executionId ?? ev.result?.details?.executionId,
+              parentExecutionId: ev.parentExecutionId ?? ev.result?.details?.parentExecutionId,
               isError: ev.isError === true,
               text,
               details: ev.result?.details,
@@ -664,18 +679,32 @@ try {
         timeoutMs: 180_000,
       });
       const after = readFileSync(join(skillDir, "SKILL.md"), "utf8");
-      const skillEdited = after !== before && /lowercase/i.test(after);
+      const evalResult = evaluateOrdinarySkillEdit({
+        processOk: out.ok,
+        beforeText: before,
+        afterText: after,
+        toolCalls: out.toolCalls,
+        toolResults: out.toolResults,
+        requiredScenarioId: "tag-prefix",
+      });
       const obs = extractHarnessObservation(out);
       progress(
-        `task2c (${mode}) done ok=${out.ok} edited=${skillEdited} harnessInvoked=${obs.skillCheckInvoked} scenarios=[${obs.scenariosActuallyRun.join(",")}]`,
+        `task2c (${mode}) done ok=${evalResult.ok} edited=${evalResult.skillEdited} harnessInvoked=${evalResult.harnessInvoked} requiredPassed=${evalResult.requiredScenarioPassed} scenarios=[${evalResult.scenariosActuallyRun.join(",")}] extra=[${evalResult.extraScenariosRun.join(",")}]`,
       );
       return {
         status: "executed",
         category: "behavioral-selection",
         explicitlyPrompted: false,
         mode,
-        ok: out.ok && skillEdited,
-        skillEdited,
+        ok: evalResult.ok,
+        skillEdited: evalResult.skillEdited,
+        harnessInvoked: evalResult.harnessInvoked,
+        requiredScenarioPassed: evalResult.requiredScenarioPassed,
+        requiredScenario: evalResult.requiredScenario,
+        scenariosActuallyRun: evalResult.scenariosActuallyRun,
+        extraScenariosRun: evalResult.extraScenariosRun,
+        verdicts: evalResult.verdicts,
+        failureReasons: evalResult.failureReasons,
         ...obs,
         elapsedMs: out.elapsedMs,
         modelCalls: out.modelCalls,
@@ -699,14 +728,18 @@ try {
       true,
       true,
       std.ok,
-      `Standard ordinary skill edit succeeded (harnessInvoked=${std.skillCheckInvoked}, scenarios=[${std.scenariosActuallyRun.join(", ")}])`,
+      std.ok
+        ? `Standard ordinary skill edit succeeded with required scenario "${std.requiredScenario}" PASS (scenarios=[${std.scenariosActuallyRun.join(", ")}], extra=[${std.extraScenariosRun.join(", ")}])`
+        : `Standard ordinary skill edit failed: ${std.failureReasons?.join("; ") || "behavioral check not satisfied"}`,
     );
     pushAssertion(
       "task2c.ordinarySkillEdit.ambitious",
       true,
       true,
       amb.ok,
-      `Ambitious ordinary skill edit succeeded (harnessInvoked=${amb.skillCheckInvoked}, scenarios=[${amb.scenariosActuallyRun.join(", ")}])`,
+      amb.ok
+        ? `Ambitious ordinary skill edit succeeded with required scenario "${amb.requiredScenario}" PASS (scenarios=[${amb.scenariosActuallyRun.join(", ")}], extra=[${amb.extraScenariosRun.join(", ")}])`
+        : `Ambitious ordinary skill edit failed: ${amb.failureReasons?.join("; ") || "behavioral check not satisfied"}`,
     );
   } else {
     task2cReport = makeSkippedTask();
@@ -941,19 +974,50 @@ try {
     );
 
     const dockerAvailable = isDockerDaemonRunning();
-    const scoutDocker = dockerAvailable
-      ? await runDelegatedScout(
-          "docker",
-          candidateDockerProfile,
-          'Delegate to scout-public using delegate({ agent: "scout-public", task: "Verify Node.js 24 LTS release status using sourceUrls: [\'https://nodejs.org/en/about/previous-releases\']." }) and summarize the result.',
-        )
-      : {
-          mode: "docker",
-          status: "pending-docker-unavailable",
-          executed: false,
-          ok: null,
-          blocker: "Docker Desktop Linux engine daemon is not running on this host (`docker info` unavailable).",
-        };
+    let scoutDocker;
+    if (dockerAvailable) {
+      scoutDocker = await runDelegatedScout(
+        "docker",
+        candidateDockerProfile,
+        'Delegate to scout-public using delegate({ agent: "scout-public", task: "Verify Node.js 24 LTS release status using sourceUrls: [\'https://nodejs.org/en/about/previous-releases\']." }) and summarize the result.',
+      );
+      pushAssertion(
+        "task4.scout.docker",
+        REQUIRE_DOCKER,
+        true,
+        scoutDocker.ok,
+        scoutDocker.ok
+          ? "Matching scout_research invocation proved Docker runtime.cleanup.confirmed=true and valid briefReference"
+          : `Docker acceptance failed: ${scoutDocker.failureReasons.join("; ")}`,
+      );
+    } else if (REQUIRE_DOCKER) {
+      scoutDocker = {
+        mode: "docker",
+        status: "blocked",
+        blocked: true,
+        executed: false,
+        ok: false,
+        blocker:
+          "Docker Desktop Linux engine daemon is not running on this host (`docker info` unavailable) while --require-docker was specified.",
+      };
+      acceptanceAssertions.push({
+        id: "task4.scout.docker",
+        required: true,
+        status: "blocked",
+        passed: false,
+        detail: scoutDocker.blocker,
+      });
+    } else {
+      scoutDocker = {
+        mode: "docker",
+        status: "pending-docker-unavailable",
+        blocked: false,
+        executed: false,
+        ok: null,
+        blocker: "Docker Desktop Linux engine daemon is not running on this host (`docker info` unavailable).",
+      };
+      pushAssertion("task4.scout.docker", false, false, null, scoutDocker.blocker);
+    }
 
     task4Report = {
       status: "executed",
@@ -968,17 +1032,6 @@ try {
       scoutDirectHttps.ok
         ? "Matching scout_research invocation proved direct-urls mode, workerStarted=false, cleanup=not-started, and valid briefReference"
         : `Direct HTTPS acceptance failed: ${scoutDirectHttps.failureReasons.join("; ")}`,
-    );
-    pushAssertion(
-      "task4.scout.docker",
-      REQUIRE_DOCKER,
-      dockerAvailable,
-      dockerAvailable ? scoutDocker.ok : null,
-      dockerAvailable
-        ? scoutDocker.ok
-          ? "Matching scout_research invocation proved Docker runtime.cleanup.confirmed=true and valid briefReference"
-          : `Docker acceptance failed: ${scoutDocker.failureReasons.join("; ")}`
-        : scoutDocker.blocker,
     );
   } else {
     task4Report = makeSkippedTask();
