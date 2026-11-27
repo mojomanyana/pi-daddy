@@ -100,6 +100,51 @@ test("working copies permit simultaneous writers on separate roots; subfolders o
   next("not-started");
 });
 
+test("a conflicting Bookie scope declines background replay and still blocks new work", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "daddy-replay-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const host = { cwd: dir, sessionId: "resumed" };
+  const handlers = new Map<string, (request: any) => void>();
+  const events = {
+    on: (key: string, handler: (request: any) => void) => {
+      handlers.set(key, handler);
+      return () => handlers.delete(key);
+    },
+    emit: (key: string, request: any) => handlers.get(key)?.(request),
+  };
+  let conflict = true;
+  handlers.set("pi.task-history.v1.scope", (req) => {
+    req.accept({ projectId: "project", taskId: "task", revision: 1, assertCurrent: async () => {} });
+    if (conflict) req.unavailable();
+  });
+  const controller = createTaskDispatchController(
+    events as never,
+    () => host,
+    () => dir,
+  );
+  t.after(() => controller.close());
+  let reads = 0;
+  const replay = () =>
+    events.emit("pi.task-history.v1.replay", {
+      version: 1,
+      owner: "pi-daddy",
+      ...host,
+      projectId: "project",
+      taskId: "task",
+      after: 0,
+      limit: 1,
+      accept: () => {
+        reads++;
+      },
+    });
+  replay();
+  assert.equal(reads, 0);
+  await assert.rejects(controller.captureInline()!(), /scope is temporarily unavailable/);
+  conflict = false;
+  replay();
+  assert.equal(reads, 1);
+});
+
 test("optional task broker distinguishes absent, revoked, stale and admitted scope, and late receipt cannot rerun work", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "daddy-scope-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

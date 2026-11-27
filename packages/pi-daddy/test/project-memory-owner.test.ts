@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, rename, symlink, unlink } from "node:fs/promises";
+import { mkdir, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -11,6 +11,7 @@ import {
   PROJECT_MEMORY_OWNER_REQUEST,
   type ProjectMemoryOwner,
 } from "../extensions/project-memory-owner.ts";
+import { connectedEcosystemPreferences } from "../extensions/ecosystem-preferences.ts";
 import { closeSessionAutoMode, initializeSessionAutoMode, setAutoApproval } from "../extensions/session-auto-mode.ts";
 import type { GrantsSession } from "../extensions/session.ts";
 
@@ -65,29 +66,51 @@ function fixture(cwd = process.cwd()) {
   return { pi, session, ctx, current, notices, request };
 }
 
-test("root Auto offers project memory to early and late observers, with immediate withdrawal even on audit failure", async () => {
+test("workspace memory follows each Auto change, while manual memory edits leave Auto alone across reload", async (t) => {
+  const profile = await tempDir("memory-settings-");
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = profile;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  });
   const { pi, session, ctx, current, notices, request } = fixture();
+  await writeFile(join(profile, "ecosystem.json"), JSON.stringify({ bookie: { workspaceMemory: "follow-auto" } }));
   const bridge = registerProjectMemoryOwner(pi, session);
   const ready = bridge.begin(ctx);
-  await initializeSessionAutoMode(session, {}, current.id);
+  await initializeSessionAutoMode(session, process.env, current.id, ctx);
   try {
     ready();
-    assert.equal(request(), undefined);
-    await setAutoApproval(session, true, "dashboard");
     const owner = request();
     assert.ok(owner && owner.isCurrent());
-    assert.equal(notices.at(-1)?.owner, owner);
+    const autoEnabled = () => session.reloadLifecycle.autoMode!.authority!.snapshot().enabled;
+    assert.equal(autoEnabled(), true);
     assert.equal(request("some-other-session"), undefined);
     assert.equal(request(current.id, "/another-dir"), undefined);
-    session.ledgerPath = "/dev/null/unwritable";
-    await assert.rejects(setAutoApproval(session, false, "command"));
+    const preferences = (input: Record<string, unknown>) =>
+      connectedEcosystemPreferences(
+        pi.events,
+        { ...ctx, modelRegistry: { getAvailable: () => [] } } as unknown as ExtensionContext,
+        input,
+        session.reloadLifecycle.projectMemoryOwner,
+      );
+    const saveMemory = (value: boolean) => preferences({ action: "save", key: "workspaceMemory", value });
+    saveMemory(false);
+    assert.equal(autoEnabled(), true);
     assert.equal(owner.isCurrent(), false);
-    assert.equal(request(), undefined);
     assert.equal(notices.at(-1)?.valid, false);
-    await assert.rejects(setAutoApproval(session, true, "command"));
+    await setAutoApproval(session, true, "dashboard");
     assert.equal(request(), undefined);
-    session.ledgerPath = undefined;
-    await setAutoApproval(session, true, "command");
+    await setAutoApproval(session, false, "command");
+    await setAutoApproval(session, true, "dashboard");
+    assert.ok(request()?.isCurrent());
+    bridge.begin(ctx)();
+    assert.ok(request()?.isCurrent());
+    assert.equal(preferences({ action: "list" }).values?.workspaceMemory, true);
+    await setAutoApproval(session, false, "dashboard");
+    assert.equal(request(), undefined);
+    saveMemory(true);
+    assert.equal(autoEnabled(), false);
     const replacement = request();
     assert.ok(replacement && replacement.isCurrent());
     assert.equal(owner.isCurrent(), false);
@@ -98,6 +121,62 @@ test("root Auto offers project memory to early and late observers, with immediat
   } finally {
     bridge.close();
     await closeSessionAutoMode(session);
+  }
+});
+
+test("trusted startup honors saved opt-outs, boolean memory settings and explicit launch overrides", async (t) => {
+  const profile = await tempDir("memory-defaults-");
+  const env: NodeJS.ProcessEnv = { ...process.env, PI_CODING_AGENT_DIR: profile };
+  delete env.PI_DADDY_AUTO_MODE;
+  delete env.PI_DADDY_AUTO_MODE_REF;
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = profile;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  });
+  for (const [startup, preference, override, expectedAuto, expectedMemory] of [
+    [true, true, undefined, true, true],
+    [true, false, undefined, true, false],
+    [false, true, undefined, false, false],
+    [false, true, "1", true, true],
+    [true, true, "0", false, false],
+  ] as const) {
+    await writeFile(
+      join(profile, "ecosystem.json"),
+      JSON.stringify({ autoOnStartup: startup, bookie: { workspaceMemory: preference } }),
+    );
+    const { pi, session, ctx, current, request } = fixture();
+    const bridge = registerProjectMemoryOwner(pi, session);
+    try {
+      await initializeSessionAutoMode(session, { ...env, PI_DADDY_AUTO_MODE: override }, current.id, ctx);
+      bridge.begin(ctx)();
+      assert.equal(await session.autoMode!.admit(), expectedAuto);
+      assert.equal(!!request(), expectedMemory);
+    } finally {
+      bridge.close();
+      await closeSessionAutoMode(session);
+    }
+  }
+});
+
+test("automatic approval needs a live trusted root and readable settings", async () => {
+  const profile = await tempDir("auto-trust-");
+  await writeFile(join(profile, "ecosystem.json"), "{");
+  for (const variant of ["invalid-settings", "untrusted", "headless", "noninteractive", "child", "unknown-id"]) {
+    const { session, ctx, current } = fixture();
+    if (variant === "child") session.depth = 1;
+    if (variant === "untrusted") current.trusted = false;
+    if (variant === "headless") ctx.hasUI = false;
+    if (variant === "noninteractive") ctx.mode = "json";
+    if (variant === "unknown-id") current.id = "";
+    const env = { PI_CODING_AGENT_DIR: variant === "invalid-settings" ? profile : join(profile, "clean") };
+    try {
+      await initializeSessionAutoMode(session, env, "native-session", ctx);
+      assert.equal(await session.autoMode!.admit(), false, variant);
+    } finally {
+      await closeSessionAutoMode(session);
+    }
   }
 });
 

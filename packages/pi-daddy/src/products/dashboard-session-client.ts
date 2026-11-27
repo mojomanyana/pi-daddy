@@ -24,6 +24,7 @@ export interface DashboardSessionSnapshot {
   versions?: EcosystemVersions;
   settings?: DashboardSettingsSnapshot;
   auto: { enabled: boolean; source: "default" | "environment" | "session" };
+  workspaceMemoryActive?: boolean;
   pendingApprovals: Array<{ id: string; subject: string; capability: string }>;
 }
 

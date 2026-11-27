@@ -4,6 +4,8 @@
  * Powers BOTH the 5-tab interactive Terminal Side Panel (`pi-daddy panel`) AND the Browser UI
  * (`/dashboard open`) across macOS, Linux, and Windows.
  */
+import { preferencePanel, preferenceScript } from "./ecosystem-settings-panel.ts";
+import { classifierPanel, classifierScript } from "./classifier-settings-panel.ts";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { WorkModeSelection, WorkModeSnapshot } from "../kernel/work-mode.ts";
@@ -60,6 +62,9 @@ export interface WebDashboardState {
   readonly memoryLines: readonly string[];
   readonly researchLines: readonly string[];
   readonly recentEvents: readonly WebDashboardEvent[];
+  readonly classifierNeedsModel?: boolean;
+  readonly ecosystemActivity?: readonly WebDashboardEvent[];
+  readonly classifier?: { model: string; threshold: number; mode: string; shadow: boolean };
   readonly harvest?: WebDashboardHarvestInfo;
 }
 
@@ -79,6 +84,8 @@ export interface WebDashboardHandle {
 
 export interface StartWebDashboardOptions {
   readonly getState: () => WebDashboardState;
+  readonly onPreferences?: (input: Record<string, unknown>) => unknown;
+  readonly onClassifierSettings?: (input: Record<string, unknown>) => Promise<unknown>;
   readonly onWorkModeChange?: (selection: WorkModeSelection, scope: "session" | "next-request") => void;
   readonly onSteer?: (message: string, deliverAs: "steer" | "followUp") => Promise<void> | void;
   readonly onAutoModeChange?: (enabled: boolean) => Promise<void> | void;
@@ -133,6 +140,9 @@ function renderHtml(token: string): string {
   .card { background:var(--card); border:1px solid var(--bd); border-radius:8px; padding:12px; }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--bd); font-size:11px; margin:2px 4px 2px 0; }
   .pill.on { border-color:var(--ok); color:var(--ok); }
+  #pref-fields { gap:16px; margin:12px 0; }
+  #pref-fields label { display:grid; gap:5px; align-content:start; }
+  #pref-fields small { color:var(--mut); line-height:1.45; }
   .row { margin:4px 0; word-break:break-all; }
   textarea, input, select { width:100%; background:#0d1117; color:var(--fg); border:1px solid var(--bd); border-radius:6px; padding:6px 8px; font:inherit; font-size:12px; }
   button { background:#21262d; color:var(--fg); border:1px solid var(--bd); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; font-size:12px; }
@@ -156,6 +166,9 @@ function renderHtml(token: string): string {
     <span id="status" class="pill">connecting…</span>
   </div>
   <div class="card">
+    <h2>Ecosystem activity</h2><div id="ecosystem-activity" style="white-space:pre-wrap"></div>
+  </div>
+  <div class="card">
     <h2>Live Steering & Escalation</h2>
     <textarea id="steer-text" rows="2" placeholder="Steer active run or queue follow-up…"></textarea>
     <div class="bar">
@@ -169,6 +182,7 @@ function renderHtml(token: string): string {
   <div class="grid2">
     <div class="card">
       <h2>Work Mode & Permissions</h2>
+      <p>Work mode changes how Pi approaches the task. Daddy Auto approves eligible tool requests. Switching Auto also switches Bookie memory for this session.</p>
       <div class="row">Current: <strong id="wm">-</strong></div>
       <div class="bar" style="margin-top:6px">
         <label class="chk"><input type="checkbox" value="speed" class="emp" />speed</label>
@@ -185,6 +199,7 @@ function renderHtml(token: string): string {
     </div>
     <div class="card">
       <h2>Runtime Configuration</h2>
+      <p>Thinking applies to the coding agent. FAST, WORK and STRONG are chat model tiers. The harvest decision model is selected below.</p>
       <div class="row">Model: <strong id="model">-</strong> · <span id="platform">-</span></div>
       <div class="bar">
         <span>Thinking:</span>
@@ -193,9 +208,9 @@ function renderHtml(token: string): string {
           <option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
         </select>
       </div>
-      <div class="row" style="margin-top:6px"><input id="m-fast" placeholder="models.fast" /></div>
-      <div class="row"><input id="m-work" placeholder="models.work" /></div>
-      <div class="row"><input id="m-strong" placeholder="models.strong" /></div>
+      <div class="row" style="margin-top:6px"><datalist id="chat-models"></datalist><input aria-label="Fast model" id="m-fast" placeholder="models.fast" /></div>
+      <div class="row"><input aria-label="Work model" id="m-work" placeholder="models.work" /></div>
+      <div class="row"><input aria-label="Strong model" id="m-strong" placeholder="models.strong" /></div>
       <div class="bar">
         <button onclick="saveTiers()">Save Model Tiers</button>
         <span id="cfg-msg" class="msg"></span>
@@ -206,6 +221,8 @@ function renderHtml(token: string): string {
     <div class="card"><h2>Memory (Bookie)</h2><div id="mem" class="row">-</div></div>
     <div class="card"><h2>Research (Scout)</h2><div id="res" class="row">-</div></div>
   </div>
+  ${preferencePanel}
+  ${classifierPanel}
   <div class="card">
     <h2>Tools & Workspace</h2>
     <div class="row" style="color:var(--mut);font-size:11px" id="cwd">-</div>
@@ -226,8 +243,12 @@ async function post(path, body) {
   });
   return { ok: r.ok, data: await r.json().catch(() => ({})) };
 }
+${classifierScript}
+${preferenceScript}
 function render(s) {
+  if (LAST && LAST.autoEnabled !== s.autoEnabled) void loadPreferences();
   LAST = s;
+  document.getElementById('classifier-recovery').hidden = !s.classifierNeedsModel;
   const st = document.getElementById('status');
   st.textContent = s.busy ? 'running' : 'idle';
   st.className = 'pill ' + (s.busy ? 'on' : '');
@@ -237,6 +258,8 @@ function render(s) {
   document.getElementById('model').textContent = s.model;
   document.getElementById('platform').textContent = s.platform;
   document.getElementById('cwd').textContent = s.cwd;
+  document.getElementById('ecosystem-activity').textContent = (s.ecosystemActivity || []).slice(-8).reverse()
+    .map(e => e.at.slice(11,19) + '  ' + e.detail).join('\\n') || 'Waiting for an ecosystem tool or harvest decision.';
   const th = document.getElementById('thinking');
   if (document.activeElement !== th && s.thinking) th.value = s.thinking;
   const ab = document.getElementById('auto-btn');
@@ -250,7 +273,8 @@ function render(s) {
   const t = s.modelTiers || {};
   for (const [id, val] of [['m-fast', t.fast], ['m-work', t.work], ['m-strong', t.strong]]) {
     const el = document.getElementById(id);
-    if (document.activeElement !== el) el.value = val || '';
+    if (document.activeElement !== el && !el.dataset.edited) el.value = val || '';
+    el.oninput = () => { el.dataset.edited = 'true'; };
   }
   const esc = v => String(v || '').replace(/</g, '&lt;');
   document.getElementById('mem').innerHTML = (s.memoryLines || []).length ? s.memoryLines.map(x => '<div class="ev">' + esc(x) + '</div>').join('') : 'No Bookie observations yet.';
@@ -291,20 +315,17 @@ async function applyMode(mode) {
 }
 async function toggleAuto() {
   const r = await post('/api/auto-mode', { enabled: !(LAST && LAST.autoEnabled) });
-  document.getElementById('wm-msg').textContent = r.ok ? 'Auto updated.' : (r.data.error || 'Failed');
+  document.getElementById('wm-msg').textContent = r.ok ? 'Auto and Bookie updated.' : (r.data.error || 'Failed');
 }
 async function saveThinking() {
   const r = await post('/api/config', { thinking: document.getElementById('thinking').value });
   document.getElementById('cfg-msg').textContent = r.ok ? 'Thinking updated.' : (r.data.error || 'Failed');
 }
 async function saveTiers() {
-  const r = await post('/api/config', {
-    modelTiers: {
-      fast: document.getElementById('m-fast').value.trim(),
-      work: document.getElementById('m-work').value.trim(),
-      strong: document.getElementById('m-strong').value.trim(),
-    }
-  });
+  const edits = [...document.querySelectorAll('#m-fast,#m-work,#m-strong')].filter(el => el.dataset.edited);
+  if (!edits.length) return;
+  const r = await post('/api/config',{modelTiers:Object.fromEntries(edits.map(el=>[el.id.slice(2),el.value.trim()]))});
+  if (r.ok) edits.forEach(el=>delete el.dataset.edited);
   document.getElementById('cfg-msg').textContent = r.ok ? 'Model tiers saved.' : (r.data.error || 'Failed');
 }
 async function toggleTool(name, enabled) { await post('/api/config', { toggleTool: { name, enabled } }); }
@@ -366,6 +387,16 @@ export async function startWebDashboard(options: StartWebDashboardOptions): Prom
     if (req.method === "POST") {
       void readJsonBody(req)
         .then(async (data) => {
+          if (parsed.pathname === "/api/preferences") {
+            if (!options.onPreferences) throw Error("Ecosystem settings unavailable.");
+            jsonReply(res, 200, await options.onPreferences(data));
+            return;
+          }
+          if (parsed.pathname === "/api/classifiers") {
+            if (!options.onClassifierSettings) throw Error("Classifier settings unavailable.");
+            jsonReply(res, 200, await options.onClassifierSettings(data));
+            return;
+          }
           if (parsed.pathname === "/api/work-mode") {
             if (!options.onWorkModeChange) throw new Error("Work mode editing unavailable");
             const scope = data.scope === "next-request" ? "next-request" : "session";

@@ -2,6 +2,31 @@
 
 Use Pi with the model you have to deliver software you can check. Pi Daddy coordinates the work, Principal helps build and review it, and Bookie remembers the result. Scout and Harness are available when a task needs sources or evaluation. The beta is testing how far these tools can help smaller models deliver reliable engineering work. Quality depends on the model and task.
 
+
+## Ecosystem settings
+
+Start the coding agent with your usual Pi model. Open `/dashboard settings` in Pi, or open the terminal side panel with `/dashboard split` and press **5**. The terminal provides three model controls.
+
+| Key | What it changes |
+| --- | --- |
+| **p** | Scout research model and thinking, Bookie workspace memory and review capture, dashboard startup and automatic escalation |
+| **e** | FAST, WORK and STRONG chat model tiers |
+| **c** | The harvest decision model, threshold, harvest mode and optional routing comparison |
+
+New profiles created with plain `setup` follow the active Pi model. Choose **Follow Pi** to keep using the model you logged into, including after a model switch. A separately pinned research model requires the matching Scout update. Settings lists connected chat models, including local models exposed through Pi. Use `/login` to add credentials and `/model` to select the coding agent. If a saved tier is unavailable at interactive startup, Pi offers one repair for the affected tiers. If a pinned Scout model is unavailable before dispatch, you can pick a replacement for that request.
+
+In a trusted interactive workspace, Daddy Auto starts on and approves eligible specialist requests, including shell commands and file edits. Bookie workspace memory starts when both startup settings are on. Switching Auto on or off also switches Bookie for that session. Changing Bookie alone leaves Auto as it is. Use **Settings → Ecosystem** to change either startup preference or turn off automatic review capture.
+
+## Harvest classifier settings
+
+In the terminal side panel, press **5** for Settings and **c** for the decision classifier. The picker shows the full provider/model ID and its remembered threshold. Choose **test** to send a synthetic turn or **save** to apply the selection. The arrow keys navigate tabs and scroll long views. Press **?** for all shortcuts. The Pi status line and both dashboards report ecosystem tool starts and results during the session, including partial Scout briefs and pending Bookie deliveries.
+
+In a root Pi session, open `/dashboard settings`. The classifier picker lists models from your Pi registry. For the direct OpenRouter Decisions API, start Pi with `OPENROUTER_API_KEY` exported in that shell and choose `openrouter-direct`. A connected llama.cpp router lists its classifiers under its own provider. Select the model, threshold, and harvest mode, then save. The synthetic test makes one model request with example data and displays the result and latency.
+
+Each provider/model has its own threshold in `ecosystem.json`. Selecting a different decision model initially selects suggestion mode. Existing fast tier uses the original chat classifier. On classifier failure Pi records the outage in Live Activity. Saving a working classifier retries the most recent affected eligible turn in that session. The coding task can finish while classification is pending.
+
+Select **Compare routing in the background for this session** and save to begin a pilot. Starting on the next turn, the first active tool and first eligible Principal specialist delegation are compared when at least two candidates exist. The classifier sees a redacted request, recent tool names, and candidate descriptions. Its prediction stays outside the agent conversation. Under the default profile, the comparison log is `~/.pi/agent/pi-daddy/classifier-routing.jsonl`. Join choices, predictions and completion events by session ID, tool call ID and kind. Compare task results and verification evidence separately when evaluating quality.
+
 ## Start here
 
 **Works natively on macOS (Apple Silicon & Intel), Linux, and Windows.** The install block below lists the supported runtimes and tested Pi version.
@@ -167,7 +192,7 @@ previous operation is proven settled or never started; uncertainty stays blocked
 Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
 The dashboard shows the selected task's last observed tool event and time since that event.
-With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
+In a trusted interactive project, Bookie workspace memory starts by default and can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning off **Bookie workspace memory** in Ecosystem settings withdraws automatic memory access and hides those choices.
 
 Select an open choice and press **Enter** to answer or **Decide later**. When Bookie supports corrections, **Not a separate decision** offers a separate confirmation: remove only that item from Open choices, keep the original note, and record no answer. Use it for a progress summary mistakenly presented as another decision. Decide later still leaves the choice open. Older Bookie versions retain their existing answer/view controls; no question is hidden by its wording.
 
@@ -363,7 +388,7 @@ in pi's agent directory, not in the workspace.
 
 **Auto mode** lets the operator approve every Daddy permission request for the current session and its descendants.
 `/grants` marks an approval-only gate as `AUTO` when Auto is on. This is a preview of the permission step; actual delegation still rechecks Auto and all other execution conditions. Genuine refusals remain `BLOCK`.
-Start Pi with `PI_DADDY_AUTO_MODE=1` for Auto ON, or `PI_DADDY_AUTO_MODE=0` (the default when unset) for Auto OFF.
+For an explicit launch override, set `PI_DADDY_AUTO_MODE=1` or `PI_DADDY_AUTO_MODE=0`. Headless sessions default to Auto off. Descendants consult their owning session.
 In the connected dashboard, press **a** to switch it on or off. `/grants auto on` and `/grants auto off` control the
 same session setting; `/grants` shows the current state and source. Reload preserves the session choice; a new
 Pi session starts from the environment default.

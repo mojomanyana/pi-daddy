@@ -207,7 +207,9 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
-2026-11-26. Automatic setup queries the installed Pi for provider status, available chat models and thinking levels. The fast-tier harvest classifier requires thinking off. Explicit model selections retain their provenance in the ecosystem settings.
+2026-11-27 (revised). Trusted interactive root sessions default to Daddy Auto on. At startup managed Bookie memory requires both startup choices. An actual Auto transition sets the current Bookie choice in the same direction. A Bookie edit affects Bookie alone. Preserve explicit launch overrides, independent review-capture settings and session ownership across reload.
+
+2026-11-26. Automatic setup queries the installed Pi for provider status, available chat models and thinking levels. The fast-tier harvest classifier uses the model's lowest supported thinking effort. Explicit model selections retain their provenance in the ecosystem settings.
 
 **2026-11-26 - Pi owns ecosystem installation and updates.** Normal setup registers unversioned npm
 sources through Pi and keeps existing package filters. Setup is a convenience for installing the full
@@ -1575,3 +1577,7 @@ semantic approval or model-supplied execution fact is introduced.
 ### 2026-11-18 — Optional display-only remote hardware telemetry
 
 Telemetry remains off by default and owner-controlled. Use only configured read-only SSH probes; no model calls, service starts or automatic installations. Cancellation kills and reaps the owned local process before acknowledging a stop, and re-enable cannot overlap that process. Physical RAM comes from validated system memory fields; GPU heaps and stopped-model state never imply RAM allocation or token speed. Normal dashboard close requests the same owner-bound stop; disconnection and abrupt dashboard death cannot claim confirmed cleanup.
+
+### 2026-11-26 - Model choices follow the active session on a fresh profile
+
+Keep a saved research model and decision classifier independent. Resolve model availability before dispatch. Offer repair in the owning session. Retry only the pending classification after a settings save, within its original turn and session.

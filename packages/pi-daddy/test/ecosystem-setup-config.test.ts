@@ -201,3 +201,22 @@ test("setup migrates untagged legacy presets when requested and preserves existi
   assert.equal(loadEcosystemConfig().models?.fast, "google/gemini-3.5-flash-lite");
   assert.equal(loadEcosystemConfig().models?.work, "local/pinned");
 });
+
+test("fresh default setup follows the session model without assuming Fireworks credentials", (t) => {
+  fixture(t);
+  assert.equal(runEcosystemSetup({ skipInstall: true }), 0);
+  const config = loadEcosystemConfig();
+  assert.equal(config.setupPreset?.name, "session");
+  assert.deepEqual(config.models, {});
+});
+
+test("settings upgrade preserves the pilot's Bookie choice and writes a boolean on the next save", (t) => {
+  const { file } = fixture(t);
+  for (const mode of ["off", "on", "follow-auto"]) {
+    writeFileSync(file, JSON.stringify({ bookie: { workspaceMemory: mode }, scout: { model: "session" } }));
+    const cfg = loadEcosystemConfig();
+    assert.deepEqual(cfg, { bookie: { workspaceMemory: mode !== "off" }, scout: { model: "session" } });
+    saveEcosystemConfig(cfg);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), cfg);
+  }
+});

@@ -69,6 +69,9 @@ jobs:
           PI_DADDY_REQUIRE_DESCRIBE: "1"
         run: npm test
 
+      - name: Harvest benchmark offline controls
+        run: node --test benchmarks/harvest/*.test.mjs
+
       # Model-free. The devDependency supplies the real pi process; these are not fakes and
       # spend no model tokens. The PI_DADDY_IT_MODEL tier remains local-only below.
       - name: real-pi integration tests

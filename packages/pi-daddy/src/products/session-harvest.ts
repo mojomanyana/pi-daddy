@@ -3,11 +3,13 @@
  *
  * Stage 1 (0ms, $0): Free deterministic signal filter — skips routine clean turns completely.
  * Stage 2 (Option A): Fast-tier structured JSON classifier (`models.fast` via fallback chain at
- * `reasoning: "off"`) inspects a secret-redacted turn digest and decides whether the turn reveals
+ * its lowest supported effort) inspects a secret-redacted turn digest and decides whether the turn reveals
  * a generalizable regression worth saving as a Harness-validated `specification.yaml`.
  * Mode 2 ("auto", default): saves directly to `~/.pi/agent/pi-daddy/harvested-evals/<repo>/`
  * (zero git repo pollution), with `"suggest"` and `"off"` configurable in `ecosystem.json`.
  */
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { harvestProbability } from "./decision-classifier.ts";
 import { supportedModelEfforts } from "../kernel/model-preflight.ts";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -28,7 +30,8 @@ export interface TurnHarvestSignals {
   readonly verifyCommands: readonly string[];
 }
 
-export type HarvestCategory = "thrash" | "review-blocker" | "user-correction" | "tool-failure" | "trivial";
+export type HarvestCategory =
+  "thrash" | "review-blocker" | "user-correction" | "tool-failure" | "trivial" | "uncategorized";
 
 export interface HarvestDecision {
   readonly harvest: boolean;
@@ -146,10 +149,34 @@ export function resolveHarnessCliCommand(
   return undefined;
 }
 
+export function harvestClassifierDigest(signals: TurnHarvestSignals): string {
+  const redactedPrompt = redactHarvestText(signals.prompt).slice(0, 800);
+  const redactedEdits = signals.editedFiles
+    .slice(0, 10)
+    .map((f) => redactHarvestText(f))
+    .join(", ");
+  const redactedVerify = signals.verifyCommands
+    .slice(0, 5)
+    .map((c) => redactHarvestText(c))
+    .join(" ; ");
+  const redactedFailure = redactHarvestText(signals.failureSummary).slice(0, 900);
+
+  return [
+    `Prompt: ${redactedPrompt}`,
+    `Signals: thrash=${signals.thrashDetected} escalated=${signals.escalated}` +
+      ` blockers=${signals.reviewBlockers} steered=${signals.userSteered}` +
+      ` toolFailEdit=${signals.toolFailedAndEdited}`,
+    `Edited files: ${redactedEdits || "(none)"}`,
+    `Verify cmds: ${redactedVerify || "(none)"}`,
+    `Failure summary: ${redactedFailure || "(none)"}`,
+  ].join("\n");
+}
+
 export async function classifyHarvestCandidate(input: {
   readonly signals: TurnHarvestSignals;
   readonly registry?: HarvestClassifierRegistry;
   readonly fallbackModel?: unknown;
+  readonly classifier?: { model: string; registry: ExtensionContext["modelRegistry"] };
   readonly minConfidence?: number;
   readonly env?: NodeJS.ProcessEnv;
   readonly signal?: AbortSignal;
@@ -165,35 +192,44 @@ export async function classifyHarvestCandidate(input: {
   if (!hasHarvestSignal(input.signals)) return skip("no-harvest-signal");
   if (input.signal?.aborted) return skip("cancelled");
 
+  if (input.classifier) {
+    const { model, registry } = input.classifier;
+    const { probability } = await harvestProbability(
+      registry,
+      model,
+      harvestClassifierDigest(input.signals),
+      input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+    );
+    const s = input.signals;
+    const category = s.reviewBlockers
+      ? "review-blocker"
+      : s.thrashDetected
+        ? "thrash"
+        : s.toolFailedAndEdited
+          ? "tool-failure"
+          : s.userSteered
+            ? "user-correction"
+            : "uncategorized";
+    return {
+      harvest: probability >= minConfidence,
+      category,
+      confidence: probability,
+      scenarioId: slugify(redactHarvestText(s.prompt)),
+      reason: `Harvest probability ${probability} from ${model}`,
+      modelUsed: model,
+    };
+  }
   const candidates = resolveEcosystemModelCandidates("fast", input.env ?? process.env);
   const picked = selectRegistryModel(input.registry, candidates, input.fallbackModel);
   if (!picked.model || typeof input.registry?.streamSimple !== "function") return skip("classifier-unavailable");
 
-  if (typeof picked.model === "object" && "reasoning" in picked.model && typeof picked.model.reasoning === "boolean") {
-    if (!supportedModelEfforts(picked.model as { reasoning: boolean }).includes("off"))
-      return skip("classifier-thinking-off-unavailable");
-  }
+  const reasoning =
+    typeof picked.model === "object" && "reasoning" in picked.model && typeof picked.model.reasoning === "boolean"
+      ? supportedModelEfforts(picked.model as { reasoning: boolean })[0]
+      : "off";
+  if (!reasoning) return skip("classifier-unavailable");
 
-  const redactedPrompt = redactHarvestText(input.signals.prompt).slice(0, 800);
-  const redactedEdits = input.signals.editedFiles
-    .slice(0, 10)
-    .map((f) => redactHarvestText(f))
-    .join(", ");
-  const redactedVerify = input.signals.verifyCommands
-    .slice(0, 5)
-    .map((c) => redactHarvestText(c))
-    .join(" ; ");
-  const redactedFailure = redactHarvestText(input.signals.failureSummary).slice(0, 900);
-
-  const digest = [
-    `Prompt: ${redactedPrompt}`,
-    `Signals: thrash=${input.signals.thrashDetected} escalated=${input.signals.escalated}` +
-      ` blockers=${input.signals.reviewBlockers} steered=${input.signals.userSteered}` +
-      ` toolFailEdit=${input.signals.toolFailedAndEdited}`,
-    `Edited files: ${redactedEdits || "(none)"}`,
-    `Verify cmds: ${redactedVerify || "(none)"}`,
-    `Failure summary: ${redactedFailure || "(none)"}`,
-  ].join("\n");
+  const digest = harvestClassifierDigest(input.signals);
 
   const instruction = [
     "You triage completed coding-agent turns for a regression benchmark suite (`skill-harness`).",
@@ -211,7 +247,10 @@ export async function classifyHarvestCandidate(input: {
     const stream = input.registry.streamSimple(
       picked.model,
       { messages: [{ role: "user", content: [{ type: "text", text: instruction }], timestamp: Date.now() }] },
-      { ...(input.signal ? { signal: input.signal } : {}), reasoning: "off" },
+      {
+        signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+        reasoning,
+      },
     );
     message = await stream.result();
   } catch {

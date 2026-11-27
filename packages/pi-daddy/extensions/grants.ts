@@ -154,7 +154,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     try {
       try {
         const nativeId = (owner as { getSessionId?: () => string }).getSessionId?.() ?? session.episodeId;
-        await initializeSessionAutoMode(session, reload.environment, nativeId);
+        await initializeSessionAutoMode(session, reload.environment, nativeId, ctx);
         if (session.reloadLifecycle !== reload.lifecycle) return undefined;
         beginWorkMode(ctx, event?.reason ?? "startup", reload.environment);
       } catch (error) {

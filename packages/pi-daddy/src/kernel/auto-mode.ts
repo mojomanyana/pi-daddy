@@ -31,7 +31,7 @@ export interface AutoModeReader {
 export function parseAutoModeDefault(raw: string | undefined): { enabled: boolean; source: AutoModeSource } {
   if (raw === undefined) return { enabled: false, source: "default" };
   if (raw === "0" || raw === "1") return { enabled: raw === "1", source: "environment" };
-  throw new Error("PI_DADDY_AUTO_MODE must be literal 1 or 0 (unset defaults to OFF)");
+  throw new Error("PI_DADDY_AUTO_MODE must be literal 1 or 0");
 }
 export function parseAutoModeRef(raw: string): AutoModeRef {
   let ref: AutoModeRef;

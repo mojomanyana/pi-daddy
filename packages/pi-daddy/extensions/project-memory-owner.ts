@@ -1,8 +1,9 @@
-/** In-process root Auto observation for Bookie's automatic workspace memory. No tools, vault paths or provider data. */
+/** The trusted interactive root offers managed memory under the current session selection. */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { GrantsSession } from "./session.ts";
+import { readEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
 
 export const PROJECT_MEMORY_OWNER_EVENT = "pi-daddy:project-memory-owner-v1";
 export const PROJECT_MEMORY_OWNER_REQUEST = "pi-daddy:request-project-memory-owner-v1";
@@ -65,7 +66,7 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
       }
       const cwd = ctx.cwd;
       let workspace: { path: string; dev: bigint; ino: bigint; created: bigint } | undefined;
-      function revision() {
+      function memoryEnabled() {
         const state = lifecycle.autoMode;
         try {
           if (
@@ -102,8 +103,9 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
             workspace.created !== identity.birthtimeNs
           )
             return;
-          const snapshot = state.authority.snapshot();
-          return snapshot.enabled ? snapshot.revision : undefined;
+          const choice = lifecycle.projectMemorySelection;
+          if (choice?.sessionId === sessionId) return choice.enabled;
+          return state.authority.snapshot().enabled && readEcosystemConfig()?.bookie?.workspaceMemory !== false;
         } catch {
           return;
         }
@@ -111,8 +113,7 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
       function refresh() {
         if (generation !== token || lease?.isCurrent()) return;
         withdraw();
-        const boundRevision = revision();
-        if (boundRevision === undefined || !sessionId) return;
+        if (!memoryEnabled() || !sessionId) return;
         const boundPolicy = lifecycle.autoMode;
         let expired = false;
         const next: ProjectMemoryOwner = Object.freeze({
@@ -120,14 +121,22 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
           sessionId,
           cwd,
           isCurrent: () => {
-            if (lease !== next || lifecycle.autoMode !== boundPolicy || revision() !== boundRevision) expired = true;
+            if (lease !== next || lifecycle.autoMode !== boundPolicy || !memoryEnabled()) expired = true;
             return !expired;
           },
         });
         lease = next;
         publish(next);
       }
-      lifecycle.projectMemoryOwner = { retire, refresh };
+      lifecycle.projectMemoryOwner = {
+        retire,
+        setEnabled(enabled) {
+          if (generation !== token || !sessionId || session.reloadLifecycle !== lifecycle) return;
+          lifecycle.projectMemorySelection = { sessionId, enabled };
+          refresh();
+        },
+        active: () => lease?.isCurrent() === true,
+      };
       return () => {
         ready = true;
         refresh();

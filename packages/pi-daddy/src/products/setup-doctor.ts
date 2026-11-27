@@ -46,7 +46,7 @@ function applyPreset(
       return m !== undefined && m === existing.models?.[tier];
     }),
   );
-  const name = requested ?? previousName ?? legacyName ?? "open-weight";
+  const name = requested ?? previousName ?? legacyName ?? "session";
   const base = PROVIDER_PRESETS[name];
   const defaults = autoModels ?? (!requested && previousName ? previous?.defaults : undefined) ?? base.models;
   const models: EcosystemModelsConfig = { ...defaults, ...existing.models };
@@ -175,7 +175,10 @@ export function runEcosystemSetup(options: { preset?: string; skipInstall?: bool
     try {
       catalog = loadProviderCatalog(requestedModels);
     } catch (error) {
-      if (preset === "auto") throw error;
+      if (preset === "auto")
+        console.log(
+          "  Connect a provider with /login and select a model with /model. Fresh profiles follow that model.",
+        );
       console.log("  Model availability could not be verified: " + String(error));
     }
     if (preset === "auto" && catalog) {
