@@ -1,23 +1,39 @@
 /**
  * Review scope resolution and diff collection:
- * - Ordinary requests stay confined to the nested workspace directory (`cwd`).
+ * - Ordinary requests stay confined to the nested workspace directory (`cwd`), even when
+ *   task prose mentions paths to other repositories as context.
  * - Explicit whole-repo requests widen to the enclosing repo.
- * - Explicit multi-repo requests resolve a concrete list of Git repository roots,
- *   display the selected roots before review, and collect diffs ONLY from those roots
- *   (excluding any unrelated repositories).
+ * - Explicit multi-repo review requests (or explicit `explicitRoots`) resolve a concrete list
+ *   of Git repository roots, display selected roots before review, and collect diffs ONLY from
+ *   those roots (excluding any unrelated repositories).
+ * - Untracked-file reads use the bounded, no-follow reader and enforce strict scope confinement,
+ *   rejecting symlinks and path swaps between inspection and read.
  */
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readdirSync, realpathSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { readBoundedTextSync, type SyncReadPorts } from "../src/kernel/bounded-read-sync.ts";
 import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
 
 const execFileAsync = promisify(execFile);
 
 const WHOLE_REPO_REQUEST_RE = /\b(whole\s+repo|entire\s+repo|full\s+repo)\b/i;
-const MULTI_REPO_REQUEST_RE =
-  /\b(multi-repo|multiple\s+repos?|across\s+(?:these|the|selected)?\s*repos?|repos?(?:itories)?)\b/i;
+
+/**
+ * Multi-repo widening requires explicit review/audit intent targeting multiple repositories,
+ * never mere mention of two repository paths inside an ordinary task prompt.
+ */
+const EXPLICIT_MULTI_REPO_REVIEW_PATTERNS: readonly RegExp[] = [
+  /\bmulti-repo\s+(?:review|audit|check|diff)\b/i,
+  /\b(?:review|audit)\s+(?:changes\s+|diffs?\s+)?across\b/i,
+  /\b(?:review|audit)\b[^.\n]{0,80}\b(?:multi-repo|multiple\s+repos?(?:itories)?|both\s+repos?(?:itories)?|selected\s+repos?(?:itories)?)\b/i,
+  /\b(?:review|audit)\s+(?:these|both|the\s+selected)?\s*repos?(?:itories)?\b/i,
+];
+const hasExplicitMultiRepoReviewIntent = (prompt: string) =>
+  EXPLICIT_MULTI_REPO_REVIEW_PATTERNS.some((re) => re.test(prompt));
+
+const MAX_UNTRACKED_FILE_BYTES = 32 * 1024;
 
 export interface ReviewScope {
   readonly mode: "workspace" | "whole-repo" | "multi-repo";
@@ -67,19 +83,17 @@ function extractPromptRepoCandidates(cwd: string, prompt: string): string[] {
     const token = match[1] ?? match[2];
     if (token) candidates.push(token);
   }
-  // 2. When prompt asks for a multi-repo review, match explicit repo folder names under cwd or dirname(cwd).
-  if (MULTI_REPO_REQUEST_RE.test(prompt)) {
-    for (const parent of new Set([cwd, dirname(cwd)])) {
-      try {
-        for (const entry of readdirSync(parent, { withFileTypes: true })) {
-          if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-          const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const mentionRe = new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_-])`, "i");
-          if (mentionRe.test(prompt)) candidates.push(join(parent, entry.name));
-        }
-      } catch {
-        /* Ignore unreadable parent directory. */
+  // 2. Match explicit repository folder names under cwd or dirname(cwd) when explicitly named in the review prompt.
+  for (const parent of new Set([cwd, dirname(cwd)])) {
+    try {
+      for (const entry of readdirSync(parent, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+        const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const mentionRe = new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_-])`, "i");
+        if (mentionRe.test(prompt)) candidates.push(join(parent, entry.name));
       }
+    } catch {
+      /* Ignore unreadable parent directory. */
     }
   }
   return candidates;
@@ -87,9 +101,10 @@ function extractPromptRepoCandidates(cwd: string, prompt: string): string[] {
 
 /**
  * Resolve the concrete review scope:
- * - Explicit `explicitRoots` (or concrete named repo roots in the prompt) -> `multi-repo` confined to those roots.
- * - Explicit whole-repo phrasing without concrete multi-repo roots -> `whole-repo`.
- * - Ordinary request -> `workspace` confined to `cwd`.
+ * - Explicit `explicitRoots` -> `multi-repo` confined to those Git roots.
+ * - Explicit multi-repo review request naming concrete repositories -> `multi-repo` confined to those roots.
+ * - Explicit whole-repo phrasing -> `whole-repo`.
+ * - Ordinary request (even if it mentions other repo paths as context) -> `workspace` confined to `cwd`.
  */
 export function resolveReviewScope(cwd: string, prompt: string, explicitRoots?: readonly string[]): ReviewScope {
   if (explicitRoots && explicitRoots.length > 0) {
@@ -104,18 +119,17 @@ export function resolveReviewScope(cwd: string, prompt: string, explicitRoots?: 
     }
   }
 
-  const promptRoots = dedupeGitRoots(cwd, extractPromptRepoCandidates(cwd, prompt));
   const cwdRoot = canonicalGitRoot(cwd);
-  if (
-    promptRoots.length >= 2 ||
-    (promptRoots.length === 1 && MULTI_REPO_REQUEST_RE.test(prompt) && promptRoots[0] !== cwdRoot)
-  ) {
-    return {
-      mode: "multi-repo",
-      cwd,
-      roots: promptRoots,
-      label: `multi-repo (${promptRoots.length} roots: ${promptRoots.join(", ")})`,
-    };
+  if (hasExplicitMultiRepoReviewIntent(prompt)) {
+    const promptRoots = dedupeGitRoots(cwd, extractPromptRepoCandidates(cwd, prompt));
+    if (promptRoots.length >= 2 || (promptRoots.length === 1 && promptRoots[0] !== cwdRoot)) {
+      return {
+        mode: "multi-repo",
+        cwd,
+        roots: promptRoots,
+        label: `multi-repo (${promptRoots.length} roots: ${promptRoots.join(", ")})`,
+      };
+    }
   }
 
   if (WHOLE_REPO_REQUEST_RE.test(prompt)) {
@@ -141,13 +155,96 @@ export function formatReviewScopeBanner(scope: ReviewScope): string {
   return `Review scope: ${scope.label}`;
 }
 
+function isStrictlyInside(canonicalRoot: string, candidateCanonical: string): boolean {
+  const rel = relative(canonicalRoot, candidateCanonical);
+  return Boolean(
+    rel &&
+    rel !== ".." &&
+    !rel.startsWith("../") &&
+    !rel.startsWith("..\\") &&
+    !rel.startsWith(`..${sep}`) &&
+    !isAbsolute(rel),
+  );
+}
+
+/**
+ * Bounded, no-follow, scope-confined reader for an untracked file under `scopeRoot`.
+ * Rejects symlinks (both intermediate directory components and final leaf), enforces
+ * byte bounds via `readBoundedTextSync`, and pins `(dev, ino)` across open/read so a
+ * path swap between inspection and read cannot exfiltrate files outside `scopeRoot`.
+ */
+export function readConfinedUntrackedFile(
+  scopeRoot: string,
+  rel: string,
+  maxBytes: number,
+  io?: Partial<SyncReadPorts>,
+): string | undefined {
+  if (!rel || rel.includes("\0") || isAbsolute(rel) || isUnderPiProjectDir(rel)) return undefined;
+  const segments = rel.split(/[\\/]/).filter(Boolean);
+  if (segments.length === 0 || segments.some((s) => s === "." || s === "..")) return undefined;
+
+  try {
+    const canonicalRoot = realpathSync(scopeRoot);
+    // Reject any symlink along the path inside scopeRoot (intermediate dirs and final leaf).
+    let cur = canonicalRoot;
+    let leafStat: ReturnType<typeof lstatSync> | undefined;
+    for (let i = 0; i < segments.length; i++) {
+      cur = join(cur, segments[i]!);
+      const st = lstatSync(cur, { bigint: true });
+      if (st.isSymbolicLink()) return undefined;
+      if (i < segments.length - 1) {
+        if (!st.isDirectory()) return undefined;
+      } else {
+        leafStat = st;
+      }
+    }
+    if (!leafStat || !leafStat.isFile() || leafStat.size === 0n || leafStat.size > BigInt(MAX_UNTRACKED_FILE_BYTES)) {
+      return undefined;
+    }
+    const realLeaf = realpathSync(cur);
+    if (!isStrictlyInside(canonicalRoot, realLeaf)) return undefined;
+
+    const baseStat = io?.stat ?? fstatSync;
+    const pinnedIo: SyncReadPorts = {
+      open: io?.open ?? openSync,
+      close: io?.close ?? closeSync,
+      read: io?.read ?? readSync,
+      realpath: io?.realpath ?? realpathSync,
+      stat: ((fd: number, opts?: Parameters<typeof fstatSync>[1]) => {
+        const big = fstatSync(fd, { bigint: true });
+        if (!big.isFile() || big.dev !== leafStat!.dev || big.ino !== leafStat!.ino) {
+          throw new Error("untracked file changed between inspection and open");
+        }
+        return baseStat(fd, opts as never);
+      }) as typeof fstatSync,
+    };
+    const res = readBoundedTextSync(cur, { maxBytes, prefix: true, confinedRoot: canonicalRoot }, pinnedIo);
+    // Post-read check catches path replacement with a symlink/external target during the read.
+    const postStat = lstatSync(cur, { bigint: true });
+    if (
+      postStat.isSymbolicLink() ||
+      !postStat.isFile() ||
+      postStat.dev !== leafStat.dev ||
+      postStat.ino !== leafStat.ino
+    ) {
+      return undefined;
+    }
+    if (!isStrictlyInside(canonicalRoot, realpathSync(cur))) return undefined;
+    if (res.text.includes("\0")) return undefined;
+    return res.text;
+  } catch {
+    return undefined;
+  }
+}
+
 async function collectSingleRootDiff(cwd: string, scopeMode: "workspace" | "whole-repo"): Promise<string> {
   const parts: string[] = [];
   let diff = "";
   const pathspec = scopeMode === "workspace" ? ["--", "."] : [];
+  const effectiveRoot = scopeMode === "whole-repo" ? (canonicalGitRoot(cwd) ?? cwd) : cwd;
   try {
     const out = await execFileAsync("git", ["diff", "--no-color", "HEAD", ...pathspec], {
-      cwd,
+      cwd: effectiveRoot,
       timeout: 5000,
       maxBuffer: 256 * 1024,
     });
@@ -155,7 +252,7 @@ async function collectSingleRootDiff(cwd: string, scopeMode: "workspace" | "whol
   } catch {
     try {
       const out = await execFileAsync("git", ["diff", "--no-color", "--cached", ...pathspec], {
-        cwd,
+        cwd: effectiveRoot,
         timeout: 5000,
         maxBuffer: 256 * 1024,
       });
@@ -168,7 +265,7 @@ async function collectSingleRootDiff(cwd: string, scopeMode: "workspace" | "whol
 
   try {
     const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard", ...pathspec], {
-      cwd,
+      cwd: effectiveRoot,
       timeout: 5000,
       maxBuffer: 64 * 1024,
     });
@@ -180,18 +277,11 @@ async function collectSingleRootDiff(cwd: string, scopeMode: "workspace" | "whol
     let extraBytes = 0;
     for (const rel of untracked) {
       if (extraBytes >= 12_000) break;
-      try {
-        const full = join(cwd, rel);
-        const info = await stat(full);
-        if (!info.isFile() || info.size === 0 || info.size > 32 * 1024) continue;
-        const raw = await readFile(full, "utf8");
-        if (raw.includes("\0")) continue;
-        const snippet = raw.slice(0, Math.min(raw.length, 12_000 - extraBytes));
-        extraBytes += snippet.length;
-        parts.push(`--- /dev/null\n+++ b/${rel}\n${snippet}`);
-      } catch {
-        /* Skip unreadable untracked file. */
-      }
+      const remaining = 12_000 - extraBytes;
+      const snippet = readConfinedUntrackedFile(effectiveRoot, rel, remaining);
+      if (!snippet) continue;
+      extraBytes += Buffer.byteLength(snippet, "utf8");
+      parts.push(`--- /dev/null\n+++ b/${rel}\n${snippet}`);
     }
   } catch {
     /* Non-git workspace or git unavailable. */

@@ -6,15 +6,17 @@
  *
  * Covers:
  * - Task 1: Released vs candidate simple edit + nested-workspace scoped review
- * - Task 2a: Direct investigation vs Daddy/Principal `investigate` specialist
- * - Task 2b: Real changed-skill sessions via normal Pi entry points in Standard & Ambitious
- * - Task 3a: Direct CapacityAllocator + provider wave (Fanout 8 vs 24; accurately labeled)
- * - Task 3b: Real Daddy/Principal delegation review in Standard & Ambitious scoring expected findings
- * - Task 4: Delegated `scout-public` reported separately for Docker mode and Direct HTTPS mode,
- *           requiring valid delegation, valid returned `research-brief` reference, and expected
- *           cleanup evidence for the selected execution mode.
+ * - Task 2a: Direct investigation vs explicitly requested `investigate` specialist (tool-integration)
+ * - Task 2b: Explicitly prompted changed-skill sessions in Standard & Ambitious (tool-integration)
+ * - Task 2c: Ordinary unprompted skill-edit sessions in Standard & Ambitious (behavioral selection)
+ * - Task 3a: Direct CapacityAllocator + single-provider Pi wave (Fanout 8 vs 24; not Daddy delegate_all)
+ * - Task 3b: Explicitly requested Daddy/Principal reviewer delegation in Standard & Ambitious (tool-integration)
+ * - Task 4: Delegated `scout-public` reported separately for Direct HTTPS and Docker modes, using
+ *           structured evidence strictly from the matching `scout_research` invocation.
  *
- * Exits nonzero (1) if ANY required acceptance assertion fails.
+ * Exclusions via `--only` are reported as `skipped` (never invented passes/scores), and
+ * `selectedChecksPassed` is distinguished from `fullSuitePassed`.
+ * Exits nonzero (1) whenever any executed required assertion fails.
  */
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -22,6 +24,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  computeObservedPeakActiveFromLedger,
+  evaluateScoutAcceptance,
+  makeSkippedTask,
+  summarizeAcceptance,
+} from "./benchmark-live-lib.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DADDY_PKG = resolve(HERE, "..");
@@ -41,7 +49,7 @@ const [PROVIDER] = MODEL.split("/");
 const REQUIRE_DOCKER = process.argv.includes("--require-docker");
 const ONLY_ARG = (() => {
   const i = process.argv.indexOf("--only");
-  return i !== -1 && process.argv[i + 1] ? new Set(process.argv[i + 1].split(",")) : null;
+  return i !== -1 && process.argv[i + 1] ? new Set(process.argv[i + 1].split(",").map((s) => s.trim())) : null;
 })();
 const want = (id) => !ONLY_ARG || ONLY_ARG.has(id);
 const progress = (msg) => console.error(`[bench ${new Date().toISOString().slice(11, 19)}] ${msg}`);
@@ -69,7 +77,6 @@ const scratch = (p) => {
   return d;
 };
 
-/** Create a valid Pi session JSONL file with persisted work-mode selection (`standard` or `ambitious`). */
 function createModeSessionFile(cwd, mode) {
   const dir = scratch(`pi-sess-${mode}-`);
   const file = join(dir, `${mode}.jsonl`);
@@ -87,7 +94,6 @@ function createModeSessionFile(cwd, mode) {
   return file;
 }
 
-/** Build a disposable Pi profile containing ONLY the single chosen provider's auth (no Fireworks/Copilot). */
 function createSingleProviderProfile(packages, ecosystemJson) {
   const dir = scratch("pi-live-profile-");
   const realAuthPath = join(homedir(), ".pi", "agent", "auth.json");
@@ -129,49 +135,6 @@ function isDockerDaemonRunning() {
   }
 }
 
-/** Validate a structured Scout `research-brief` reference object. */
-function isValidBriefReference(obj) {
-  return Boolean(
-    obj &&
-      typeof obj === "object" &&
-      obj.version === 1 &&
-      obj.producer === "pi-scout-research" &&
-      obj.kind === "research-brief" &&
-      typeof obj.session === "string" &&
-      /^[a-f0-9]{64}$/.test(obj.session) &&
-      typeof obj.sha256 === "string" &&
-      /^[a-f0-9]{64}$/.test(obj.sha256) &&
-      Number.isInteger(obj.bytes) &&
-      obj.bytes >= 1 &&
-      obj.bytes <= 96001,
-  );
-}
-
-/** Extract any valid Scout `research-brief` JSON reference from text or tool details. */
-function extractBriefReference(text, toolResults) {
-  const candidates = [];
-  for (const tr of toolResults) {
-    if (tr.details?.briefReference) candidates.push(tr.details.briefReference);
-    if (tr.details?.reference) candidates.push(tr.details.reference);
-    if (typeof tr.text === "string") {
-      for (const m of tr.text.matchAll(/\{[^{}]*"kind"\s*:\s*"research-brief"[^{}]*\}/g)) {
-        try {
-          candidates.push(JSON.parse(m[0]));
-        } catch {}
-      }
-    }
-  }
-  if (typeof text === "string") {
-    for (const m of text.matchAll(/\{[^{}]*"kind"\s*:\s*"research-brief"[^{}]*\}/g)) {
-      try {
-        candidates.push(JSON.parse(m[0]));
-      } catch {}
-    }
-  }
-  return candidates.find(isValidBriefReference) ?? null;
-}
-
-/** Run real Pi 1.6.1 in JSON mode and extract final text, tool calls, tool results, model calls, and tokens. */
 function runPiJson({ cwd, profileDir, prompt, sessionFile, extraArgs = [], extraEnv = {}, timeoutMs = 120_000 }) {
   return new Promise((resolveDone) => {
     const start = performance.now();
@@ -276,18 +239,22 @@ function runPiJson({ cwd, profileDir, prompt, sessionFile, extraArgs = [], extra
   });
 }
 
-function makeSimpleEditFixture() {
-  const repo = scratch("live-edit-");
-  const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+function initFixtureGit(dir) {
+  const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "bench@local"]);
   git(["config", "user.name", "Bench"]);
+  git(["add", "."]);
+  git(["commit", "-q", "-m", "init"]);
+}
+
+function makeSimpleEditFixture() {
+  const repo = scratch("live-edit-");
   mkdirSync(join(repo, "nested"), { recursive: true });
   mkdirSync(join(repo, "sibling"), { recursive: true });
   writeFileSync(join(repo, "nested", "math.mjs"), "export function double(n) { return n + 1; }\n");
   writeFileSync(join(repo, "sibling", "noise.mjs"), "export const noise = 1;\n");
-  git(["add", "."]);
-  git(["commit", "-q", "-m", "init"]);
+  initFixtureGit(repo);
   writeFileSync(join(repo, "sibling", "noise.mjs"), "export const noise = 999;\n");
   return { repo, nested: join(repo, "nested") };
 }
@@ -307,25 +274,18 @@ function makeInvestigateFixture() {
     join(dir, "src", "auth.ts"),
     'export function verifyToken(token: string): boolean { return token.startsWith("ok_"); }\n',
   );
-  const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-  git(["init", "-q", "-b", "main"]);
-  git(["config", "user.email", "bench@local"]);
-  git(["config", "user.name", "Bench"]);
-  git(["add", "."]);
-  git(["commit", "-q", "-m", "init"]);
+  initFixtureGit(dir);
   return dir;
 }
 
-/** Seeded multi-file review fixture with 3 concrete expected findings for real Daddy/Principal delegation. */
 function makeSeededReviewFixture() {
   const dir = scratch("live-review-fixture-");
   mkdirSync(join(dir, "src"), { recursive: true });
   writeFileSync(
     join(dir, "src", "auth.ts"),
     [
-      "// Auth middleware",
       "export function isAuthorized(header: string | undefined, expected: string): boolean {",
-      "  if (!header) return true; // BUG 1: empty/missing Authorization header bypasses auth!",
+      "  if (!header) return true; // BUG 1: empty/missing Authorization header bypasses auth",
       "  return header === expected;",
       "}",
       "",
@@ -334,9 +294,8 @@ function makeSeededReviewFixture() {
   writeFileSync(
     join(dir, "src", "query.ts"),
     [
-      "// User lookup query builder",
       "export function buildUserQuery(userId: string): string {",
-      '  return "SELECT * FROM users WHERE id = \'" + userId + "\'"; // BUG 2: SQL injection via string concatenation!',
+      '  return "SELECT * FROM users WHERE id = \'" + userId + "\'"; // BUG 2: SQL injection',
       "}",
       "",
     ].join("\n"),
@@ -344,25 +303,18 @@ function makeSeededReviewFixture() {
   writeFileSync(
     join(dir, "src", "cache.ts"),
     [
-      "// Request cache",
       "const entries = new Map<string, string>();",
       "export function cachePut(key: string, payload: string): void {",
-      "  entries.set(key, payload); // BUG 3: unbounded Map growth with no eviction/size cap (memory leak)!",
+      "  entries.set(key, payload); // BUG 3: unbounded Map growth with no eviction/size cap",
       "}",
       "export function cacheGet(key: string): string | undefined { return entries.get(key); }",
       "",
     ].join("\n"),
   );
-  const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-  git(["init", "-q", "-b", "main"]);
-  git(["config", "user.email", "bench@local"]);
-  git(["config", "user.name", "Bench"]);
-  git(["add", "."]);
-  git(["commit", "-q", "-m", "init"]);
+  initFixtureGit(dir);
   return dir;
 }
 
-/** Seeded skill fixture with 2 scenarios for real Standard & Ambitious changed-skill sessions. */
 function makeChangedSkillFixture() {
   const dir = scratch("live-changed-skill-");
   mkdirSync(join(dir, "tests"), { recursive: true });
@@ -397,12 +349,7 @@ function makeChangedSkillFixture() {
       "",
     ].join("\n"),
   );
-  const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
-  git(["init", "-q", "-b", "main"]);
-  git(["config", "user.email", "bench@local"]);
-  git(["config", "user.name", "Bench"]);
-  git(["add", "."]);
-  git(["commit", "-q", "-m", "init"]);
+  initFixtureGit(dir);
   return dir;
 }
 
@@ -415,6 +362,39 @@ function scoreSeededReviewFindings(text) {
   };
   const count = Object.values(matched).filter(Boolean).length;
   return { matched, score: count, total: 3 };
+}
+
+function extractHarnessObservation(out) {
+  const harnessCalls = out.toolCalls.filter((c) => c.tool === "skill_check_run");
+  const harnessResults = out.toolResults.filter((r) => r.tool === "skill_check_run");
+  const scenariosActuallyRun = [
+    ...new Set(
+      harnessResults.flatMap((r) =>
+        Array.isArray(r.details?.coverage?.scenariosRun)
+          ? r.details.coverage.scenariosRun
+          : Array.isArray(r.details?.scenarios)
+            ? r.details.scenarios.map((s) => s.id)
+            : [],
+      ),
+    ),
+  ];
+  const selectedScenariosPerCall = harnessCalls.map((c) =>
+    Array.isArray(c.args?.scenarios) ? c.args.scenarios : "unspecified/all",
+  );
+  const selectedCoverageScopes = harnessCalls.map((c) => c.args?.coverageScope ?? "default");
+  const coverageLabels = harnessResults.map((r) => r.details?.coverage?.label).filter(Boolean);
+  const verdicts = harnessResults.flatMap((r) =>
+    Array.isArray(r.details?.scenarios) ? r.details.scenarios.map((s) => ({ id: s.id, verdict: s.verdict })) : [],
+  );
+  return {
+    skillCheckInvoked: harnessCalls.length > 0,
+    callCount: harnessCalls.length,
+    selectedScenariosPerCall,
+    selectedCoverageScopes,
+    scenariosActuallyRun,
+    coverageLabels,
+    verdicts,
+  };
 }
 
 const releasedPackages = [
@@ -460,113 +440,282 @@ try {
   const candidateProfile = createSingleProviderProfile(candidatePackages, ecoCandDirect);
   const candidateDockerProfile = createSingleProviderProfile(candidatePackages, ecoCandDockerOnly);
 
+  const acceptanceAssertions = [];
+  const pushAssertion = (id, required, executed, passed, detail) => {
+    acceptanceAssertions.push({
+      id,
+      required,
+      status: !executed ? "skipped" : passed ? "passed" : "failed",
+      passed: !executed ? null : Boolean(passed),
+      detail: !executed ? `Skipped (${detail || "excluded by --only"})` : detail,
+    });
+  };
+
   // -------------------------------------------------------------------------
   // 1. Live Simple Edit: Released vs Candidate
   // -------------------------------------------------------------------------
-  progress("task1 simple-edit starting...");
-  const editPrompt = "Fix double(n) in math.mjs so it returns n * 2 instead of n + 1. Keep it direct and concise.";
-  const fixBase = makeSimpleEditFixture();
-  const resEditBase = want("1")
-    ? await runPiJson({ cwd: fixBase.nested, profileDir: releasedProfile, prompt: editPrompt })
-    : { ok: true, elapsedMs: 0, modelCalls: 0, tokens: { input: 0, output: 0, total: 0 }, toolCalls: [], toolResults: [], finalText: "", stderr: "" };
-  const editBaseCorrect = !want("1") || /return\s+n\s*\*\s*2/.test(readFileSync(join(fixBase.nested, "math.mjs"), "utf8"));
-  const baseReviewDiff = execFileSync("git", ["diff", "--no-color", "HEAD"], { cwd: fixBase.nested, encoding: "utf8" });
+  let task1Report;
+  if (want("1")) {
+    progress("task1 simple-edit starting...");
+    const editPrompt = "Fix double(n) in math.mjs so it returns n * 2 instead of n + 1. Keep it direct and concise.";
+    const fixBase = makeSimpleEditFixture();
+    const resEditBase = await runPiJson({ cwd: fixBase.nested, profileDir: releasedProfile, prompt: editPrompt });
+    const editBaseCorrect = /return\s+n\s*\*\s*2/.test(readFileSync(join(fixBase.nested, "math.mjs"), "utf8"));
+    const baseReviewDiff = execFileSync("git", ["diff", "--no-color", "HEAD"], {
+      cwd: fixBase.nested,
+      encoding: "utf8",
+    });
 
-  const fixCand = makeSimpleEditFixture();
-  const resEditCand = want("1")
-    ? await runPiJson({ cwd: fixCand.nested, profileDir: candidateProfile, prompt: editPrompt })
-    : { ok: true, elapsedMs: 0, modelCalls: 0, tokens: { input: 0, output: 0, total: 0 }, toolCalls: [], toolResults: [], finalText: "", stderr: "" };
-  const editCandCorrect = !want("1") || /return\s+n\s*\*\s*2/.test(readFileSync(join(fixCand.nested, "math.mjs"), "utf8"));
-  const candScope = resolveReviewScope(fixCand.nested, editPrompt);
-  const candReviewDiff = await collectReviewDiff(fixCand.nested, candScope);
-  progress(`task1 done base=${resEditBase.elapsedMs}ms cand=${resEditCand.elapsedMs}ms`);
+    const fixCand = makeSimpleEditFixture();
+    const resEditCand = await runPiJson({ cwd: fixCand.nested, profileDir: candidateProfile, prompt: editPrompt });
+    const editCandCorrect = /return\s+n\s*\*\s*2/.test(readFileSync(join(fixCand.nested, "math.mjs"), "utf8"));
+    const candScope = resolveReviewScope(fixCand.nested, editPrompt);
+    const candReviewDiff = await collectReviewDiff(fixCand.nested, candScope);
+    progress(`task1 done base=${resEditBase.elapsedMs}ms cand=${resEditCand.elapsedMs}ms`);
+
+    const candPassed =
+      resEditCand.ok &&
+      editCandCorrect &&
+      !resEditCand.toolCalls.some((c) => c.tool.startsWith("delegate")) &&
+      !candReviewDiff.includes("noise = 999");
+    task1Report = {
+      status: "executed",
+      released: {
+        ok: resEditBase.ok && editBaseCorrect,
+        directNoDelegation: !resEditBase.toolCalls.some((c) => c.tool.startsWith("delegate")),
+        unrelatedSiblingLeakedIntoReview: baseReviewDiff.includes("noise = 999"),
+        elapsedMs: resEditBase.elapsedMs,
+        modelCalls: resEditBase.modelCalls,
+        tokens: resEditBase.tokens,
+        toolsUsed: resEditBase.toolCalls.map((c) => c.tool),
+      },
+      candidate: {
+        ok: candPassed,
+        directNoDelegation: !resEditCand.toolCalls.some((c) => c.tool.startsWith("delegate")),
+        unrelatedSiblingLeakedIntoReview: candReviewDiff.includes("noise = 999"),
+        elapsedMs: resEditCand.elapsedMs,
+        modelCalls: resEditCand.modelCalls,
+        tokens: resEditCand.tokens,
+        toolsUsed: resEditCand.toolCalls.map((c) => c.tool),
+      },
+    };
+    pushAssertion(
+      "task1.simpleEdit.candidate",
+      true,
+      true,
+      candPassed,
+      "Candidate simple edit finishes directly without sibling diff leakage",
+    );
+  } else {
+    task1Report = makeSkippedTask();
+    pushAssertion("task1.simpleEdit.candidate", true, false, null, "excluded by --only");
+  }
 
   // -------------------------------------------------------------------------
-  // 2a. Live Direct Investigation vs `investigate` Specialist
+  // 2a. Direct Investigation vs Explicitly Requested `investigate` Specialist (tool-integration)
   // -------------------------------------------------------------------------
-  progress("task2a investigation starting...");
-  const invDir = makeInvestigateFixture();
-  const invDirect = want("2a")
-    ? await runPiJson({
-        cwd: invDir,
-        profileDir: candidateProfile,
-        prompt:
-          "Without delegating, trace handle() from src/entry.ts to the final token check and cite exact file names and symbols.",
-      })
-    : { ok: true, elapsedMs: 0, modelCalls: 0, tokens: { input: 0, output: 0, total: 0 }, toolCalls: [], toolResults: [], finalText: "entry.ts router.ts auth.ts verifyToken", stderr: "" };
-  const invSpecialist = want("2a")
-    ? await runPiJson({
-        cwd: invDir,
-        profileDir: candidateProfile,
-        extraEnv: { PI_DADDY_AUTO_MODE: "1" },
-        prompt:
-          'Use delegate({ agent: "investigate", task: "Trace handle() from src/entry.ts to the final token check with exact file and symbol references." }) and return its result.',
-      })
-    : { ok: true, elapsedMs: 0, modelCalls: 0, tokens: { input: 0, output: 0, total: 0 }, toolCalls: [{ tool: "delegate", args: { agent: "investigate" } }], toolResults: [], finalText: "entry.ts router.ts auth.ts verifyToken", stderr: "" };
   const citesPath = (txt) =>
     /entry\.ts/.test(txt) && /router\.ts/.test(txt) && /auth\.ts/.test(txt) && /verifyToken/.test(txt);
-  progress(`task2a done direct=${invDirect.elapsedMs}ms specialist=${invSpecialist.elapsedMs}ms`);
-
-  // -------------------------------------------------------------------------
-  // 2b. Changed-Skill Sessions through Normal Pi Entry Points (Standard & Ambitious)
-  // -------------------------------------------------------------------------
-  async function runChangedSkillSession(mode) {
-    progress(`task2b changed-skill (${mode}) starting...`);
-    const skillDir = makeChangedSkillFixture();
-    const sessionFile = createModeSessionFile(skillDir, mode);
-    const out = await runPiJson({
-      cwd: skillDir,
+  let task2aReport;
+  if (want("2a")) {
+    progress("task2a investigation starting...");
+    const invDir = makeInvestigateFixture();
+    const invDirect = await runPiJson({
+      cwd: invDir,
       profileDir: candidateProfile,
-      sessionFile,
-      extraEnv: { PI_DADDY_AUTO_MODE: "1" },
       prompt:
-        mode === "standard"
-          ? 'Edit SKILL.md to add a note that tags must use lowercase `v` (not `V`), then run skill_check_run with `{ scenarios: ["tag-prefix"], coverageScope: "focused", reps: 1, thinking: "low", judgeThinking: "low" }` and report which scenario(s) ran and their verdicts.'
-          : 'Edit SKILL.md to add a note that tags must use lowercase `v` (not `V`), then in Ambitious mode run skill_check_run with `{ scenarios: ["tag-prefix", "notes-commit"], coverageScope: "related", reps: 1, thinking: "low", judgeThinking: "low" }` and report which scenario(s) ran and their verdicts.',
-      timeoutMs: 180_000,
+        "Without delegating, trace handle() from src/entry.ts to the final token check and cite exact file names and symbols.",
     });
-    progress(`task2b changed-skill (${mode}) done ok=${out.ok} elapsed=${out.elapsedMs}ms tools=${out.toolCalls.map((c) => c.tool).join(",")}`);
-    const harnessCalls = out.toolCalls.filter((c) => c.tool === "skill_check_run");
-    const harnessResults = out.toolResults.filter((r) => r.tool === "skill_check_run");
-    const scenariosRun = [
-      ...new Set(
-        harnessResults.flatMap((r) =>
-          Array.isArray(r.details?.coverage?.scenariosRun)
-            ? r.details.coverage.scenariosRun
-            : Array.isArray(r.details?.scenarios)
-              ? r.details.scenarios.map((s) => s.id)
-              : [],
+    const invLedger = join(scratch("live-inv-ledger-"), "grants.jsonl");
+    const invSpecialist = await runPiJson({
+      cwd: invDir,
+      profileDir: candidateProfile,
+      extraEnv: { PI_DADDY_AUTO_MODE: "1", PI_DADDY_LEDGER: invLedger },
+      prompt:
+        'Use delegate({ agent: "investigate", task: "Trace handle() from src/entry.ts to the final token check with exact file and symbol references." }) and return its result.',
+    });
+    const invLifecycle = computeObservedPeakActiveFromLedger(invLedger);
+    progress(`task2a done direct=${invDirect.elapsedMs}ms specialist=${invSpecialist.elapsedMs}ms`);
+    const specPassed =
+      invSpecialist.ok &&
+      invSpecialist.toolCalls.some((c) => c.tool === "delegate" && c.args?.agent === "investigate") &&
+      citesPath(invSpecialist.finalText);
+    task2aReport = {
+      status: "executed",
+      category: "tool-integration",
+      explicitlyPrompted: true,
+      direct: {
+        ok: invDirect.ok && citesPath(invDirect.finalText),
+        citedFullCallPath: citesPath(invDirect.finalText),
+        elapsedMs: invDirect.elapsedMs,
+        modelCalls: invDirect.modelCalls,
+        tokens: invDirect.tokens,
+        toolsUsed: invDirect.toolCalls.map((c) => c.tool),
+      },
+      explicitlyRequestedInvestigateSpecialist: {
+        ok: specPassed,
+        delegatedInvestigate: invSpecialist.toolCalls.some(
+          (c) => c.tool === "delegate" && c.args?.agent === "investigate",
         ),
-      ),
-    ];
-    const requestedScenarios = harnessCalls.flatMap((c) => (Array.isArray(c.args?.scenarios) ? c.args.scenarios : []));
-    const verdicts = harnessResults.flatMap((r) =>
-      Array.isArray(r.details?.scenarios) ? r.details.scenarios.map((s) => ({ id: s.id, verdict: s.verdict })) : [],
-    );
-    return {
-      mode,
-      ok: out.ok && harnessCalls.length > 0 && scenariosRun.length > 0,
-      skillCheckInvoked: harnessCalls.length > 0,
-      requestedScenarios,
-      scenariosActuallyRun: scenariosRun,
-      coverageLabels: harnessResults.map((r) => r.details?.coverage?.label).filter(Boolean),
-      verdicts,
-      elapsedMs: out.elapsedMs,
-      modelCalls: out.modelCalls,
-      tokens: out.tokens,
-      toolsUsed: out.toolCalls.map((c) => c.tool),
-      stderr: out.stderr,
+        requestedChildren: invSpecialist.toolCalls.filter((c) => c.tool === "delegate").length,
+        observedPeakActiveChildren: invLifecycle.observedPeakActiveChildren,
+        citedFullCallPath: citesPath(invSpecialist.finalText),
+        elapsedMs: invSpecialist.elapsedMs,
+        modelCalls: invSpecialist.modelCalls,
+        tokens: invSpecialist.tokens,
+        toolsUsed: invSpecialist.toolCalls.map((c) => c.tool),
+      },
     };
+    pushAssertion(
+      "task2a.investigate.toolIntegration",
+      true,
+      true,
+      specPassed,
+      "Explicitly requested Daddy/Principal investigate delegation traces full call path",
+    );
+  } else {
+    task2aReport = makeSkippedTask();
+    pushAssertion("task2a.investigate.toolIntegration", true, false, null, "excluded by --only");
   }
-  const changedSkillStandard = want("2b")
-    ? await runChangedSkillSession("standard")
-    : { mode: "standard", ok: true, skippedByOnly: true, scenariosActuallyRun: ["tag-prefix"] };
-  const changedSkillAmbitious = want("2b")
-    ? await runChangedSkillSession("ambitious")
-    : { mode: "ambitious", ok: true, skippedByOnly: true, scenariosActuallyRun: ["tag-prefix", "notes-commit"] };
 
   // -------------------------------------------------------------------------
-  // 3a. Direct CapacityAllocator + Single-Provider Wave (accurately labeled)
+  // 2b. Explicitly Prompted Changed-Skill Sessions (tool-integration, Standard & Ambitious)
+  // -------------------------------------------------------------------------
+  let task2bReport;
+  if (want("2b")) {
+    const runExplicitSkillSession = async (mode) => {
+      progress(`task2b explicit changed-skill tool-integration (${mode}) starting...`);
+      const skillDir = makeChangedSkillFixture();
+      const sessionFile = createModeSessionFile(skillDir, mode);
+      const out = await runPiJson({
+        cwd: skillDir,
+        profileDir: candidateProfile,
+        sessionFile,
+        extraEnv: { PI_DADDY_AUTO_MODE: "1" },
+        prompt:
+          mode === "standard"
+            ? 'Edit SKILL.md to add a note that tags must use lowercase `v` (not `V`), then run skill_check_run with `{ scenarios: ["tag-prefix"], coverageScope: "focused", reps: 1, thinking: "low", judgeThinking: "low" }` and report which scenario(s) ran and their verdicts.'
+            : 'Edit SKILL.md to add a note that tags must use lowercase `v` (not `V`), then in Ambitious mode run skill_check_run with `{ scenarios: ["tag-prefix", "notes-commit"], coverageScope: "related", reps: 1, thinking: "low", judgeThinking: "low" }` and report which scenario(s) ran and their verdicts.',
+        timeoutMs: 180_000,
+      });
+      const obs = extractHarnessObservation(out);
+      progress(`task2b (${mode}) done ok=${out.ok} scenarios=[${obs.scenariosActuallyRun.join(",")}]`);
+      return {
+        status: "executed",
+        category: "tool-integration",
+        explicitlyPrompted: true,
+        mode,
+        ok: out.ok && obs.skillCheckInvoked && obs.scenariosActuallyRun.length > 0,
+        ...obs,
+        elapsedMs: out.elapsedMs,
+        modelCalls: out.modelCalls,
+        tokens: out.tokens,
+        toolsUsed: out.toolCalls.map((c) => c.tool),
+        stderr: out.stderr,
+      };
+    };
+    const std = await runExplicitSkillSession("standard");
+    const amb = await runExplicitSkillSession("ambitious");
+    task2bReport = {
+      status: "executed",
+      category: "tool-integration",
+      explicitlyPrompted: true,
+      standard: std,
+      ambitious: amb,
+    };
+    pushAssertion(
+      "task2b.changedSkill.toolIntegration.standard",
+      true,
+      true,
+      std.ok,
+      `Explicit Standard skill_check_run ran [${std.scenariosActuallyRun.join(", ")}]`,
+    );
+    pushAssertion(
+      "task2b.changedSkill.toolIntegration.ambitious",
+      true,
+      true,
+      amb.ok && amb.scenariosActuallyRun.length >= 2,
+      `Explicit Ambitious skill_check_run ran [${amb.scenariosActuallyRun.join(", ")}]`,
+    );
+  } else {
+    task2bReport = makeSkippedTask();
+    pushAssertion("task2b.changedSkill.toolIntegration.standard", true, false, null, "excluded by --only");
+    pushAssertion("task2b.changedSkill.toolIntegration.ambitious", true, false, null, "excluded by --only");
+  }
+
+  // -------------------------------------------------------------------------
+  // 2c. Ordinary Unprompted Skill-Edit Sessions (behavioral selection, Standard & Ambitious)
+  // Leaves Harness command, scenario IDs, and coverage choice completely to Pi.
+  // -------------------------------------------------------------------------
+  let task2cReport;
+  if (want("2c")) {
+    const runOrdinarySkillEdit = async (mode) => {
+      progress(`task2c ordinary unprompted skill-edit (${mode}) starting...`);
+      const skillDir = makeChangedSkillFixture();
+      const sessionFile = createModeSessionFile(skillDir, mode);
+      const before = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+      const out = await runPiJson({
+        cwd: skillDir,
+        profileDir: candidateProfile,
+        sessionFile,
+        extraEnv: { PI_DADDY_AUTO_MODE: "1" },
+        prompt:
+          "Update SKILL.md to clarify that release tags must always use a lowercase leading `v` (never uppercase `V`). Follow your normal workflow for modifying a skill.",
+        timeoutMs: 180_000,
+      });
+      const after = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+      const skillEdited = after !== before && /lowercase/i.test(after);
+      const obs = extractHarnessObservation(out);
+      progress(
+        `task2c (${mode}) done ok=${out.ok} edited=${skillEdited} harnessInvoked=${obs.skillCheckInvoked} scenarios=[${obs.scenariosActuallyRun.join(",")}]`,
+      );
+      return {
+        status: "executed",
+        category: "behavioral-selection",
+        explicitlyPrompted: false,
+        mode,
+        ok: out.ok && skillEdited,
+        skillEdited,
+        ...obs,
+        elapsedMs: out.elapsedMs,
+        modelCalls: out.modelCalls,
+        tokens: out.tokens,
+        toolsUsed: out.toolCalls.map((c) => c.tool),
+        stderr: out.stderr,
+      };
+    };
+    const std = await runOrdinarySkillEdit("standard");
+    const amb = await runOrdinarySkillEdit("ambitious");
+    task2cReport = {
+      status: "executed",
+      category: "behavioral-selection",
+      explicitlyPrompted: false,
+      note: "Ordinary skill-edit prompt that omits skill_check_run, scenario IDs, and coverageScope; reports exact observed selection per mode.",
+      standard: std,
+      ambitious: amb,
+    };
+    pushAssertion(
+      "task2c.ordinarySkillEdit.standard",
+      true,
+      true,
+      std.ok,
+      `Standard ordinary skill edit succeeded (harnessInvoked=${std.skillCheckInvoked}, scenarios=[${std.scenariosActuallyRun.join(", ")}])`,
+    );
+    pushAssertion(
+      "task2c.ordinarySkillEdit.ambitious",
+      true,
+      true,
+      amb.ok,
+      `Ambitious ordinary skill edit succeeded (harnessInvoked=${amb.skillCheckInvoked}, scenarios=[${amb.scenariosActuallyRun.join(", ")}])`,
+    );
+  } else {
+    task2cReport = makeSkippedTask();
+    pushAssertion("task2c.ordinarySkillEdit.standard", true, false, null, "excluded by --only");
+    pushAssertion("task2c.ordinarySkillEdit.ambitious", true, false, null, "excluded by --only");
+  }
+
+  // -------------------------------------------------------------------------
+  // 3a. Direct CapacityAllocator + Single-Provider Pi Wave (accurately labeled)
   // -------------------------------------------------------------------------
   const waveTargets = [
     { repo: "pi-daddy", file: join(DADDY_PKG, "src/kernel/fanout.ts"), q: "Report STANDARD and AMBITIOUS fanout constants." },
@@ -581,327 +730,282 @@ try {
     { repo: "skill-harness", file: join(HARNESS_REPO, "packages/pi-extension/src/index.ts"), q: "Check whether tools activate on session_start." },
   ];
 
-  async function runAllocatorProviderWave(fanoutLimit) {
-    const allocator = createCapacityAllocator(fanoutLimit);
-    let active = 0;
-    let peakActive = 0;
-    let totalWaitMs = 0;
-    const t0 = performance.now();
-    const outcomes = await Promise.all(
-      waveTargets.map(async (item, idx) => {
-        const reqAt = performance.now();
-        let res;
-        while (true) {
-          res = allocator.reserve(`alloc-wave-${fanoutLimit}-${idx}`, 0);
-          if (res.ok) break;
-          await new Promise((r) => setTimeout(r, 15));
-        }
-        totalWaitMs += performance.now() - reqAt;
-        active++;
-        if (active > peakActive) peakActive = active;
-        try {
-          const out = await runPiJson({
-            cwd: dirname(item.file),
-            profileDir: candidateProfile,
-            extraArgs: ["--no-extensions", "--no-skills", "--tools", "read"],
-            prompt: `Read ${item.file} and answer in 1 short sentence: ${item.q}`,
-            timeoutMs: 60_000,
-          });
-          return { repo: item.repo, ok: out.ok && out.finalText.length > 0, ...out };
-        } finally {
-          active--;
-          res.reservation.finalize({ state: "not-started", reason: "live-child-settled" });
-        }
-      }),
+  let task3aReport;
+  if (want("3a")) {
+    progress("task3a allocator/provider wave starting...");
+    const runAllocatorProviderWave = async (fanoutLimit) => {
+      const allocator = createCapacityAllocator(fanoutLimit);
+      let active = 0;
+      let observedPeakActive = 0;
+      let totalWaitMs = 0;
+      const t0 = performance.now();
+      const outcomes = await Promise.all(
+        waveTargets.map(async (item, idx) => {
+          const reqAt = performance.now();
+          let res;
+          while (true) {
+            res = allocator.reserve(`alloc-wave-${fanoutLimit}-${idx}`, 0);
+            if (res.ok) break;
+            await new Promise((r) => setTimeout(r, 15));
+          }
+          totalWaitMs += performance.now() - reqAt;
+          active++;
+          if (active > observedPeakActive) observedPeakActive = active;
+          try {
+            const out = await runPiJson({
+              cwd: dirname(item.file),
+              profileDir: candidateProfile,
+              extraArgs: ["--no-extensions", "--no-skills", "--tools", "read"],
+              prompt: `Read ${item.file} and answer in 1 short sentence: ${item.q}`,
+              timeoutMs: 60_000,
+            });
+            return { repo: item.repo, ok: out.ok && out.finalText.length > 0, ...out };
+          } finally {
+            active--;
+            res.reservation.finalize({ state: "not-started", reason: "live-child-settled" });
+          }
+        }),
+      );
+      return {
+        label: "Direct CapacityAllocator + single-provider Pi wave (not Daddy delegate_all)",
+        fanoutLimit,
+        samples: 1,
+        requestedChildren: waveTargets.length,
+        succeeded: outcomes.filter((o) => o.ok).length,
+        findingsReturned: outcomes.filter((o) => o.finalText.length > 0).length,
+        elapsedMs: Math.round(performance.now() - t0),
+        totalModelCalls: outcomes.reduce((s, o) => s + o.modelCalls, 0),
+        totalTokens: outcomes.reduce((s, o) => s + o.tokens.total, 0),
+        observedPeakActiveChildren: observedPeakActive,
+        totalWaitForCapacityMs: Math.round(totalWaitMs),
+        avgWaitPerTaskMs: Math.round(totalWaitMs / waveTargets.length),
+      };
+    };
+    const f8 = await runAllocatorProviderWave(8);
+    const f24 = await runAllocatorProviderWave(24);
+    progress(`task3a done f8=${f8.elapsedMs}ms f24=${f24.elapsedMs}ms`);
+    const waveOk =
+      f8.succeeded === waveTargets.length && f24.succeeded === waveTargets.length && f24.totalWaitForCapacityMs === 0;
+    task3aReport = {
+      status: "executed",
+      category: "allocator-provider-concurrency",
+      note: "Measures direct CapacityAllocator concurrency + single-provider Pi execution (NOT Daddy delegate_all).",
+      fanout8_standard: f8,
+      fanout24_ambitious: f24,
+    };
+    pushAssertion(
+      "task3a.allocatorWave.fanout8and24",
+      true,
+      true,
+      waveOk,
+      "Direct allocator/provider wave succeeds 10/10 in both fanout 8 and 24 with 0ms wait at 24",
     );
-    return {
-      label: "Direct CapacityAllocator + single-provider Pi wave (not Daddy delegate_all)",
-      fanoutLimit,
-      samples: 1,
-      tasks: waveTargets.length,
-      succeeded: outcomes.filter((o) => o.ok).length,
-      findingsReturned: outcomes.filter((o) => o.finalText.length > 0).length,
-      elapsedMs: Math.round(performance.now() - t0),
-      totalModelCalls: outcomes.reduce((s, o) => s + o.modelCalls, 0),
-      totalTokens: outcomes.reduce((s, o) => s + o.tokens.total, 0),
-      peakActiveChildren: peakActive,
-      totalWaitForCapacityMs: Math.round(totalWaitMs),
-      avgWaitPerTaskMs: Math.round(totalWaitMs / waveTargets.length),
-    };
+  } else {
+    task3aReport = makeSkippedTask();
+    pushAssertion("task3a.allocatorWave.fanout8and24", true, false, null, "excluded by --only");
   }
-  progress("task3a allocator/provider wave starting...");
-  const allocatorFanout8 = want("3a")
-    ? await runAllocatorProviderWave(8)
-    : { fanoutLimit: 8, succeeded: waveTargets.length, totalWaitForCapacityMs: 0, skippedByOnly: true };
-  const allocatorFanout24 = want("3a")
-    ? await runAllocatorProviderWave(24)
-    : { fanoutLimit: 24, succeeded: waveTargets.length, totalWaitForCapacityMs: 0, skippedByOnly: true };
-  progress(`task3a done f8=${allocatorFanout8.elapsedMs ?? 0}ms f24=${allocatorFanout24.elapsedMs ?? 0}ms`);
 
   // -------------------------------------------------------------------------
-  // 3b. Real Daddy/Principal Delegation Review in BOTH Modes (same review tasks + scored findings)
+  // 3b. Explicitly Requested Daddy/Principal Reviewer Delegation (tool-integration, both modes)
   // -------------------------------------------------------------------------
-  async function runRealDelegationReview(mode) {
-    const reviewDir = makeSeededReviewFixture();
-    const sessionFile = createModeSessionFile(reviewDir, mode);
-    const prompt =
-      mode === "standard"
-        ? 'Review only (do not edit files). Use delegate({ agent: "review", task: "Review src/auth.ts, src/query.ts, and src/cache.ts and list every concrete bug with exact filename and defect." }) and summarize all findings.'
-        : 'Review only (do not edit files). Use delegate_all with two parallel Principal specialists: child 1 agent="review-security" reviewing src/auth.ts and src/query.ts for security bugs, and child 2 agent="review-perf" reviewing src/cache.ts for memory/performance bugs. Once delegate_all returns, immediately summarize every concrete finding with exact filenames.';
-    const out = await runPiJson({
-      cwd: reviewDir,
-      profileDir: candidateProfile,
-      sessionFile,
-      extraEnv: { PI_DADDY_AUTO_MODE: "1" },
-      prompt,
-      timeoutMs: 180_000,
-    });
-    const delegatedCalls = out.toolCalls.filter((c) => c.tool === "delegate" || c.tool === "delegate_all");
-    const delegateResults = out.toolResults.filter((r) => r.tool === "delegate" || r.tool === "delegate_all");
-    const peakDelegated = Math.max(
-      0,
-      ...delegatedCalls.map((c) => (c.tool === "delegate_all" && Array.isArray(c.args?.children) ? c.args.children.length : 1)),
+  let task3bReport;
+  if (want("3b")) {
+    progress("task3b explicitly requested Daddy/Principal reviewer delegation starting...");
+    const runExplicitReviewerDelegation = async (mode) => {
+      const reviewDir = makeSeededReviewFixture();
+      const sessionFile = createModeSessionFile(reviewDir, mode);
+      const ledgerPath = join(scratch(`live-rev-ledger-${mode}-`), "grants.jsonl");
+      const prompt =
+        mode === "standard"
+          ? 'Review only (do not edit files). Use delegate({ agent: "review", task: "Review src/auth.ts, src/query.ts, and src/cache.ts and list every concrete bug with exact filename and defect." }) and summarize all findings.'
+          : 'Review only (do not edit files). Use delegate_all with two parallel Principal specialists: child 1 agent="review-security" reviewing src/auth.ts and src/query.ts for security bugs, and child 2 agent="review-perf" reviewing src/cache.ts for memory/performance bugs. Once delegate_all returns, immediately summarize every concrete finding with exact filenames.';
+      const out = await runPiJson({
+        cwd: reviewDir,
+        profileDir: candidateProfile,
+        sessionFile,
+        extraEnv: { PI_DADDY_AUTO_MODE: "1", PI_DADDY_LEDGER: ledgerPath },
+        prompt,
+        timeoutMs: 180_000,
+      });
+      const delegatedCalls = out.toolCalls.filter((c) => c.tool === "delegate" || c.tool === "delegate_all");
+      const delegateResults = out.toolResults.filter((r) => r.tool === "delegate" || r.tool === "delegate_all");
+      const requestedChildren = delegatedCalls.reduce(
+        (sum, c) => sum + (c.tool === "delegate_all" && Array.isArray(c.args?.children) ? c.args.children.length : 1),
+        0,
+      );
+      const lifecycle = computeObservedPeakActiveFromLedger(ledgerPath);
+      const combinedText = [out.finalText, ...delegateResults.map((r) => r.text)].join("\n");
+      const scored = scoreSeededReviewFindings(combinedText);
+      return {
+        status: "executed",
+        category: "tool-integration",
+        explicitlyRequestedReviewers: true,
+        label: "Explicitly requested Daddy/Principal reviewer delegation",
+        mode,
+        ok: out.ok && delegatedCalls.length > 0 && scored.score === scored.total,
+        delegatedViaDaddy: delegatedCalls.length > 0,
+        delegationToolsUsed: delegatedCalls.map((c) => c.tool),
+        delegatedAgents: delegatedCalls.flatMap((c) =>
+          c.tool === "delegate_all" && Array.isArray(c.args?.children)
+            ? c.args.children.map((ch) => ch.agent)
+            : [c.args?.agent],
+        ),
+        requestedChildren,
+        observedPeakActiveChildren: lifecycle.observedPeakActiveChildren,
+        observedLifecycleEvents: lifecycle.lifecycleEventCount,
+        expectedFindingsScore: `${scored.score}/${scored.total}`,
+        findingsMatched: scored.matched,
+        elapsedMs: out.elapsedMs,
+        modelCalls: out.modelCalls,
+        tokens: out.tokens,
+        stderr: out.stderr,
+      };
+    };
+    const std = await runExplicitReviewerDelegation("standard");
+    const amb = await runExplicitReviewerDelegation("ambitious");
+    progress(
+      `task3b done std=${std.expectedFindingsScore} (peak=${std.observedPeakActiveChildren}) amb=${amb.expectedFindingsScore} (peak=${amb.observedPeakActiveChildren})`,
     );
-    const combinedText = [out.finalText, ...delegateResults.map((r) => r.text)].join("\n");
-    const scored = scoreSeededReviewFindings(combinedText);
-    return {
-      label: "Real Daddy/Principal delegation review",
-      mode,
-      ok: out.ok && delegatedCalls.length > 0 && scored.score === scored.total,
-      delegatedViaDaddy: delegatedCalls.length > 0,
-      delegationToolsUsed: delegatedCalls.map((c) => c.tool),
-      delegatedAgents: delegatedCalls.flatMap((c) =>
-        c.tool === "delegate_all" && Array.isArray(c.args?.children)
-          ? c.args.children.map((ch) => ch.agent)
-          : [c.args?.agent],
-      ),
-      peakActiveChildren: peakDelegated,
-      expectedFindingsScore: `${scored.score}/${scored.total}`,
-      findingsMatched: scored.matched,
-      elapsedMs: out.elapsedMs,
-      modelCalls: out.modelCalls,
-      tokens: out.tokens,
-      stderr: out.stderr,
+    task3bReport = {
+      status: "executed",
+      category: "tool-integration",
+      explicitlyRequestedReviewers: true,
+      standard: std,
+      ambitious: amb,
     };
-  }
-  progress("task3b real Daddy/Principal delegation review starting...");
-  const realReviewStandard = want("3b")
-    ? await runRealDelegationReview("standard")
-    : { mode: "standard", ok: true, expectedFindingsScore: "3/3", skippedByOnly: true };
-  const realReviewAmbitious = want("3b")
-    ? await runRealDelegationReview("ambitious")
-    : { mode: "ambitious", ok: true, expectedFindingsScore: "3/3", skippedByOnly: true };
-  progress(
-    `task3b done std=${realReviewStandard.expectedFindingsScore} (${realReviewStandard.elapsedMs ?? 0}ms) amb=${realReviewAmbitious.expectedFindingsScore} (${realReviewAmbitious.elapsedMs ?? 0}ms)`,
-  );
-
-  // -------------------------------------------------------------------------
-  // 4. Delegated `scout-public` (Docker mode vs Direct HTTPS mode reported separately)
-  // -------------------------------------------------------------------------
-  async function runDelegatedScout(modeName, profileDir, taskPrompt, expectCleanupPattern) {
-    const scoutDir = scratch(`live-scout-${modeName}-`);
-    const out = await runPiJson({
-      cwd: scoutDir,
-      profileDir,
-      extraEnv: { PI_DADDY_AUTO_MODE: "1" },
-      prompt: taskPrompt,
-      timeoutMs: 120_000,
-    });
-    const delegated = out.toolCalls.some((c) => c.tool === "delegate" && c.args?.agent === "scout-public");
-    const delegateResult = out.toolResults.find((r) => r.tool === "delegate");
-    const briefRef = extractBriefReference(out.finalText, out.toolResults);
-    const combinedOutput = [out.finalText, delegateResult?.text ?? ""].join("\n");
-    const daddyCleanupSettled =
-      delegateResult?.details?.cleanup?.state === "settled" ||
-      /cleanup[^.\n]*settled/i.test(delegateResult?.text ?? "");
-    const modeCleanupEvidence = expectCleanupPattern.test(combinedOutput) || daddyCleanupSettled;
-    const ok = out.ok && delegated && Boolean(briefRef) && modeCleanupEvidence;
-    return {
-      mode: modeName,
-      executed: true,
-      ok,
-      delegatedScoutPublic: delegated,
-      validBriefReference: Boolean(briefRef),
-      briefReference: briefRef,
-      daddyCleanupSettled,
-      cleanupEvidenceValid: modeCleanupEvidence,
-      elapsedMs: out.elapsedMs,
-      modelCalls: out.modelCalls,
-      tokens: out.tokens,
-      toolsUsed: out.toolCalls.map((c) => c.tool),
-      excerpt: out.finalText.slice(0, 400),
-      stderr: out.stderr,
-    };
+    pushAssertion(
+      "task3b.explicitReviewerDelegation.standard",
+      true,
+      true,
+      std.ok,
+      `Explicitly requested Standard review scored ${std.expectedFindingsScore} (observedPeak=${std.observedPeakActiveChildren})`,
+    );
+    pushAssertion(
+      "task3b.explicitReviewerDelegation.ambitious",
+      true,
+      true,
+      amb.ok,
+      `Explicitly requested Ambitious review scored ${amb.expectedFindingsScore} (observedPeak=${amb.observedPeakActiveChildren})`,
+    );
+  } else {
+    task3bReport = makeSkippedTask();
+    pushAssertion("task3b.explicitReviewerDelegation.standard", true, false, null, "excluded by --only");
+    pushAssertion("task3b.explicitReviewerDelegation.ambitious", true, false, null, "excluded by --only");
   }
 
-  progress("task4 delegated scout-public starting...");
-  const scoutDirectHttps = want("4")
-    ? await runDelegatedScout(
-        "direct-https",
-        candidateProfile,
-        'Delegate to scout-public using delegate({ agent: "scout-public", task: "Check Node.js 24 LTS release status using sourceUrls: [\'https://nodejs.org/en/about/previous-releases\']. Include the exact Scout brief reference JSON and worker cleanup line verbatim in your answer." }) and include the exact Scout brief reference JSON and cleanup line in your final reply.',
-        /not-started|direct-urls|no Docker worker started/i,
-      )
-    : { mode: "direct-https", ok: true, skippedByOnly: true };
-  progress(`task4 direct-https done ok=${scoutDirectHttps.ok} briefRef=${scoutDirectHttps.validBriefReference} cleanup=${scoutDirectHttps.cleanupEvidenceValid}`);
+  // -------------------------------------------------------------------------
+  // 4. Delegated `scout-public` (Direct HTTPS & Docker reported separately,
+  //    evaluated strictly from matching `scout_research` structured details)
+  // -------------------------------------------------------------------------
+  let task4Report;
+  if (want("4")) {
+    progress("task4 delegated scout-public starting...");
+    const runDelegatedScout = async (modeName, profileDir, taskPrompt) => {
+      const scoutDir = scratch(`live-scout-${modeName}-`);
+      const ledgerPath = join(scratch(`live-scout-ledger-${modeName}-`), "grants.jsonl");
+      const out = await runPiJson({
+        cwd: scoutDir,
+        profileDir,
+        extraEnv: { PI_DADDY_AUTO_MODE: "1", PI_DADDY_LEDGER: ledgerPath },
+        prompt: taskPrompt,
+        timeoutMs: 120_000,
+      });
+      const evaluation = evaluateScoutAcceptance({
+        mode: modeName,
+        processOk: out.ok,
+        toolCalls: out.toolCalls,
+        toolResults: out.toolResults,
+      });
+      const lifecycle = computeObservedPeakActiveFromLedger(ledgerPath);
+      return {
+        status: "executed",
+        mode: modeName,
+        ...evaluation,
+        observedPeakActiveChildren: lifecycle.observedPeakActiveChildren,
+        elapsedMs: out.elapsedMs,
+        modelCalls: out.modelCalls,
+        tokens: out.tokens,
+        toolsUsed: out.toolCalls.map((c) => c.tool),
+        excerpt: out.finalText.slice(0, 350),
+        stderr: out.stderr,
+      };
+    };
 
-  const dockerAvailable = isDockerDaemonRunning();
-  const scoutDocker =
-    want("4") && dockerAvailable
+    const scoutDirectHttps = await runDelegatedScout(
+      "direct-https",
+      candidateProfile,
+      'Delegate to scout-public using delegate({ agent: "scout-public", task: "Check Node.js 24 LTS release status using sourceUrls: [\'https://nodejs.org/en/about/previous-releases\']." }) and summarize the result.',
+    );
+    progress(
+      `task4 direct-https done ok=${scoutDirectHttps.ok} matchingScout=${scoutDirectHttps.matchingScoutInvocation} briefRef=${scoutDirectHttps.validBriefReference} cleanup=${scoutDirectHttps.cleanupEvidenceValid}`,
+    );
+
+    const dockerAvailable = isDockerDaemonRunning();
+    const scoutDocker = dockerAvailable
       ? await runDelegatedScout(
           "docker",
           candidateDockerProfile,
-          'Delegate to scout-public using delegate({ agent: "scout-public", task: "Verify Node.js 24 LTS release status using sourceUrls: [\'https://nodejs.org/en/about/previous-releases\']. Include the exact Scout brief reference JSON and worker cleanup status verbatim." }) and include the exact Scout brief reference JSON and cleanup status in your final reply.',
-          /worker cleanup:\s*confirmed|cleanup[^.\n]*confirmed/i,
+          'Delegate to scout-public using delegate({ agent: "scout-public", task: "Verify Node.js 24 LTS release status using sourceUrls: [\'https://nodejs.org/en/about/previous-releases\']." }) and summarize the result.',
         )
       : {
           mode: "docker",
+          status: "pending-docker-unavailable",
           executed: false,
-          ok: false,
-          status: dockerAvailable ? "skipped-by-only" : "blocked-docker-daemon-stopped",
+          ok: null,
           blocker: "Docker Desktop Linux engine daemon is not running on this host (`docker info` unavailable).",
         };
 
-  // -------------------------------------------------------------------------
-  // Explicit acceptance assertions -> nonzero exit on failure
-  // -------------------------------------------------------------------------
-  const acceptanceAssertions = [
-    {
-      id: "task1.simpleEdit.candidate",
-      required: true,
-      passed:
-        resEditCand.ok &&
-        editCandCorrect &&
-        !resEditCand.toolCalls.some((c) => c.tool.startsWith("delegate")) &&
-        !candReviewDiff.includes("noise = 999"),
-      detail: "Candidate simple edit finishes directly without sibling diff leakage",
-    },
-    {
-      id: "task2a.investigate.specialist",
-      required: true,
-      passed:
-        invSpecialist.ok &&
-        invSpecialist.toolCalls.some((c) => c.tool === "delegate" && c.args?.agent === "investigate") &&
-        citesPath(invSpecialist.finalText),
-      detail: "Real Daddy/Principal investigate delegation traces full call path",
-    },
-    {
-      id: "task2b.changedSkill.standard",
-      required: true,
-      passed: changedSkillStandard.ok,
-      detail: `Standard changed-skill session ran skill_check_run (${changedSkillStandard.scenariosActuallyRun.join(", ")})`,
-    },
-    {
-      id: "task2b.changedSkill.ambitious",
-      required: true,
-      passed: changedSkillAmbitious.ok && changedSkillAmbitious.scenariosActuallyRun.length >= 2,
-      detail: `Ambitious changed-skill session ran skill_check_run (${changedSkillAmbitious.scenariosActuallyRun.join(", ")})`,
-    },
-    {
-      id: "task3a.allocatorWave.fanout8and24",
-      required: true,
-      passed:
-        allocatorFanout8.succeeded === waveTargets.length &&
-        allocatorFanout24.succeeded === waveTargets.length &&
-        allocatorFanout24.totalWaitForCapacityMs === 0,
-      detail: "Direct allocator/provider wave succeeds 10/10 in both fanout 8 and 24 with 0ms wait at 24",
-    },
-    {
-      id: "task3b.realDelegationReview.standard",
-      required: true,
-      passed: realReviewStandard.ok,
-      detail: `Real Daddy/Principal Standard review scored ${realReviewStandard.expectedFindingsScore}`,
-    },
-    {
-      id: "task3b.realDelegationReview.ambitious",
-      required: true,
-      passed: realReviewAmbitious.ok,
-      detail: `Real Daddy/Principal Ambitious review scored ${realReviewAmbitious.expectedFindingsScore}`,
-    },
-    {
-      id: "task4.scout.directHttps",
-      required: true,
-      passed: scoutDirectHttps.ok,
-      detail: "Direct HTTPS delegated scout-public returned valid brief ref + expected cleanup evidence",
-    },
-    {
-      id: "task4.scout.docker",
-      required: REQUIRE_DOCKER,
-      passed: scoutDocker.ok === true,
-      detail: dockerAvailable
-        ? "Docker delegated scout-public returned valid brief ref + confirmed worker cleanup"
+    task4Report = {
+      status: "executed",
+      directHttpsMode: scoutDirectHttps,
+      dockerMode: scoutDocker,
+    };
+    pushAssertion(
+      "task4.scout.directHttps",
+      true,
+      true,
+      scoutDirectHttps.ok,
+      scoutDirectHttps.ok
+        ? "Matching scout_research invocation proved direct-urls mode, workerStarted=false, cleanup=not-started, and valid briefReference"
+        : `Direct HTTPS acceptance failed: ${scoutDirectHttps.failureReasons.join("; ")}`,
+    );
+    pushAssertion(
+      "task4.scout.docker",
+      REQUIRE_DOCKER,
+      dockerAvailable,
+      dockerAvailable ? scoutDocker.ok : null,
+      dockerAvailable
+        ? scoutDocker.ok
+          ? "Matching scout_research invocation proved Docker runtime.cleanup.confirmed=true and valid briefReference"
+          : `Docker acceptance failed: ${scoutDocker.failureReasons.join("; ")}`
         : scoutDocker.blocker,
-    },
-  ];
+    );
+  } else {
+    task4Report = makeSkippedTask();
+    pushAssertion("task4.scout.directHttps", true, false, null, "excluded by --only");
+    pushAssertion("task4.scout.docker", REQUIRE_DOCKER, false, null, "excluded by --only");
+  }
 
-  const failedRequired = acceptanceAssertions.filter((a) => a.required && !a.passed);
+  const summary = summarizeAcceptance(acceptanceAssertions);
   const report = {
     kind: "live-provider-acceptance-comparison",
     model: MODEL,
     thinking: THINKING,
     singleProviderOnly: PROVIDER,
     fireworksOrCopilotCredentials: false,
+    filter: ONLY_ARG ? [...ONLY_ARG] : null,
     samples: 1,
-    allRequiredPassed: failedRequired.length === 0,
+    selectedChecksPassed: summary.selectedChecksPassed,
+    fullSuitePassed: summary.fullSuitePassed,
+    skippedCheckIds: summary.skippedCheckIds,
     acceptanceAssertions,
-    task1_simpleEdit: {
-      released: {
-        ok: resEditBase.ok && editBaseCorrect,
-        directNoDelegation: !resEditBase.toolCalls.some((c) => c.tool.startsWith("delegate")),
-        unrelatedSiblingLeakedIntoReview: baseReviewDiff.includes("noise = 999"),
-        elapsedMs: resEditBase.elapsedMs,
-        modelCalls: resEditBase.modelCalls,
-        tokens: resEditBase.tokens,
-        toolsUsed: resEditBase.toolCalls.map((c) => c.tool),
-      },
-      candidate: {
-        ok: resEditCand.ok && editCandCorrect,
-        directNoDelegation: !resEditCand.toolCalls.some((c) => c.tool.startsWith("delegate")),
-        unrelatedSiblingLeakedIntoReview: candReviewDiff.includes("noise = 999"),
-        elapsedMs: resEditCand.elapsedMs,
-        modelCalls: resEditCand.modelCalls,
-        tokens: resEditCand.tokens,
-        toolsUsed: resEditCand.toolCalls.map((c) => c.tool),
-      },
-    },
-    task2a_investigation: {
-      direct: {
-        ok: invDirect.ok && citesPath(invDirect.finalText),
-        citedFullCallPath: citesPath(invDirect.finalText),
-        elapsedMs: invDirect.elapsedMs,
-        modelCalls: invDirect.modelCalls,
-        tokens: invDirect.tokens,
-        toolsUsed: invDirect.toolCalls.map((c) => c.tool),
-      },
-      investigateSpecialist: {
-        ok: invSpecialist.ok && citesPath(invSpecialist.finalText),
-        delegatedInvestigate: invSpecialist.toolCalls.some(
-          (c) => c.tool === "delegate" && c.args?.agent === "investigate",
-        ),
-        citedFullCallPath: citesPath(invSpecialist.finalText),
-        elapsedMs: invSpecialist.elapsedMs,
-        modelCalls: invSpecialist.modelCalls,
-        tokens: invSpecialist.tokens,
-        toolsUsed: invSpecialist.toolCalls.map((c) => c.tool),
-      },
-    },
-    task2b_changedSkillSessions: {
-      standard: changedSkillStandard,
-      ambitious: changedSkillAmbitious,
-    },
-    task3a_allocatorProviderWave: {
-      note: "Measures direct CapacityAllocator concurrency + single-provider Pi execution (NOT Daddy delegate_all).",
-      fanout8_standard: allocatorFanout8,
-      fanout24_ambitious: allocatorFanout24,
-    },
-    task3b_realDelegationReviewBothModes: {
-      standard: realReviewStandard,
-      ambitious: realReviewAmbitious,
-    },
-    task4_scoutDelegation: {
-      directHttpsMode: scoutDirectHttps,
-      dockerMode: scoutDocker,
-    },
+    task1_simpleEdit: task1Report,
+    task2a_investigationToolIntegration: task2aReport,
+    task2b_changedSkillToolIntegration: task2bReport,
+    task2c_ordinarySkillEditSelection: task2cReport,
+    task3a_allocatorProviderWave: task3aReport,
+    task3b_explicitlyRequestedReviewerDelegation: task3bReport,
+    task4_scoutDelegation: task4Report,
   };
 
   const outIdx = process.argv.indexOf("--out");
@@ -909,8 +1013,11 @@ try {
     writeFileSync(process.argv[outIdx + 1], JSON.stringify(report, null, 2) + "\n", "utf8");
   }
   console.log(JSON.stringify(report, null, 2));
-  if (failedRequired.length > 0) {
-    console.error("ACCEPTANCE ASSERTIONS FAILED:", failedRequired.map((f) => `${f.id}: ${f.detail}`).join("; "));
+  if (!summary.selectedChecksPassed) {
+    console.error(
+      "ACCEPTANCE ASSERTIONS FAILED:",
+      summary.failedRequired.map((f) => `${f.id}: ${f.detail}`).join("; "),
+    );
     process.exitCode = 1;
   }
 } finally {

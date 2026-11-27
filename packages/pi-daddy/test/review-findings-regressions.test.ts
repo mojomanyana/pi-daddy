@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, openSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -16,6 +16,7 @@ import {
   formatReviewScopeBanner,
   collectReviewDiff,
 } from "../extensions/work-mode.ts";
+import { readConfinedUntrackedFile } from "../extensions/review-scope.ts";
 import {
   registerProjectMemoryOwner,
   PROJECT_MEMORY_OWNER_REQUEST,
@@ -23,6 +24,12 @@ import {
 } from "../extensions/project-memory-owner.ts";
 import { planDelegation } from "../src/kernel/delegate.ts";
 import { buildCatalog } from "../src/kernel/catalog.ts";
+import {
+  computeObservedPeakActiveFromLedger,
+  evaluateScoutAcceptance,
+  makeSkippedTask,
+  summarizeAcceptance,
+} from "../scripts/benchmark-live-lib.ts";
 
 function makeTempDir(t: test.TestContext, prefix: string): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
@@ -414,7 +421,37 @@ test("Finding 4: explicit multi-repo review selects and displays concrete roots 
   writeFileSync(join(repoB, "index.ts"), "export const beta = 2;\n", "utf8");
   writeFileSync(join(repoC, "unrelated.ts"), "export const gamma = 999;\n", "utf8");
 
-  // 1. Explicit multi-repo review naming repo-alpha and repo-beta by concrete roots
+  // 1a. PAIRED TEST A: ordinary task prose mentioning the exact same two repo paths as context MUST stay in cwd
+  const nestedDir = join(repoA, "nested");
+  const contextProseScope = resolveReviewScope(
+    nestedDir,
+    `Fix the local alpha helper in feature.ts; see "${repoA}" and "${repoB}" for context on how they format exports.`,
+  );
+  assert.equal(contextProseScope.mode, "workspace", "ordinary task prose mentioning two repo paths must NOT widen");
+  assert.equal(contextProseScope.cwd, nestedDir);
+  const contextProseDiff = await collectReviewDiff(nestedDir, contextProseScope);
+  assert.match(contextProseDiff, /alpha = 2/);
+  assert.doesNotMatch(contextProseDiff, /siblingA = 99/, "sibling outside nested workspace must stay excluded");
+  assert.doesNotMatch(contextProseDiff, /beta = 2/, "context-only second repo must NOT enter workspace review");
+  assert.doesNotMatch(contextProseDiff, /gamma = 999/, "unrelated third repo must stay excluded");
+
+  // 1b. PAIRED TEST B: explicit multi-repo review using the exact same two repo paths widens to BOTH and excludes repoC
+  const explicitPromptMultiScope = resolveReviewScope(
+    nestedDir,
+    `Perform a multi-repo review across "${repoA}" and "${repoB}"`,
+  );
+  assert.equal(explicitPromptMultiScope.mode, "multi-repo");
+  assert.deepEqual(
+    [...explicitPromptMultiScope.roots].sort(),
+    [realpathSync(repoA), realpathSync(repoB)].sort(),
+    "explicit multi-repo review must select both requested repository roots",
+  );
+  const explicitPromptMultiDiff = await collectReviewDiff(nestedDir, explicitPromptMultiScope);
+  assert.match(explicitPromptMultiDiff, /alpha = 2/);
+  assert.match(explicitPromptMultiDiff, /beta = 2/);
+  assert.doesNotMatch(explicitPromptMultiDiff, /gamma = 999/, "unrelated third repo must remain excluded");
+
+  // 1c. Explicit multi-repo review naming repo-alpha and repo-beta by folder name from workspace parent
   const multiScope = resolveReviewScope(root, "Perform a multi-repo review across repo-alpha and repo-beta");
   assert.equal(multiScope.mode, "multi-repo");
   assert.deepEqual(
@@ -445,7 +482,6 @@ test("Finding 4: explicit multi-repo review selects and displays concrete roots 
   assert.doesNotMatch(explicitDiff, /gamma = 999/);
 
   // 3. Ordinary request inside nested workspace retains nested-workspace scoping
-  const nestedDir = join(repoA, "nested");
   const ordinaryScope = resolveReviewScope(nestedDir, "Fix alpha constant and verify");
   assert.equal(ordinaryScope.mode, "workspace");
   const nestedDiff = await collectReviewDiff(nestedDir, ordinaryScope);
@@ -453,6 +489,261 @@ test("Finding 4: explicit multi-repo review selects and displays concrete roots 
   assert.doesNotMatch(nestedDiff, /siblingA = 99/, "sibling outside nested workspace must stay excluded");
   assert.doesNotMatch(nestedDiff, /beta = 2/);
   assert.doesNotMatch(nestedDiff, /gamma = 999/);
+});
+
+test("Review pass 2: untracked-file reads stay inside review scope, reject symlinks & TOCTOU swaps, and still review regular untracked files", async (t) => {
+  const root = makeTempDir(t, "daddy-untracked-scope-");
+  const repo = join(root, "repo");
+  const outside = join(root, "outside");
+  mkdirSync(outside, { recursive: true });
+  const externalFile = join(outside, "external-fixture.txt");
+  writeFileSync(externalFile, "EXTERNAL_FIXTURE_MUST_NEVER_LEAK_918273\n", "utf8");
+
+  initGitRepo(repo, { "nested/base.ts": "export const base = 1;\n" });
+  const nestedDir = join(repo, "nested");
+
+  // Regular in-scope untracked file -> MUST enter review diff
+  writeFileSync(join(nestedDir, "new-helper.ts"), "export const regularUntrackedReviewed = true;\n", "utf8");
+
+  // Untracked symlink to external fixture -> MUST NEVER enter review diff
+  const linkPath = join(nestedDir, "external-link.txt");
+  let symlinkCreated = false;
+  try {
+    symlinkSync(externalFile, linkPath, "file");
+    symlinkCreated = true;
+  } catch {
+    // On native Windows without Developer Mode / SeCreateSymbolicLinkPrivilege, file symlinks throw EPERM.
+    // Linux CI and macOS always execute the real symlink assertion; Windows still verifies direct symlink/TOCTOU guards below.
+  }
+
+  const scope = resolveReviewScope(nestedDir, "Review new helper changes");
+  const diff = await collectReviewDiff(nestedDir, scope);
+  assert.match(diff, /regularUntrackedReviewed = true/, "regular in-scope untracked file must be included in diff");
+  assert.doesNotMatch(diff, /EXTERNAL_FIXTURE_MUST_NEVER_LEAK_918273/, "external symlink target must never leak");
+  if (symlinkCreated) {
+    assert.doesNotMatch(diff, /external-link\.txt/, "untracked symlink entry must be rejected");
+    assert.equal(readConfinedUntrackedFile(nestedDir, "external-link.txt", 4096), undefined);
+  }
+
+  // TOCTOU swap between inspection and open: custom open swaps in the external file fd -> must be rejected!
+  const swapped = readConfinedUntrackedFile(nestedDir, "new-helper.ts", 4096, {
+    open: (_p, flags) => openSync(externalFile, flags),
+  });
+  assert.equal(swapped, undefined, "file swapped to external target between inspection and open must be rejected");
+
+  // Direct regular file read succeeds cleanly
+  const okRead = readConfinedUntrackedFile(nestedDir, "new-helper.ts", 4096);
+  assert.match(okRead ?? "", /regularUntrackedReviewed = true/);
+});
+
+test("Review pass 3: Scout acceptance uses structured evidence from matching scout_research invocation and rejects Daddy-only settlement or prose", () => {
+  const validRef = {
+    version: 1,
+    producer: "pi-scout-research",
+    kind: "research-brief",
+    session: "a".repeat(64),
+    sha256: "b".repeat(64),
+    bytes: 512,
+  };
+  const baseDelegateCalls = [
+    { tool: "delegate", toolCallId: "del-1", args: { agent: "scout-public", task: "Check Node 24" } },
+    { tool: "scout_research", toolCallId: "scout-1", args: { question: "Node 24", scope: "Official" } },
+  ];
+  const settledDaddyDelegate = {
+    tool: "delegate",
+    toolCallId: "del-1",
+    isError: false,
+    text: "Scout worker cleanup: confirmed. Scout worker cleanup: not-started (direct-urls mode; no Docker worker started).",
+    details: { cleanup: { state: "settled" } },
+  };
+
+  // NEGATIVE 1 (Direct HTTPS): Daddy settled + prose claims cleanup, but matching scout_research lacks cleanup object
+  const missingDirectCleanup = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: baseDelegateCalls,
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        isError: false,
+        text: "Scout worker cleanup: not-started (direct-urls mode; no Docker worker started).",
+        details: { mode: "direct-urls", briefReference: validRef },
+      },
+    ],
+  });
+  assert.equal(missingDirectCleanup.ok, false);
+  assert.equal(missingDirectCleanup.daddyDelegationSettled, true);
+  assert.equal(missingDirectCleanup.validBriefReference, true);
+  assert.equal(missingDirectCleanup.cleanupEvidenceValid, false);
+
+  // NEGATIVE 2 (Docker): Daddy settled + prose claims confirmed, but scout_research ran direct-urls or lacks runtime.cleanup.confirmed
+  const dockerMissingCleanup = evaluateScoutAcceptance({
+    mode: "docker",
+    processOk: true,
+    toolCalls: baseDelegateCalls,
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        isError: false,
+        text: "Scout worker cleanup: confirmed.",
+        details: { briefReference: validRef, runtime: { cleanup: { confirmed: false } } },
+      },
+    ],
+  });
+  assert.equal(dockerMissingCleanup.ok, false);
+  assert.equal(dockerMissingCleanup.cleanupEvidenceValid, false);
+
+  const dockerWrongMode = evaluateScoutAcceptance({
+    mode: "docker",
+    processOk: true,
+    toolCalls: baseDelegateCalls,
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        isError: false,
+        text: "Scout worker cleanup: confirmed.",
+        details: {
+          mode: "direct-urls",
+          briefReference: validRef,
+          cleanup: { state: "not-started", workerStarted: false },
+        },
+      },
+    ],
+  });
+  assert.equal(dockerWrongMode.ok, false);
+  assert.equal(dockerWrongMode.cleanupEvidenceValid, false);
+
+  // NEGATIVE 3: Daddy settled with prose brief JSON, but NO matching scout_research invocation exists
+  const missingScoutCall = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: [{ tool: "delegate", toolCallId: "del-1", args: { agent: "scout-public", task: "Check" } }],
+    toolResults: [settledDaddyDelegate],
+  });
+  assert.equal(missingScoutCall.ok, false);
+  assert.equal(missingScoutCall.matchingScoutInvocation, false);
+  assert.equal(missingScoutCall.validBriefReference, false);
+  assert.equal(missingScoutCall.cleanupEvidenceValid, false);
+
+  // POSITIVE 1: Direct HTTPS with structured mode="direct-urls", cleanup={state:"not-started",workerStarted:false}, valid briefReference
+  const okDirect = evaluateScoutAcceptance({
+    mode: "direct-https",
+    processOk: true,
+    toolCalls: baseDelegateCalls,
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        isError: false,
+        text: "ok",
+        details: {
+          mode: "direct-urls",
+          cleanup: { state: "not-started", workerStarted: false, mode: "direct-urls" },
+          briefReference: validRef,
+          briefSha256: validRef.sha256,
+        },
+      },
+    ],
+  });
+  assert.equal(okDirect.ok, true);
+  assert.equal(okDirect.validBriefReference, true);
+  assert.equal(okDirect.cleanupEvidenceValid, true);
+
+  // POSITIVE 2: Docker with structured runtime.cleanup.confirmed === true and valid briefReference
+  const okDocker = evaluateScoutAcceptance({
+    mode: "docker",
+    processOk: true,
+    toolCalls: baseDelegateCalls,
+    toolResults: [
+      settledDaddyDelegate,
+      {
+        tool: "scout_research",
+        toolCallId: "scout-1",
+        isError: false,
+        text: "ok",
+        details: {
+          briefReference: validRef,
+          briefSha256: validRef.sha256,
+          runtime: { cleanup: { confirmed: true }, modelCallbackSettled: true, discoveryCallbackSettled: true },
+        },
+      },
+    ],
+  });
+  assert.equal(okDocker.ok, true);
+  assert.equal(okDocker.validBriefReference, true);
+  assert.equal(okDocker.cleanupEvidenceValid, true);
+});
+
+test("Review pass 4: benchmark reporting distinguishes skipped checks, selectedChecksPassed vs fullSuitePassed, and observed lifecycle peak active children", (t) => {
+  const skipped = makeSkippedTask();
+  assert.deepEqual(skipped, { status: "skipped", skipped: true, reason: "excluded by --only" });
+  assert.equal("ok" in skipped, false);
+  assert.equal("expectedFindingsScore" in skipped, false);
+
+  const partialSummary = summarizeAcceptance([
+    { id: "a", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "b", required: true, status: "skipped", passed: null, detail: "Skipped" },
+  ]);
+  assert.equal(partialSummary.selectedChecksPassed, true);
+  assert.equal(partialSummary.fullSuitePassed, false);
+  assert.deepEqual(partialSummary.skippedCheckIds, ["b"]);
+
+  const fullSummary = summarizeAcceptance([
+    { id: "a", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "b", required: true, status: "passed", passed: true, detail: "ok" },
+  ]);
+  assert.equal(fullSummary.selectedChecksPassed, true);
+  assert.equal(fullSummary.fullSuitePassed, true);
+  assert.deepEqual(fullSummary.skippedCheckIds, []);
+
+  const failedSummary = summarizeAcceptance([
+    { id: "a", required: true, status: "passed", passed: true, detail: "ok" },
+    { id: "b", required: true, status: "failed", passed: false, detail: "failed" },
+  ]);
+  assert.equal(failedSummary.selectedChecksPassed, false);
+  assert.equal(failedSummary.fullSuitePassed, false);
+
+  // Observed peak active children computed strictly from real child_lifecycle ledger entries (both envelope and raw)
+  const dir = makeTempDir(t, "daddy-ledger-peak-");
+  const ledger = join(dir, "grants.jsonl");
+  writeFileSync(
+    ledger,
+    [
+      JSON.stringify({
+        kind: "lifecycle",
+        body: { event: "child_lifecycle", executionId: "exec-1", state: "starting" },
+      }),
+      JSON.stringify({
+        kind: "lifecycle",
+        body: { event: "child_lifecycle", executionId: "exec-2", state: "starting" },
+      }),
+      JSON.stringify({
+        kind: "lifecycle",
+        body: { event: "child_lifecycle", executionId: "exec-1", state: "completed" },
+      }),
+      JSON.stringify({
+        kind: "lifecycle",
+        body: { event: "child_lifecycle", executionId: "exec-3", state: "running" },
+      }),
+      JSON.stringify({
+        kind: "lifecycle",
+        body: { event: "child_lifecycle", executionId: "exec-2", state: "completed" },
+      }),
+      JSON.stringify({ kind: "lifecycle", body: { event: "child_lifecycle", executionId: "exec-3", state: "failed" } }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+  const obs = computeObservedPeakActiveFromLedger(ledger);
+  assert.equal(obs.observedPeakActiveChildren, 2);
+  assert.equal(obs.lifecycleEventCount, 6);
+  assert.equal(computeObservedPeakActiveFromLedger(join(dir, "missing.jsonl")).observedPeakActiveChildren, null);
 });
 
 test("Finding 6 regression: named Principal roles attenuate absent optional runtime tools while mutating codemode and explicit tools stay strict", async () => {
