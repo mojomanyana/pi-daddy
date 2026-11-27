@@ -5,7 +5,7 @@
  * strong-model escalation, and 2-stage classifier-driven session harvesting.
  */
 import { ecosystemToolLabel, summarizeObservations } from "./dashboard-activity.ts";
-import { connectedEcosystemPreferences } from "./ecosystem-preferences.ts";
+import { connectedEcosystemPreferences, repairUnavailableTiers } from "./ecosystem-preferences.ts";
 import { thresholdFor } from "../src/products/decision-classifier.ts";
 import { createClassifierSettings } from "./classifier-settings.ts";
 import { registerClassifierShadow } from "./classifier-shadow.ts";
@@ -383,33 +383,12 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
         /* Never block startup. */
       }
     }
-    if (ctx.hasUI && session.depth === 0 && ctx.modelRegistry?.getAvailable && ctx.ui?.select) {
-      const models = ctx.modelRegistry.getAvailable().map((m) => m.provider + "/" + m.id);
-      const configured = (["fast", "work", "strong"] as const).map((tier) => ({
-        tier,
-        first: resolveEcosystemModelCandidates(tier)[0],
-      }));
-      const missing = configured.filter(({ first }) => first && first !== "session" && !models.includes(first));
-      if (missing.length && models.length) {
-        const follow = "Follow the active Pi model";
-        const choice = await ctx.ui.select(
-          "Unavailable tiers: " +
-            missing.map((m) => m.tier + " (" + m.first + ")").join(", ") +
-            ". Choose a replacement for these tiers.",
-          [follow, ...models],
-        );
-        if (choice && lastCtx === ctx) {
-          const tiers = missing.filter((m) => resolveEcosystemModelCandidates(m.tier)[0] === m.first);
-          applyConfig({
-            modelTiers: Object.fromEntries(tiers.map((m) => [m.tier, choice === follow ? "session" : choice])),
-          });
-        }
-      } else if (missing.length)
-        ctx.ui.notify(
-          "Connect a model with /login and choose it with /model. Tier settings are in /dashboard settings.",
-          "warning",
-        );
-    }
+    if (session.depth === 0)
+      await repairUnavailableTiers(
+        ctx,
+        () => lastCtx === ctx,
+        (modelTiers) => applyConfig({ modelTiers }),
+      );
   });
   pi.on("session_tree", () => {
     harvestGeneration++;

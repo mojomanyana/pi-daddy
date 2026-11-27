@@ -1,5 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { readEcosystemConfig, saveEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
+import {
+  readEcosystemConfig,
+  resolveEcosystemModelCandidates,
+  saveEcosystemConfig,
+} from "../src/kernel/ecosystem-config.ts";
 
 export const researchLevels = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -81,4 +85,36 @@ export function ecosystemPreferences(
   }
   saveEcosystemConfig(cfg);
   return { saved: key, value };
+}
+
+export async function repairUnavailableTiers(
+  ctx: ExtensionContext,
+  isCurrent: () => boolean,
+  applyTiers: (modelTiers: Record<string, string>) => void,
+): Promise<void> {
+  if (!ctx.hasUI || !ctx.modelRegistry?.getAvailable || !ctx.ui?.select) return;
+  const models = ctx.modelRegistry.getAvailable().map((m) => m.provider + "/" + m.id);
+  const configured = (["fast", "work", "strong"] as const).map((tier) => ({
+    tier,
+    first: resolveEcosystemModelCandidates(tier)[0],
+  }));
+  const missing = configured.filter(({ first }) => first && first !== "session" && !models.includes(first));
+  if (missing.length && models.length) {
+    const follow = "Follow the active Pi model";
+    const choice = await ctx.ui.select(
+      "Unavailable tiers: " +
+        missing.map((m) => m.tier + " (" + m.first + ")").join(", ") +
+        ". Choose a replacement for these tiers.",
+      [follow, ...models],
+    );
+    if (choice && isCurrent()) {
+      const tiers = missing.filter((m) => resolveEcosystemModelCandidates(m.tier)[0] === m.first);
+      applyTiers(Object.fromEntries(tiers.map((m) => [m.tier, choice === follow ? "session" : choice])));
+    }
+  } else if (missing.length) {
+    ctx.ui.notify(
+      "Connect a model with /login and choose it with /model. Tier settings are in /dashboard settings.",
+      "warning",
+    );
+  }
 }
