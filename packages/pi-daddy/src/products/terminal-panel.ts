@@ -133,7 +133,16 @@ export async function editTerminalPreferences(request: ClassifierRequest, ask: (
   const [key, title, help] = field;
   if (key === "autoSyncReviews" && !c.bookieSyncReady) throw Error("Load the Bookie review sync update first.");
   if (key.startsWith("scout") && !c.scoutReady) throw Error("Load the Scout settings update first.");
-  const choices = key === "scoutModel" ? ["session", ...c.models] : key === "scoutThinking" ? c.levels : [true, false];
+  const choices: Array<string | boolean | number> =
+    key === "scoutModel"
+      ? ["session", ...c.models]
+      : key === "scoutThinking"
+        ? c.levels
+        : key === "maxDepth"
+          ? (c.depthLevels ?? [1, 2, 3, 4, 5, 6, 7, 8])
+          : key === "tournamentTimeoutSec"
+            ? (c.tournamentTimeouts ?? [60, 120, 180, 300, 600])
+            : [true, false];
   const text = await ask(
     [
       help,

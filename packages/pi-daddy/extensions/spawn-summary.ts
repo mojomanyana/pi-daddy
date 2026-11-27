@@ -50,6 +50,8 @@ export interface WithheldDefinition {
 
 export interface SpawnableSummary {
   spawnable: string[];
+  /** Inline skills without `allowed-tools` (usable inline via /skill:<name>, not delegated specialists). */
+  inlineSkills?: string[];
   withheld: WithheldDefinition[];
   /** Extension capabilities have not been observed yet; this is not an installation failure. */
   awaitingTools?: string[];
@@ -144,6 +146,7 @@ export async function summariseSpawnable(
   }
 
   const spawnable: string[] = [];
+  const inlineSkills: string[] = [];
   const withheld: WithheldDefinition[] = [];
   const awaitingTools: string[] = [];
   const parentRun: { name: string; tools: string[] }[] = [];
@@ -155,6 +158,10 @@ export async function summariseSpawnable(
       spawnable.push(name);
       if (plan.parentTools?.length) parentRun.push({ name, tools: plan.parentTools });
       if (replaySafe(plan.effective)) replay.push(name);
+      continue;
+    }
+    if (plan.refusal?.code === "UNDECLARED_TOOLS") {
+      inlineSkills.push(name);
       continue;
     }
     // The initial catalog contains built-ins before Pi exposes its callable extension tools. Preserve
@@ -193,6 +200,7 @@ export async function summariseSpawnable(
 
   return {
     spawnable,
+    ...(inlineSkills.length ? { inlineSkills } : {}),
     withheld,
     ...(awaitingTools.length ? { awaitingTools } : {}),
     ...(parentRun.length ? { parentRun } : {}),
@@ -258,6 +266,9 @@ export function renderSpawnableSummary(summary: SpawnableSummary, total: number)
     return `${name} (${w.reasonText ?? "cannot be spawned as its file is written"})`;
   };
 
+  if (summary.inlineSkills?.length) {
+    lines.push(`  inline skills: ${list(summary.inlineSkills.map(safeName))}`);
+  }
   if (summary.withheld.length > 0) {
     const shown = summary.withheld.slice(0, NAMES_SHOWN).map(clause);
     const extra = summary.withheld.length - shown.length;

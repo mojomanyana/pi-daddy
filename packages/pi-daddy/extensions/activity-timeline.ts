@@ -265,9 +265,36 @@ export function registerActivityTimeline(pi: ExtensionAPI, session?: ActivitySes
     }
     return undefined;
   });
+  // Within a single governed specialist child, edits and shell commands serialize sequentially
+  // while independent read-only calls (`read`, `grep`, `find`, `ls`, `codemode`, `parallel`) run concurrently.
+  const SEQUENTIAL_CHILD_TOOLS = new Set(["edit", "edit-diff", "write", "bash", "powershell"]);
+  const isChildSession = Number(process.env.PI_DADDY_DEPTH ?? 0) > 0;
+  let activeMutationTail: Promise<void> = Promise.resolve();
+  const activeMutationReleases = new Map<string, () => void>();
+  if (isChildSession) {
+    pi.on("tool_call", async (event) => {
+      const ev = event as { toolName?: string; toolCallId?: string };
+      if (!ev?.toolName || !SEQUENTIAL_CHILD_TOOLS.has(ev.toolName)) return undefined;
+      const prev = activeMutationTail;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      activeMutationTail = prev.then(() => gate);
+      if (ev.toolCallId) activeMutationReleases.set(ev.toolCallId, release);
+      await prev;
+      return undefined;
+    });
+  }
+
   pi.on("tool_execution_end", async (event) => {
     try {
       const value = event as { isError?: boolean; toolName?: string; toolCallId?: string };
+      if (value.toolCallId && activeMutationReleases.has(value.toolCallId)) {
+        const release = activeMutationReleases.get(value.toolCallId);
+        activeMutationReleases.delete(value.toolCallId);
+        release?.();
+      }
       const path = value.toolCallId ? paths.get(value.toolCallId) : undefined;
       if (value.toolCallId) paths.delete(value.toolCallId);
       if (value.toolName)

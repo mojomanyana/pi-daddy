@@ -15,7 +15,11 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { runWorktreeTournament, type CandidateRunResult } from "../src/executors/worktree-tournament.ts";
 import { resolveTierModel, runInProcessReadOnly, type StreamRegistry } from "../src/executors/inprocess-readonly.ts";
-import { resolveEcosystemModelCandidates, selectRegistryModel } from "../src/kernel/ecosystem-config.ts";
+import {
+  loadEcosystemConfig,
+  resolveEcosystemModelCandidates,
+  selectRegistryModel,
+} from "../src/kernel/ecosystem-config.ts";
 import type { GrantsSession } from "./session.ts";
 
 const DEFAULT_APPROACHES = [
@@ -52,6 +56,7 @@ function runPiCandidate(input: {
   worktree: string;
   model?: string;
   thinking: string;
+  timeoutMs: number;
   signal?: AbortSignal;
 }): Promise<{ ok: boolean; summary: string; error?: string }> {
   const prompt = [
@@ -105,8 +110,8 @@ function runPiCandidate(input: {
       } catch {
         /* ignore */
       }
-      finish({ ok: false, summary: "", error: "candidate timed out after 120s" });
-    }, 120_000);
+      finish({ ok: false, summary: "", error: `candidate timed out after ${Math.round(input.timeoutMs / 1000)}s` });
+    }, input.timeoutMs);
     input.signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout?.on("data", (d) => {
       if (stdout.length < 256 * 1024) stdout += String(d);
@@ -127,7 +132,7 @@ async function judgePassingCandidates(
   task: string,
   passing: readonly CandidateRunResult[],
   signal?: AbortSignal,
-): Promise<{ winnerIndex: number; rationale: string }> {
+): Promise<{ winnerIndex: number | null; rationale: string; inconclusive?: boolean }> {
   const registry = (ctx as unknown as { modelRegistry?: StreamRegistry }).modelRegistry;
   const fallbackModel = (ctx as unknown as { model?: unknown }).model;
   if (!registry?.streamSimple || !fallbackModel) {
@@ -143,7 +148,8 @@ async function judgePassingCandidates(
   const prompt = [
     "You are a cold senior judge picking the best passing implementation for the task below.",
     "Compare correctness, concurrency safety, edge-case coverage, memory cleanup, and simplicity.",
-    'Reply with JSON only: {"winner": <1-based candidate number>, "rationale": "<concise reason>"}',
+    "If tradeoffs are genuinely inconclusive, set inconclusive: true and winner: null.",
+    'Reply with JSON only: {"winner": <1-based candidate number or null>, "inconclusive": <boolean>, "rationale": "<concise reason>"}',
     "",
     "=== TASK ===",
     task.slice(0, 3000),
@@ -165,7 +171,14 @@ async function judgePassingCandidates(
       .join("\n");
     const match = /\{[\s\S]*\}/.exec(raw);
     if (match) {
-      const parsed = JSON.parse(match[0]) as { winner?: number; rationale?: string };
+      const parsed = JSON.parse(match[0]) as { winner?: number | null; inconclusive?: boolean; rationale?: string };
+      if (parsed.inconclusive || parsed.winner === null) {
+        return {
+          winnerIndex: null,
+          inconclusive: true,
+          rationale: String(parsed.rationale ?? "Inconclusive tradeoffs between passing candidates.").slice(0, 400),
+        };
+      }
       const chosen = passing.find((c) => c.index === (parsed.winner ?? 0) - 1);
       if (chosen) {
         return {
@@ -185,11 +198,12 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
   pi.registerTool({
     name: "delegate_tournament",
     label: "Parallel worktree tournament",
-    defaultActive: false,
+    defaultActive: true,
     description:
-      "Run 2-3 parallel implementation candidates in isolated git worktrees using fast flash models, " +
-      "verify each objectively with verifyCommand, pick the cleanest passing diff via cold judge, " +
-      "apply the winning files, and clean up all worktrees.",
+      "Run 2-3 parallel implementation candidates in isolated git worktrees (default 2), " +
+      "verify each objectively with verifyCommand, preserve completed patches if a candidate stalls, " +
+      "pick the cleanest passing diff via cold judge, apply when Auto is on (or ask when Auto is off), " +
+      "and clean up all worktrees.",
     parameters: Type.Object({
       task: Type.String({ minLength: 1, maxLength: 6000 }),
       verifyCommand: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
@@ -197,6 +211,7 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
       approaches: Type.Optional(
         Type.Array(Type.String({ minLength: 1, maxLength: 400 }), { minItems: 2, maxItems: 3 }),
       ),
+      timeoutSec: Type.Optional(Type.Integer({ minimum: 30, maximum: 1800 })),
       applyWinner: Type.Optional(Type.Boolean()),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
@@ -205,6 +220,14 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
       }
       const count = params.approaches?.length ?? params.candidates ?? 2;
       const approaches = params.approaches ?? DEFAULT_APPROACHES.slice(0, count);
+      const cfg = loadEcosystemConfig();
+      const timeoutSec = params.timeoutSec ?? cfg.delegation?.tournamentTimeoutSec ?? 180;
+      const autoOn = Boolean((await session.autoMode?.read().catch(() => undefined))?.enabled);
+      const editAllowed =
+        session.ownGrant.includes("tool:*") ||
+        session.ownGrant.includes("tool:write") ||
+        session.ownGrant.includes("tool:edit") ||
+        session.ownGrant.includes("tool:bash");
       const ctxModel = (ctx as unknown as { model?: { provider?: string; id?: string } }).model;
       const candidates = [...resolveEcosystemModelCandidates("work"), ...resolveEcosystemModelCandidates("fast")];
       const registry = (ctx as unknown as { modelRegistry?: { find?(p: string, id: string): unknown } }).modelRegistry;
@@ -220,6 +243,7 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
         approaches,
         verifyCommand: params.verifyCommand,
         applyWinner: params.applyWinner ?? true,
+        autoApplyAllowed: autoOn && editAllowed,
         signal,
         runCandidate: ({ approach, worktree, signal: candSignal }) =>
           runPiCandidate({
@@ -228,6 +252,7 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
             worktree,
             model: workerModel,
             thinking: "low",
+            timeoutMs: timeoutSec * 1000,
             signal: candSignal,
           }),
         judgeWinner: (passing, judgeSignal) => judgePassingCandidates(ctx, params.task, passing, judgeSignal),
@@ -236,6 +261,11 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
         winner: outcome.winnerIndex === null ? null : outcome.winnerIndex + 1,
         applied: outcome.applied,
         rationale: outcome.rationale,
+        ...(outcome.needsDecision ? { needsDecision: true } : {}),
+        ...(outcome.inconclusive ? { inconclusive: true } : {}),
+        ...(outcome.comparativeRequired ? { comparativeRequired: true } : {}),
+        ...(outcome.retriedCandidates ? { retriedCandidates: outcome.retriedCandidates } : {}),
+        ...(outcome.preservedPatchesDir ? { preservedPatchesDir: outcome.preservedPatchesDir } : {}),
         candidates: outcome.candidates.map((c) => ({
           candidate: c.index + 1,
           approach: c.approach,
@@ -255,7 +285,7 @@ export function registerTournamentTools(pi: ExtensionAPI, session: GrantsSession
   pi.registerTool({
     name: "quick_review",
     label: "Fast in-process read-only review/architect",
-    defaultActive: false,
+    defaultActive: true,
     description:
       "Run a fast (<2s), cross-platform, in-process read-only review, architecture critique, or " +
       "factual investigation over named workspace files without spawning a subprocess.",

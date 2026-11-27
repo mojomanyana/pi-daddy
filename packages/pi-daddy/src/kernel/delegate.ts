@@ -6,8 +6,8 @@
 import { planSpawn } from "./spawn.ts";
 import { ceilingForDefinition, digestDefinition, type DefinitionDigest, type SkillDefinition } from "./definitions.ts";
 import { assertNarrowing, type Capability, type ResolveResult, expandSubsumed, resolve } from "./resolve.ts";
-import { childToolDeliveryRefusal } from "./child-tools.ts";
-import { parentProxiedTools } from "./parent-tools.ts";
+import { childToolDeliveryRefusal, isReadOnlyCapabilitySet } from "./child-tools.ts";
+import { CROSS_MODEL_PROXIED_TOOLS, parentProxiedTools } from "./parent-tools.ts";
 import { selectedResourcePrompt } from "./selected-resources.ts";
 import { checkRoutingAuthority, checkWorkspaceWildcardRequest } from "./routing-authority.ts";
 import { DELEGATE_CAPABILITY, agentCapability, maySpawnDefinition, normaliseCapability } from "./capabilities.ts";
@@ -207,21 +207,35 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
       );
     }
     requested = ceiling.capabilities;
+    // Optional sibling ecosystem proxy tools (Scout brief read & Bookie memory) attenuate away cleanly
+    // when a definition also declares core tools and the current session cannot offer them (e.g. depth >= 1
+    // under `orchestrator` or standalone install without Bookie/Scout). Core tools and `scout_research` stay strict.
+    const offeredProxyNames = new Set((ctx.parentTools ?? []).map((t) => t.name));
+    const hasCoreTools = requested.some((c) => !c.startsWith("tool:") || !CROSS_MODEL_PROXIED_TOOLS.has(c.slice(5)));
+    if (hasCoreTools) {
+      requested = requested.filter(
+        (c) =>
+          !c.startsWith("tool:") || !CROSS_MODEL_PROXIED_TOOLS.has(c.slice(5)) || offeredProxyNames.has(c.slice(5)),
+      );
+    }
     systemPrompt = definition.body;
   } else {
     requested = (request.tools ?? []).map(normaliseCapability);
   }
 
-  // Coordinator-only qualification does not authorize loading native Codemode or its raw model API in children.
-  const coordinatorOnly = requested.filter((capability) =>
-    ["tool:codemode", "ext:codemode", "tool:principal_codemode", "ext:principal_codemode"].includes(capability),
+  // Read-only specialists may receive native `tool:codemode`; mutating/shell children and legacy `principal_codemode` stay refused.
+  const alwaysBlocked = requested.filter((capability) =>
+    ["ext:codemode", "tool:principal_codemode", "ext:principal_codemode"].includes(capability),
   );
+  const unsafeCodemode =
+    requested.includes("tool:codemode") && !isReadOnlyCapabilitySet(requested) ? ["tool:codemode"] : [];
+  const coordinatorOnly = [...alwaysBlocked, ...unsafeCodemode];
   if (coordinatorOnly.length)
     return denied(
       {
         ...empty,
         requested,
-        reason: `Codemode is qualified only for the coordinator; governed children cannot receive ${coordinatorOnly.join(", ")}`,
+        reason: `Codemode is permitted only for the coordinator or read-only specialists; governed children cannot receive ${coordinatorOnly.join(", ")}`,
       },
       "UNKNOWN_TOOL",
     );
@@ -440,6 +454,9 @@ export function planDelegation(request: DelegationRequest, ctx: DelegationContex
   if (parentTools.length > 0) args.splice(args.length - 1, 0, "-e", ctx.parentToolExtensionPath!);
   const observer = canSubDelegate ? ctx.extensionPath : ctx.observerExtensionPath;
   if (observer) args.splice(args.length - 1, 0, "-e", observer);
+  for (const extraExt of ctx.childExtensions ?? []) {
+    if (extraExt && !args.includes(extraExt)) args.splice(args.length - 1, 0, "-e", extraExt);
+  }
 
   // `inheritableGrant`, not `result.effective` directly: this is the path a DELEGATED child's grant
   // actually travels, and the "held but never inherited" rule for `tool:*` and `workspace:*` was enforced

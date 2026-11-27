@@ -6,6 +6,21 @@ export const preferenceFields = [
     "Scout URL fallback",
     "Allow Scout to read supplied public documentation URLs if the Docker worker is unavailable.",
   ],
+  [
+    "maxDepth",
+    "Delegation depth (1-8)",
+    "Maximum specialist nesting depth (main session is 0). Defaults to 4 and survives Standard/Ambitious mode changes.",
+  ],
+  [
+    "inheritContextFiles",
+    "Inherit workspace AGENTS.md in specialists",
+    "In trusted workspaces, specialists inherit root and scoped AGENTS.md instructions by default. Turn off to isolate specialists.",
+  ],
+  [
+    "tournamentTimeoutSec",
+    "Tournament candidate timeout (sec)",
+    "Per-candidate wall-clock timeout in seconds before preserving completed patches and retrying missing candidates.",
+  ],
   ["autoRecall", "Bookie recall", "Bring relevant project memory into a turn when Bookie has access."],
   [
     "autoDistill",
@@ -37,10 +52,12 @@ export const preferenceFields = [
 export interface PreferenceCatalog {
   models: string[];
   levels: string[];
+  depthLevels?: number[];
+  tournamentTimeouts?: number[];
   current: string;
   scoutReady: boolean;
   bookieSyncReady?: boolean;
-  values: Record<string, string | boolean>;
+  values: Record<string, string | boolean | number>;
 }
 export const preferencePanel = `<section class="card" id="ecosystem-settings">
   <h2>Ecosystem settings</h2><p id="pref-current"></p>
@@ -61,8 +78,16 @@ async function loadPreferences() {
       const label = document.createElement('label'), caption = document.createElement('small');
       label.textContent = title; caption.textContent = help;
       const sel = document.createElement('select'), saved = c.values[key];
-      const options = key === 'scoutModel' ? ['session', ...c.models] : key === 'scoutThinking' ? c.levels : [true,false];
-      for (const value of options) sel.add(new Option(value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : value, String(value)));
+      const options = key === 'scoutModel'
+        ? ['session', ...c.models]
+        : key === 'scoutThinking'
+          ? c.levels
+          : key === 'maxDepth'
+            ? (c.depthLevels || [1,2,3,4,5,6,7,8])
+            : key === 'tournamentTimeoutSec'
+              ? (c.tournamentTimeouts || [60,120,180,300,600])
+              : [true,false];
+      for (const value of options) sel.add(new Option(value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : String(value), String(value)));
       if (!options.includes(saved)) sel.add(new Option(String(saved) + ' (unavailable)', String(saved)));
       sel.value = String(saved); sel.disabled = key.startsWith('scout') && !c.scoutReady;
       if (key === 'autoSyncReviews' && !c.bookieSyncReady) {
@@ -72,7 +97,7 @@ async function loadPreferences() {
       sel.onchange = async () => {
         sel.disabled = true;
         try {
-          const value = typeof saved === 'boolean' ? sel.value === 'true' : sel.value;
+          const value = typeof saved === 'boolean' ? sel.value === 'true' : typeof saved === 'number' ? Number(sel.value) : sel.value;
           const r = await post('/api/preferences',{action:'save',key,value});
           if (!r.ok) throw Error(r.data.error || 'Save failed.');
           status.textContent = title + ' saved.';

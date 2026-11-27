@@ -24,6 +24,7 @@ import type { AutoModeReader } from "../src/kernel/auto-mode.ts";
  * copy of `ownGrant` before observation is exactly how a stale upper bound would become an enforced one.
  */
 import { createPublicEvidenceOwner, type PublicEvidenceOwner } from "../src/products/public-evidence.ts";
+import { loadEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
 import { ENV_PUBLIC_EVIDENCE_DIR } from "../src/kernel/env-names.ts";
 import { randomUUID } from "node:crypto";
 import { BoundedReadCleanupError } from "../src/kernel/bounded-read.ts";
@@ -179,6 +180,8 @@ export interface GrantsSession extends NativeSessionHost {
   mayDelegate: boolean;
   /** True only after session_start binds this instance to ctx.sessionManager. */
   ownerBound: boolean;
+  /** True when the owning root workspace is explicitly trusted by Pi (`ctx.isProjectTrusted() === true`). */
+  projectTrusted?: boolean;
   /** Operator escape hatch for custom model resolution. Exact `1`, read once for the session. */
   allowUnresolvedModels: boolean;
   /** Results from pi's synchronous model catalogue, shared by every delegation in this session. */
@@ -592,7 +595,13 @@ export function createGrantsSession(
   // `NaN`, and every comparison against `NaN` is false, so depth limiting switched itself off.
   const runtimeConfig = projectDefinitionRuntimeConfiguration(storeCwd);
   const depth = bounds.depth;
-  const maxDepth = runtimeConfig.malformed ? 0 : bounds.maxDepth;
+  const configuredDepth =
+    environment[ENV_MAX_DEPTH] === undefined ? loadEcosystemConfig(environment).delegation?.maxDepth : undefined;
+  const maxDepth = runtimeConfig.malformed
+    ? 0
+    : configuredDepth !== undefined && bounds.malformed.length === 0
+      ? configuredDepth
+      : bounds.maxDepth;
   const emptyCatalog = makeCatalog([]);
   const capacityState = capacityForLifecycle(activeLifecycle, environment[ENV_FANOUT]);
   const session: GrantsSession = {
@@ -692,6 +701,10 @@ export function createGrantsSession(
         skillPaths: skillPathsFromCatalog(await delegationCatalog(session)),
         // ADR-0016: operator-authored SKILL.md definitions, so `delegate({agent})` can name one.
         definitions: session.definitions,
+        // Inherit applicable AGENTS.md files in trusted workspaces by default (Settings opt-out: delegation.inheritContextFiles).
+        contextFiles: Boolean(
+          session.projectTrusted && loadEcosystemConfig().delegation?.inheritContextFiles !== false,
+        ),
         // Plan the real terminal invocation explicitly; the captured backend remains one-shot JSON.
         // Read the selected executor at dispatch, after its live qualification completes.
         interactive: false,

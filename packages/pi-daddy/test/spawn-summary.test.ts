@@ -110,18 +110,18 @@ test("each definition is classified by what actually blocks it", async () => {
   );
 
   assert.deepEqual(summary.spawnable, ["review"]);
+  assert.deepEqual(summary.inlineSkills, ["notes"]);
   assert.deepEqual(
     summary.withheld.map((w) => [w.name, w.reason, w.missing]),
     [
       ["build", "capability", ["tool:delegate"]],
       ["deploy", "approval", ["tool:bash"]],
-      ["notes", "declaration", []],
       // ADR-0017's authorisation refusal is an escalation, not a file problem: the fix is the grant.
       ["secret", "capability", ["agent:secret"]],
     ],
   );
-  // The `declaration` bucket carries the ENFORCER's words rather than a category this module invented.
-  assert.match(summary.withheld[2].reasonText ?? "", /declares no `allowed-tools`/);
+  assert.deepEqual(summary.inlineSkills, ["notes"]);
+  assert.match(renderSpawnableSummary(summary, definitions.size) ?? "", /inline skills: notes/);
 });
 
 test("an escalation is reported ahead of a gate, because approval cannot conjure a capability", async () => {

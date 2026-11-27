@@ -6,12 +6,15 @@ import {
 } from "../src/kernel/ecosystem-config.ts";
 
 export const researchLevels = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
+export const depthLevels = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+export const tournamentTimeouts = [60, 120, 180, 300, 600] as const;
 
 export function connectedEcosystemPreferences(
   events: ExtensionAPI["events"],
   ctx: ExtensionContext,
   input: Record<string, unknown>,
   memory?: { active(): boolean; setEnabled(enabled: boolean): void },
+  onDepthChange?: (depth: number) => void,
 ) {
   let scoutReady = false,
     bookieSyncReady = false;
@@ -29,6 +32,8 @@ export function connectedEcosystemPreferences(
   const result = ecosystemPreferences(ctx, input, scoutReady, bookieSyncReady);
   if (result.values && memory) result.values.workspaceMemory = memory.active();
   if (input.action === "save" && input.key === "workspaceMemory") memory?.setEnabled(input.value === true);
+  if (input.action === "save" && input.key === "maxDepth" && typeof input.value === "number")
+    onDepthChange?.(input.value);
   if (input.action === "save" && input.key === "autoSyncReviews")
     events.emit("bookie:review-sync-settings:v1", { action: "changed" });
   return result;
@@ -42,10 +47,13 @@ export function ecosystemPreferences(
 ) {
   const cfg = readEcosystemConfig() ?? {};
   const models = [...new Set(ctx.modelRegistry.getAvailable().map((m) => m.provider + "/" + m.id))].sort();
-  const values = {
+  const values: Record<string, string | boolean | number> = {
     scoutModel: cfg.scout?.model ?? (process.env.PI_SCOUT_MODEL?.trim() || "session"),
     scoutThinking: cfg.scout?.thinking ?? (process.env.PI_SCOUT_THINKING?.trim() || "auto"),
     directUrls: cfg.scout?.directUrls ?? process.env.PI_SCOUT_DIRECT_URLS === "1",
+    maxDepth: cfg.delegation?.maxDepth ?? 4,
+    inheritContextFiles: cfg.delegation?.inheritContextFiles !== false,
+    tournamentTimeoutSec: cfg.delegation?.tournamentTimeoutSec ?? 180,
     autoRecall: cfg.bookie?.autoRecall !== false,
     autoDistill: cfg.bookie?.autoDistill !== false,
     autoSyncReviews: cfg.bookie?.autoSyncReviews !== false,
@@ -58,6 +66,8 @@ export function ecosystemPreferences(
     return {
       models,
       levels: researchLevels,
+      depthLevels: [...depthLevels],
+      tournamentTimeouts: [...tournamentTimeouts],
       values,
       scoutReady,
       bookieSyncReady,
@@ -73,9 +83,18 @@ export function ecosystemPreferences(
     if (typeof value !== "string" || !choices.includes(value))
       throw Error("Choose an available value. Use /login to connect a provider.");
     cfg.scout = { ...cfg.scout, [key === "scoutModel" ? "model" : "thinking"]: value };
+  } else if (key === "maxDepth") {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1 || n > 8) throw Error("Delegation depth must be an integer from 1 to 8.");
+    cfg.delegation = { ...cfg.delegation, maxDepth: n };
+  } else if (key === "tournamentTimeoutSec") {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 30 || n > 1800) throw Error("Tournament timeout must be 30 to 1800 seconds.");
+    cfg.delegation = { ...cfg.delegation, tournamentTimeoutSec: n };
   } else {
     if (typeof value !== "boolean") throw Error("Expected an on/off setting.");
     if (key === "directUrls") cfg.scout = { ...cfg.scout, directUrls: value };
+    else if (key === "inheritContextFiles") cfg.delegation = { ...cfg.delegation, inheritContextFiles: value };
     else if (key === "workspaceMemory" || key === "autoRecall" || key === "autoDistill" || key === "autoSyncReviews")
       cfg.bookie = { ...cfg.bookie, [key]: value };
     else if (key === "autoOnStartup") cfg.autoOnStartup = value;

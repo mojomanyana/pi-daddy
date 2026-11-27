@@ -52,8 +52,21 @@ test("missing, duplicate, mismatched, overridden and synthetic tool origins neve
     [{ name: "read", sourceInfo: { source: "sdk", path: "<sdk:read>" } }],
   ])
     assert.equal(planDelegation({ task: "read", tools: ["read"] }, context(sources as never)).ok, false);
-  for (const name of ["mcp", "codemode", "parallel", "edit-diff", "scout_research"])
+  for (const name of ["mcp", "scout_research"])
     assert.ok(childToolDeliveryRefusal([`tool:${name}`], { childToolSources: [builtin(name)] }));
+  // Mutating children cannot receive codemode; read-only children can; edit-diff & parallel are native builtins.
+  assert.ok(
+    childToolDeliveryRefusal(["tool:edit", "tool:codemode"], {
+      childToolSources: [builtin("edit"), builtin("codemode")],
+    }),
+  );
+  assert.equal(
+    childToolDeliveryRefusal(["tool:read", "tool:codemode", "tool:parallel"], {
+      childToolSources: [builtin("read"), builtin("codemode"), builtin("parallel")],
+    }),
+    undefined,
+  );
+  assert.equal(childToolDeliveryRefusal(["tool:edit-diff"], { childToolSources: [builtin("edit-diff")] }), undefined);
 });
 
 test("Daddy tools require their actual explicit entrypoint and the existing delegation capability", () => {

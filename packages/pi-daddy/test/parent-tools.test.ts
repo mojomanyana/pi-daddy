@@ -92,17 +92,27 @@ const unavailable = (tools: string, note = "") => ({
   details: { kind: "child-tool-unavailable", tools },
 });
 
-test("the allowlist is exactly scout_research, frozen, and Bookie recall is not on it", () => {
-  assert.deepEqual(PARENT_PROXIED_TOOLS, ["scout_research"]);
+test("the allowlist is frozen and admits only the closed Scout/Bookie parent-run tools", () => {
+  assert.deepEqual(PARENT_PROXIED_TOOLS, [
+    "scout_research",
+    "scout_brief_read",
+    "bookie_search",
+    "bookie_read",
+    "bookie_propose_memory",
+  ]);
   assert.ok(Object.isFrozen(PARENT_PROXIED_TOOLS));
-  assert.throws(() => (PARENT_PROXIED_TOOLS as string[]).push("bookie_search"));
-  for (const name of ["bookie_search", "bookie_read", "bookie_context_read", "read", "scout_*", "Scout_Research"])
+  assert.throws(() => (PARENT_PROXIED_TOOLS as string[]).push("bookie_write"));
+  for (const name of ["bookie_write", "bookie_context_read", "read", "scout_*", "Scout_Research"])
     assert.equal(parentToolDescriptor({ ...scout, name }), undefined, name);
-  const bookie = planFor(
-    { task: "recall", tools: ["bookie_search"] },
-    context({ parentTools: [scout, { ...scout, name: "bookie_search" }] }),
+  const blocked = planFor(
+    { task: "write", tools: ["bookie_write"] },
+    context({
+      ownGrant: ["tool:read", "tool:scout_research", "tool:bookie_write"],
+      catalog: makeCatalog(classifyToolNames(["read", "scout_research", "bookie_write"])),
+      parentTools: [scout, { ...scout, name: "bookie_write" }],
+    }),
   );
-  assert.deepEqual(bookie.refusal, unavailable("bookie_search"));
+  assert.deepEqual(blocked.refusal, unavailable("bookie_write"));
 });
 
 test("a root admits scout_research when every condition holds, with Daddy's entrypoint and public metadata only", () => {
@@ -333,7 +343,7 @@ test("a request has one exact shape, an allowlisted tool and bounded arguments",
     { ...good, arguments: "question" },
   ])
     assert.deepEqual(parseParentToolCall(value), malformed, JSON.stringify(value)?.slice(0, 80));
-  for (const tool of ["bookie_search", "read", "delegate", "SCOUT_RESEARCH"])
+  for (const tool of ["bookie_write", "read", "delegate", "SCOUT_RESEARCH"])
     assert.deepEqual(parseParentToolCall({ ...good, tool }), { refusal: PARENT_TOOL_REFUSALS.notAllowlisted });
   const fill = (bytes: number) => ({ q: "x".repeat(bytes - '{"q":""}'.length) });
   assert.equal(Buffer.byteLength(JSON.stringify(fill(MAX_PARENT_TOOL_ARGUMENT_BYTES))), MAX_PARENT_TOOL_ARGUMENT_BYTES);
@@ -445,9 +455,9 @@ test("the startup summary lists a parent-run definition as spawnable and names o
   });
   const definitions = new Map([
     ["scout-public", definition("scout-public", "scout_research")],
-    ["recall-and-research", definition("recall-and-research", "scout_research bookie_search")],
+    ["recall-and-research", definition("recall-and-research", "scout_research bookie_write")],
   ]);
-  const ownGrant = ["agent:*", "tool:scout_research", "tool:bookie_search"];
+  const ownGrant = ["agent:*", "tool:scout_research", "tool:bookie_write"];
   const summarise = (over: Partial<DelegationContext>) =>
     summariseSpawnable(
       definitions,
@@ -455,7 +465,13 @@ test("the startup summary lists a parent-run definition as spawnable and names o
         // The startup summary's own preview: no delegation in hand, so no model yet (`rootModel: "preview"`).
         plan: planDelegation(
           { task: "(preview)", agent: name },
-          context({ ownGrant, definitions, rootModel: "preview", ...over }),
+          context({
+            ownGrant,
+            definitions,
+            catalog: makeCatalog(classifyToolNames(["read", "scout_research", "bookie_write"])),
+            rootModel: "preview",
+            ...over,
+          }),
         ),
       }),
       { mayDelegate: true, depth: 0, maxDepth: 2 },
@@ -463,13 +479,13 @@ test("the startup summary lists a parent-run definition as spawnable and names o
   assert.equal(
     await summarise({}),
     "grants: 1 of 2 definitions spawnable — scout-public\n" +
-      "  withheld: recall-and-research (use the parent Pi session; child tools unavailable: bookie_search)\n" +
+      "  withheld: recall-and-research (use the parent Pi session; child tools unavailable: bookie_write)\n" +
       "  run by this session for the child: scout-public (scout_research)",
   );
   assert.equal(
     await summarise({ parentTools: undefined }),
     "grants: 0 of 2 definitions spawnable\n" +
-      "  withheld: recall-and-research (use the parent Pi session; child tools unavailable: bookie_search, " +
+      "  withheld: recall-and-research (use the parent Pi session; child tools unavailable: bookie_write, " +
       "scout_research); scout-public (use the parent Pi session; child tools unavailable: scout_research)",
     "switched off or unsupported: exactly the 0.59.1 child-provider wording",
   );

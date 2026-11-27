@@ -194,6 +194,13 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     updateFooter(ctx);
   };
   registerClassifierShadow(pi, session, classifierSettings.shadowModel, reportActivity);
+  pi.events?.on?.("pi-daddy:ecosystem-activity:v1", (payload: unknown) => {
+    const item = payload as { detail?: unknown; producer?: unknown } | undefined;
+    if (typeof item?.detail !== "string" || !item.detail.trim()) return;
+    activity(item.detail.trim().slice(0, 220));
+    if (panel.current) panel.current.push(stateOf());
+    updateFooter(lastCtx);
+  });
 
   const applyConfig = (patch: WebDashboardConfigUpdate) => {
     if (patch.thinking !== undefined && !THINKING_ALLOWED.has(patch.thinking))
@@ -256,6 +263,10 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
               lastCtx,
               input,
               session.reloadLifecycle.projectMemoryOwner,
+              (nextDepth) => {
+                session.maxDepth = nextDepth;
+                session.publishChildEnv();
+              },
             );
             if (input.action === "save") record("config", "Updated " + input.key);
             return result;

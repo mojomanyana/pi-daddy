@@ -26,19 +26,27 @@ test("native callable inventory survives hidden provider declarations without wi
   );
 });
 
-test("coordinator Codemode cannot silently become governed child functionality", () => {
-  for (const tool of ["codemode", "ext:codemode", "principal_codemode", "ext:principal_codemode"]) {
+test("codemode is allowed only for read-only specialists; mutating children and principal_codemode stay blocked", () => {
+  const readOnly = planDelegation(
+    { task: "inspect", tools: ["read", "codemode"] },
+    { ownGrant: ["tool:*"], gated: [], depth: 0, maxDepth: 4 },
+  );
+  assert.equal(readOnly.ok, true);
+  assert.ok(readOnly.effective.includes("tool:codemode"));
+
+  for (const tools of [
+    ["read", "edit", "codemode"],
+    ["read", "bash", "codemode"],
+    ["ext:codemode"],
+    ["principal_codemode"],
+    ["ext:principal_codemode"],
+  ]) {
     const result = planDelegation(
-      { task: "inspect", tools: [tool] },
-      {
-        ownGrant: ["tool:*", "ext:*"],
-        gated: [],
-        depth: 0,
-        maxDepth: 2,
-      },
+      { task: "inspect", tools },
+      { ownGrant: ["tool:*", "ext:*"], gated: [], depth: 0, maxDepth: 4 },
     );
     assert.equal(result.ok, false);
     assert.equal(result.refusal?.code, "UNKNOWN_TOOL");
-    assert.match(result.reason!, /only for the coordinator/);
+    assert.match(result.reason!, /read-only specialists|only for the coordinator/);
   }
 });

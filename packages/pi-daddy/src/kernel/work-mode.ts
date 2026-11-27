@@ -68,7 +68,11 @@ export function workModeGuidance(value: WorkModeSelection | undefined, role: "pa
   ];
   if (selected.length === 0) {
     lines.push(
-      "Balanced ambitious mode: verify root causes, cover edge cases with executable tests, and keep the diff minimal and clean.",
+      role === "child"
+        ? "Balanced ambitious mode: verify root causes, cover edge cases with executable tests, and keep the diff minimal and clean."
+        : "Balanced ambitious mode: keep simple edits direct; session fanout allows 24 active descendants (8 per call); " +
+            "add a second reviewer when you can give it a distinct question; start a 2-candidate delegate_tournament automatically " +
+            "when competing approaches have a concrete way to judge them; run related Skill Harness scenarios on shared skill changes.",
     );
   } else {
     for (const key of selected) lines.push(emphases[key]);

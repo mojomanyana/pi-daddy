@@ -2,8 +2,12 @@
 import { parseBound } from "./propagation.ts";
 import { GovernanceRefusal, refusal } from "./refusals.ts";
 
+/** Standard-mode active descendant allowance across branches, excluding the owner session. */
+export const STANDARD_FANOUT_BUDGET = 8;
+/** Ambitious-mode active descendant allowance across branches, excluding the owner session. */
+export const AMBITIOUS_FANOUT_BUDGET = 24;
 /** Active descendant allowance, excluding the owner session, when nothing is configured. */
-export const DEFAULT_FANOUT_BUDGET = 8;
+export const DEFAULT_FANOUT_BUDGET = STANDARD_FANOUT_BUDGET;
 
 /**
  * Hard ceiling on children in a single call, independent of budget.

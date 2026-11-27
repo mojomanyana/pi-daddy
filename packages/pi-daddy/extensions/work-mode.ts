@@ -17,6 +17,8 @@ import {
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
 import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
+import { AMBITIOUS_FANOUT_BUDGET, STANDARD_FANOUT_BUDGET } from "../src/kernel/fanout.ts";
+import { ENV_FANOUT } from "../src/kernel/env-names.ts";
 import {
   loadEcosystemConfig,
   resolveEcosystemModelCandidates,
@@ -162,6 +164,17 @@ export function workModeSnapshot(session: GrantsSession): WorkModeSnapshot {
     : { available: false, selection: standardWorkMode(), inherited: false };
 }
 
+/** Sync session-wide active descendant fanout across Standard (8) and Ambitious (24) unless PI_DADDY_FANOUT is explicitly pinned. */
+export function syncModeFanout(session: GrantsSession, selection: WorkModeSelection | undefined): void {
+  if (session.depth !== 0 || session.ownExecutionId) return;
+  if (process.env[ENV_FANOUT] !== undefined) return;
+  const target = selection?.mode === "ambitious" ? AMBITIOUS_FANOUT_BUDGET : STANDARD_FANOUT_BUDGET;
+  if (typeof session.capacity?.setTotal === "function" && session.capacity.total !== target) {
+    session.capacity.setTotal(target);
+    session.fanoutBudget = target;
+  }
+}
+
 /** Explicit operator edit. A session edit clears a queued one-shot override but keeps active work frozen. */
 export function setWorkMode(session: GrantsSession, value: unknown, scope: unknown): void {
   const state = current(session);
@@ -182,6 +195,7 @@ export function setWorkMode(session: GrantsSession, value: unknown, scope: unkno
   state.selection = clone(next.selection);
   state.pending = next.pending;
   delete state.note;
+  if (scope === "session") syncModeFanout(session, state.selection);
 }
 
 /** Capture before any asynchronous discovery/gating; one override belongs to one complete Pi run. */
@@ -201,11 +215,15 @@ export function beginWorkModeRequest(session: GrantsSession, freshRequest = fals
     }
   }
   state.active = clone(selection);
+  syncModeFanout(session, state.active);
   return clone(selection);
 }
 export function finishWorkModeRequest(session: GrantsSession): void {
   const state = current(session);
-  if (state) delete state.active;
+  if (state) {
+    delete state.active;
+    syncModeFanout(session, state.selection);
+  }
 }
 /** Child dispatch uses only the active capture, never a later UI selection. */
 export function capturedWorkMode(session: GrantsSession): WorkModeSelection | undefined {
@@ -214,11 +232,32 @@ export function capturedWorkMode(session: GrantsSession): WorkModeSelection | un
   return selected?.mode === "ambitious" ? clone(selected) : undefined;
 }
 
-async function collectReviewDiff(cwd: string): Promise<string> {
+const WHOLE_REPO_REQUEST_RE =
+  /\b(whole\s+repo|entire\s+repo|full\s+repo|all\s+repos|multi-repo|across\s+all\s+repos)\b/i;
+
+export interface ReviewScope {
+  readonly mode: "workspace" | "whole-repo";
+  readonly cwd: string;
+  readonly label: string;
+}
+
+/** Scope automatic review to the directory where Pi started unless the prompt explicitly widens to whole/multi-repo. */
+export function resolveReviewScope(cwd: string, prompt: string): ReviewScope {
+  if (WHOLE_REPO_REQUEST_RE.test(prompt)) {
+    return { mode: "whole-repo", cwd, label: `whole-repo (widened by request from ${cwd})` };
+  }
+  return { mode: "workspace", cwd, label: `workspace (${cwd})` };
+}
+
+export async function collectReviewDiff(
+  cwd: string,
+  scopeMode: "workspace" | "whole-repo" = "workspace",
+): Promise<string> {
   const parts: string[] = [];
   let diff = "";
+  const pathspec = scopeMode === "workspace" ? ["--", "."] : [];
   try {
-    const out = await execFileAsync("git", ["diff", "--no-color", "HEAD"], {
+    const out = await execFileAsync("git", ["diff", "--no-color", "HEAD", ...pathspec], {
       cwd,
       timeout: 5000,
       maxBuffer: 256 * 1024,
@@ -227,7 +266,7 @@ async function collectReviewDiff(cwd: string): Promise<string> {
   } catch {
     // Unborn HEAD (fresh git init with 0 commits): fall back to staged diff.
     try {
-      const out = await execFileAsync("git", ["diff", "--no-color", "--cached"], {
+      const out = await execFileAsync("git", ["diff", "--no-color", "--cached", ...pathspec], {
         cwd,
         timeout: 5000,
         maxBuffer: 256 * 1024,
@@ -239,9 +278,9 @@ async function collectReviewDiff(cwd: string): Promise<string> {
   }
   if (diff) parts.push(diff);
 
-  // Include untracked non-ignored files so greenfield deliverables are also reviewed.
+  // Include untracked non-ignored files strictly under the effective scope (never sibling/parent folders).
   try {
-    const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], {
+    const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard", ...pathspec], {
       cwd,
       timeout: 5000,
       maxBuffer: 64 * 1024,
@@ -249,7 +288,7 @@ async function collectReviewDiff(cwd: string): Promise<string> {
     const untracked = stdout
       .split(/\r?\n/)
       .map((s) => s.trim())
-      .filter((s) => s && !s.startsWith(".") && !s.endsWith(".log") && !isUnderPiProjectDir(s))
+      .filter((s) => s && !s.startsWith(".") && !s.startsWith("../") && !s.endsWith(".log") && !isUnderPiProjectDir(s))
       .slice(0, 12);
     let extraBytes = 0;
     for (const rel of untracked) {
@@ -278,10 +317,18 @@ async function runColdDiffReview(
   originalPrompt: string,
   model: unknown,
   signal?: AbortSignal,
-): Promise<{ pass: boolean; feedback?: string }> {
+  pi?: ExtensionAPI,
+): Promise<{ pass: boolean; feedback?: string; scope: ReviewScope }> {
+  const scope = resolveReviewScope(ctx.cwd, originalPrompt);
   try {
-    const trimmed = await collectReviewDiff(ctx.cwd);
-    if (!trimmed) return { pass: true };
+    const trimmed = await collectReviewDiff(ctx.cwd, scope.mode);
+    if (!trimmed) return { pass: true, scope };
+    if (ctx.hasUI) ctx.ui?.notify?.(`Review scope: ${scope.label}`, "info");
+    pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+      producer: "principal",
+      kind: "review-started",
+      detail: `Principal · cold review started (${scope.label})`,
+    });
     const registry = (ctx as any).modelRegistry;
     if (!model || typeof registry?.streamSimple !== "function") throw Error("Review model unavailable");
     const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
@@ -317,15 +364,27 @@ async function runColdDiffReview(
       .trim();
     if (!text || message?.stopReason === "error" || message?.stopReason === "aborted")
       throw Error("Review model unavailable");
-    if (/^VERDICT:\s*PASS\b/im.test(text)) return { pass: true };
-    return { pass: false, feedback: text.slice(0, 2500) };
+    if (/^VERDICT:\s*PASS\b/im.test(text)) {
+      pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+        producer: "principal",
+        kind: "review-completed",
+        detail: `Principal · review passed (${scope.label})`,
+      });
+      return { pass: true, scope };
+    }
+    pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+      producer: "principal",
+      kind: "review-failed",
+      detail: `Principal · review found blocker(s) (${scope.label})`,
+    });
+    return { pass: false, feedback: text.slice(0, 2500), scope };
   } catch {
     if (!signal?.aborted && ctx.hasUI)
       ctx.ui?.notify?.(
         "Independent review could not finish. Choose a connected STRONG model in /dashboard settings, then use Escalate to retry.",
         "warning",
       );
-    return { pass: false };
+    return { pass: false, scope };
   }
 }
 
@@ -355,6 +414,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
       `${lastPrompt}\n\n[Escalation trigger: ${reason}. Identify the exact root cause and concrete fix.]`,
       model,
       (lastCtx as any)?.signal,
+      pi,
     );
     const send = (pi as any).sendUserMessage;
     if (!verdict.pass && verdict.feedback && typeof send === "function") {
@@ -487,16 +547,17 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     if (!wantsAmbitiousDepth) {
       const strong = model as typeof ctx.model;
       if (!strong || (strong.provider === ctx.model?.provider && strong.id === ctx.model?.id)) return;
-      const preview = await collectReviewDiff(ctx.cwd);
+      const scope = resolveReviewScope(ctx.cwd, lastPrompt);
+      const preview = await collectReviewDiff(ctx.cwd, scope.mode);
       const fileCount = (preview.match(/^\+\+\+ b\//gm) ?? []).length;
       const lineCount = preview.split("\n").length;
       if (fileCount < 2 && lineCount < 60) return;
     }
     coldReviewRanForTurn = true;
-    const verdict = await runColdDiffReview(ctx, lastPrompt, model, (ctx as any)?.signal);
+    const verdict = await runColdDiffReview(ctx, lastPrompt, model, (ctx as any)?.signal, pi);
     if (verdict.pass || !verdict.feedback) return;
     const content = [
-      "Independent cold diff review found concrete blocker(s) against the user's requirements:",
+      `Independent cold diff review (${verdict.scope.label}) found concrete blocker(s) against the user's requirements:`,
       "",
       verdict.feedback,
       "",
@@ -518,6 +579,9 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   });
   pi.on("session_tree", (_event, ctx) => initializeWorkMode(pi, session, ctx, "tree"));
   registerWorkModeCommand(pi, session);
-  return (ctx: ModeContext, reason: string, environment: NodeJS.ProcessEnv) =>
+  return (ctx: ModeContext, reason: string, environment: NodeJS.ProcessEnv) => {
     initializeWorkMode(pi, session, ctx, reason, environment);
+    const state = current(session);
+    if (state) syncModeFanout(session, state.selection);
+  };
 }
