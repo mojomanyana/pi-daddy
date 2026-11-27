@@ -67,6 +67,7 @@ export async function askClassifier(
   signal: AbortSignal,
 ) {
   const slash = model.indexOf("/");
+  if (slash <= 0 || slash === model.length - 1) throw Error("Classifier model must be provider/model: " + model);
   const provider = model.slice(0, slash);
   const id = model.slice(slash + 1);
   const key = question.type === "bool" ? "save" : "route";

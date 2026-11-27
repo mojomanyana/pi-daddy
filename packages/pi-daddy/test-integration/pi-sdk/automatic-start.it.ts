@@ -147,7 +147,7 @@ test("ordinary trusted Pi startup and reload offer Bookie memory with zero promp
     assert.ok(request()?.isCurrent());
     await writeFile(
       join(fixture.root, "agent", "ecosystem.json"),
-      JSON.stringify({ bookie: { workspaceMemory: "off" } }),
+      JSON.stringify({ bookie: { workspaceMemory: false } }),
     );
     await fixture.session.reload();
     assert.equal(request(), undefined);

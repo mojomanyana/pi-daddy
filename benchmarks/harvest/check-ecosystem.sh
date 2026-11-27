@@ -2,7 +2,7 @@
 set -eu
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 root=$(cd -- "$here/../.." && pwd)
-scout="$root/../pi-harvest-scout"
+scout="${PI_SCOUT_CHECKOUT:-$root/../pi-scout-research}"
 live=0
 full=0
 for option in "$@"; do

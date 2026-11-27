@@ -123,7 +123,7 @@ test("workspace memory follows each Auto change, while manual memory edits leave
   }
 });
 
-test("trusted startup honors saved opt-outs, legacy memory settings and explicit launch overrides", async (t) => {
+test("trusted startup honors saved opt-outs, boolean memory settings and explicit launch overrides", async (t) => {
   const profile = await tempDir("memory-defaults-");
   const env: NodeJS.ProcessEnv = { ...process.env, PI_CODING_AGENT_DIR: profile };
   delete env.PI_DADDY_AUTO_MODE;
@@ -135,9 +135,9 @@ test("trusted startup honors saved opt-outs, legacy memory settings and explicit
     else process.env.PI_CODING_AGENT_DIR = previous;
   });
   for (const [startup, preference, override, expectedAuto, expectedMemory] of [
-    [true, "follow-auto", undefined, true, true],
-    [true, "off", undefined, true, false],
-    [false, "on", undefined, false, false],
+    [true, true, undefined, true, true],
+    [true, false, undefined, true, false],
+    [false, true, undefined, false, false],
     [false, true, "1", true, true],
     [true, true, "0", false, false],
   ] as const) {

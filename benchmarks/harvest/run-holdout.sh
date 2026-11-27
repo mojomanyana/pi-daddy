@@ -6,7 +6,8 @@ if [[ -z ${OPENROUTER_API_KEY:-} ]]; then
   printf '\n'
 fi
 export OPENROUTER_API_KEY
-TMPDIR=$(cd -- "$here/../../.." && pwd)
+TMPDIR=$(mktemp -d)
+trap 'rm -rf -- "$TMPDIR"' EXIT
 export TMPDIR
 node "$here/openrouter.mjs" --holdout --check &&
   node "$here/openrouter.mjs" --holdout --live

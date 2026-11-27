@@ -5,7 +5,8 @@ root=$(cd -- "$here/../.." && pwd)
 bash "$here/pilot-deps.sh"
 if [[ "${1:-}" == "--verify-bookie" ]]; then
   shift
-  tests="$root/../pi-harvest-bookie/packages/pi-extension/test"
+  bookie="${PI_BOOKIE_CHECKOUT:-$root/../bookie-pi-skills}"
+  tests="$bookie/packages/pi-extension/test"
   node --test "$tests/automatic-review-sync.test.mjs" "$tests/producer-bridge.test.mjs" \
     "$root/packages/pi-daddy/test/project-memory-owner.test.ts" "$here/capture-resume.test.mjs"
   node --test --test-name-pattern='a conflicting Bookie|optional task broker' "$root/packages/pi-daddy/test/task-dispatch.test.ts"

@@ -209,7 +209,7 @@ it measured nothing rather than passing quietly.
 
 2026-11-27 (revised). Trusted interactive root sessions default to Daddy Auto on. At startup managed Bookie memory requires both startup choices. An actual Auto transition sets the current Bookie choice in the same direction. A Bookie edit affects Bookie alone. Preserve explicit launch overrides, independent review-capture settings and session ownership across reload.
 
-2026-11-26. Automatic setup queries the installed Pi for provider status, available chat models and thinking levels. The fast-tier harvest classifier requires thinking off. Explicit model selections retain their provenance in the ecosystem settings.
+2026-11-26. Automatic setup queries the installed Pi for provider status, available chat models and thinking levels. The fast-tier harvest classifier uses the model's lowest supported thinking effort. Explicit model selections retain their provenance in the ecosystem settings.
 
 **2026-11-26 - Pi owns ecosystem installation and updates.** Normal setup registers unversioned npm
 sources through Pi and keeps existing package filters. Setup is a convenience for installing the full

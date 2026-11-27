@@ -36,265 +36,282 @@ export function registerRuntimeSnapshot(
     bound?.lifecycle === session.reloadLifecycle && session.reloadLifecycle.runtimeSnapshotGeneration === generation
       ? bound
       : undefined;
-  const initiative = registerInitiativeRuntime(pi, session, currentOwner);
+  const initiative = registerInitiativeRuntime(pi, session, currentOwner, true);
   const isRoot = () => session.depth === 0;
-  const taskDispatch = createTaskDispatchController(
-    pi.events,
-    () => (isRoot() ? currentOwner() : undefined),
-    agentDir,
-    () => session.reloadLifecycle.runtimeSettlement,
-  );
-  session.taskDispatch = taskDispatch;
-  session.bindTaskObservation = () => {
-    const owner = currentOwner();
-    if (!owner || session.depth !== 0) return;
-    return bindTaskHistory(pi.events, "pi-daddy", {
-      cwd: owner.cwd,
-      sessionManager: { getSessionId: () => owner.sessionId },
-    });
-  };
-  const stopDelivery = registerDeliveryTaskBridge(pi.events, currentOwner, () => !ending && isRoot(), taskDispatch);
   // Display observations need a bound Pi session even on hosts without a settlement journal.
   const currentObservation = () =>
     observationOwner?.lifecycle === session.reloadLifecycle &&
     session.reloadLifecycle.runtimeSnapshotGeneration === generation
       ? observationOwner
       : undefined;
-  const dashboardLive = registerDashboardLive(pi, currentObservation, () => dashboardSources.selectedTaskId());
-  const dashboardSources = registerDashboardSources(pi, currentObservation, Date.now, dashboardLive.turnId);
-  session.dashboardObservations = () => dashboardSources.snapshot();
-  session.dashboardRefreshSources = () => dashboardSources.requestRefresh();
-  session.dashboardChoices = dashboardSources.choices;
-  session.dashboardLive = dashboardLive;
-  const prompts = registerDashboardPrompts(pi, currentOwner);
-  session.dashboardPrompt = prompts.snapshot;
-  session.dashboardArtifacts = [];
-
-  const artifactBridge = registerArtifactBridge(pi, () =>
-    artifactOwner &&
-    bound?.lifecycle === session.reloadLifecycle &&
-    session.reloadLifecycle.runtimeSnapshotGeneration === generation
-      ? artifactOwner
-      : undefined,
-  );
-  const recoveryBridge = registerOperationRecoveryBridge(pi, () =>
-    artifactOwner &&
-    bound?.lifecycle === session.reloadLifecycle &&
-    session.reloadLifecycle.runtimeSnapshotGeneration === generation
-      ? artifactOwner
-      : undefined,
-  );
-  const unsubscribeRuntime = pi.events?.on?.(RUNTIME_SNAPSHOT_EVENT, (input: unknown) => {
-    const request = input as {
-      version?: number;
-      requestId?: string;
-      sessionId?: string;
-      cwd?: string;
-      reply?: (value: unknown) => void;
-    };
-    if (
-      request?.version !== 1 ||
-      typeof request.requestId !== "string" ||
-      request.requestId.length > 512 ||
-      typeof request.reply !== "function"
-    )
-      return;
-    if (bound && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
-    void (async () => {
-      const current = bound,
-        lifecycle = session.reloadLifecycle;
-      const unavailable = (reason: string) => ({
-        version: 1,
-        requestId: request.requestId,
-        sessionId: current?.sessionId ?? "",
-        cwd: current?.cwd ?? "",
-        ownerScope: "",
-        ownerId: "",
-        backend: session.executor.kind,
-        qualified: false,
-        state: "unknown",
-        evidenceDigest: settlementHash({ reason }),
-        settledExecutionIds: [],
-        outstandingExecutionIds: [],
-        reason,
+  let bridges: { reset(): void; close(): void } | undefined;
+  // Pi can load a package during project trust and then select a different copy for the session.
+  // Keep `initiative_task` registered at load time, but attach pi.events listeners only when bind() runs.
+  const ensureBridges = () => {
+    if (bridges) return bridges;
+    initiative.start();
+    const taskDispatch = createTaskDispatchController(
+      pi.events,
+      () => (isRoot() ? currentOwner() : undefined),
+      agentDir,
+      () => session.reloadLifecycle.runtimeSettlement,
+    );
+    session.taskDispatch = taskDispatch;
+    session.bindTaskObservation = () => {
+      const owner = currentOwner();
+      if (!owner || session.depth !== 0) return;
+      return bindTaskHistory(pi.events, "pi-daddy", {
+        cwd: owner.cwd,
+        sessionManager: { getSessionId: () => owner.sessionId },
       });
+    };
+    const stopDelivery = registerDeliveryTaskBridge(pi.events, currentOwner, () => !ending && isRoot(), taskDispatch);
+    const dashboardLive = registerDashboardLive(pi, currentObservation, () => dashboardSources.selectedTaskId());
+    const dashboardSources = registerDashboardSources(pi, currentObservation, Date.now, dashboardLive.turnId);
+    session.dashboardObservations = () => dashboardSources.snapshot();
+    session.dashboardRefreshSources = () => dashboardSources.requestRefresh();
+    session.dashboardChoices = dashboardSources.choices;
+    session.dashboardLive = dashboardLive;
+    const prompts = registerDashboardPrompts(pi, currentOwner);
+    session.dashboardPrompt = prompts.snapshot;
+    session.dashboardArtifacts = [];
+
+    const artifactBridge = registerArtifactBridge(pi, () =>
+      artifactOwner &&
+      bound?.lifecycle === session.reloadLifecycle &&
+      session.reloadLifecycle.runtimeSnapshotGeneration === generation
+        ? artifactOwner
+        : undefined,
+    );
+    const recoveryBridge = registerOperationRecoveryBridge(pi, () =>
+      artifactOwner &&
+      bound?.lifecycle === session.reloadLifecycle &&
+      session.reloadLifecycle.runtimeSnapshotGeneration === generation
+        ? artifactOwner
+        : undefined,
+    );
+    const unsubscribeRuntime = pi.events?.on?.(RUNTIME_SNAPSHOT_EVENT, (input: unknown) => {
+      const request = input as {
+        version?: number;
+        requestId?: string;
+        sessionId?: string;
+        cwd?: string;
+        reply?: (value: unknown) => void;
+      };
       if (
-        !current ||
-        current.lifecycle !== lifecycle ||
-        request.sessionId !== current.sessionId ||
-        request.cwd !== current.cwd ||
-        !lifecycle.runtimeSettlement
-      ) {
-        request.reply!(unavailable(problem ?? "runtime owner is not ready"));
+        request?.version !== 1 ||
+        typeof request.requestId !== "string" ||
+        request.requestId.length > 512 ||
+        typeof request.reply !== "function"
+      )
         return;
-      }
-      try {
-        if (Array.isArray(session.capacity.retainedReservations)) await reconcileDelegationCapacity(session);
-        const snapshot = await lifecycle.runtimeSettlement.snapshot();
-        if (
-          bound !== current ||
-          session.reloadLifecycle !== lifecycle ||
-          lifecycle.runtimeSnapshotGeneration !== generation
-        ) {
-          request.reply!(unavailable("runtime owner changed during snapshot"));
-          return;
-        }
-        const qualified = !session.executor.refusal && !session.discoveryCleanupFailure && !session.capacityRefusal;
-        request.reply!({
+      if (bound && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
+      void (async () => {
+        const current = bound,
+          lifecycle = session.reloadLifecycle;
+        const unavailable = (reason: string) => ({
           version: 1,
           requestId: request.requestId,
-          sessionId: current.sessionId,
-          cwd: current.cwd,
-          ...snapshot,
+          sessionId: current?.sessionId ?? "",
+          cwd: current?.cwd ?? "",
+          ownerScope: "",
+          ownerId: "",
           backend: session.executor.kind,
-          qualified,
-          state: !qualified
-            ? "unknown"
-            : session.capacity.reserved > 0 && snapshot.state === "idle"
-              ? "busy"
-              : snapshot.state,
-          ...(problem ? { reason: problem } : {}),
+          qualified: false,
+          state: "unknown",
+          evidenceDigest: settlementHash({ reason }),
+          settledExecutionIds: [],
+          outstandingExecutionIds: [],
+          reason,
         });
-      } catch (error) {
-        request.reply!(unavailable(String(error)));
-      }
-    })().catch(() => undefined);
-  });
-  const unsubscribeOperations = pi.events?.on?.(OPERATION_STATUS_EVENT, (input: unknown) => {
-    const request = input as {
-      version?: number;
-      requestId?: string;
-      sessionId?: string;
-      cwd?: string;
-      operationId?: string;
-      includeFinal?: boolean;
-      reply?: (value: unknown) => void;
-    };
-    if (
-      request?.version !== 1 ||
-      typeof request.requestId !== "string" ||
-      request.requestId.length > 512 ||
-      typeof request.operationId !== "string" ||
-      typeof request.reply !== "function"
-    )
-      return;
-    if (bound && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
-    void (async () => {
-      const current = bound,
-        lifecycle = session.reloadLifecycle;
+        if (
+          !current ||
+          current.lifecycle !== lifecycle ||
+          request.sessionId !== current.sessionId ||
+          request.cwd !== current.cwd ||
+          !lifecycle.runtimeSettlement
+        ) {
+          request.reply!(unavailable(problem ?? "runtime owner is not ready"));
+          return;
+        }
+        try {
+          if (Array.isArray(session.capacity.retainedReservations)) await reconcileDelegationCapacity(session);
+          const snapshot = await lifecycle.runtimeSettlement.snapshot();
+          if (
+            bound !== current ||
+            session.reloadLifecycle !== lifecycle ||
+            lifecycle.runtimeSnapshotGeneration !== generation
+          ) {
+            request.reply!(unavailable("runtime owner changed during snapshot"));
+            return;
+          }
+          const qualified = !session.executor.refusal && !session.discoveryCleanupFailure && !session.capacityRefusal;
+          request.reply!({
+            version: 1,
+            requestId: request.requestId,
+            sessionId: current.sessionId,
+            cwd: current.cwd,
+            ...snapshot,
+            backend: session.executor.kind,
+            qualified,
+            state: !qualified
+              ? "unknown"
+              : session.capacity.reserved > 0 && snapshot.state === "idle"
+                ? "busy"
+                : snapshot.state,
+            ...(problem ? { reason: problem } : {}),
+          });
+        } catch (error) {
+          request.reply!(unavailable(String(error)));
+        }
+      })().catch(() => undefined);
+    });
+    const unsubscribeOperations = pi.events?.on?.(OPERATION_STATUS_EVENT, (input: unknown) => {
+      const request = input as {
+        version?: number;
+        requestId?: string;
+        sessionId?: string;
+        cwd?: string;
+        operationId?: string;
+        includeFinal?: boolean;
+        reply?: (value: unknown) => void;
+      };
+      if (
+        request?.version !== 1 ||
+        typeof request.requestId !== "string" ||
+        request.requestId.length > 512 ||
+        typeof request.operationId !== "string" ||
+        typeof request.reply !== "function"
+      )
+        return;
+      if (bound && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
+      void (async () => {
+        const current = bound,
+          lifecycle = session.reloadLifecycle;
+        const envelope = {
+          version: 1,
+          requestId: request.requestId,
+          sessionId: current?.sessionId ?? "",
+          cwd: current?.cwd ?? "",
+          operationId: request.operationId,
+        };
+        if (
+          !current ||
+          current.lifecycle !== lifecycle ||
+          request.sessionId !== current.sessionId ||
+          request.cwd !== current.cwd ||
+          !session.ownerBound ||
+          !session.autoMode?.operations
+        ) {
+          request.reply!({ ...envelope, qualified: false, operation: null, reason: "operation owner is not ready" });
+          return;
+        }
+        try {
+          const operation = await session.autoMode.operations.read(request.operationId!);
+          if (
+            bound !== current ||
+            session.reloadLifecycle !== lifecycle ||
+            lifecycle.runtimeSnapshotGeneration !== generation
+          )
+            throw Error("operation owner changed during read");
+          const artifact = operation ? operationArtifactReference(session, operation) : undefined;
+          const retained = operation ? operationHistory(session, operation.operationId, false) : undefined;
+          const proof =
+            retained?.operation.executionId === operation?.executionId
+              ? retained?.operation.runtime?.automaticRetryEligibility
+              : undefined;
+          request.reply!({
+            ...envelope,
+            qualified: true,
+            operation: operation
+              ? {
+                  ...operation,
+                  ...(artifact ? { artifact } : {}),
+                  ...(proof &&
+                  ["settled", "not-started"].includes(operation.state) &&
+                  operation.runtime?.control !== "failed"
+                    ? { runtime: { ...operation.runtime, automaticRetryEligibility: proof } }
+                    : {}),
+                }
+              : null,
+            ...(!operation
+              ? { reason: "operation record is absent; this does not prove the dispatch was not started" }
+              : {}),
+            ...(request.includeFinal === true && operation ? { final: operationFinal(session, operation) } : {}),
+          });
+        } catch (error) {
+          request.reply!({ ...envelope, qualified: false, operation: null, reason: String(error) });
+        }
+      })().catch(() => undefined);
+    });
+    const unsubscribeHistory = pi.events?.on?.(OPERATION_HISTORY_EVENT, (input: unknown) => {
+      const request = input as {
+        version?: number;
+        requestId?: string;
+        sessionId?: string;
+        cwd?: string;
+        operationId?: string;
+        reply?: (value: unknown) => void;
+      };
+      if (
+        request?.version !== 1 ||
+        typeof request.requestId !== "string" ||
+        request.requestId.length > 512 ||
+        typeof request.operationId !== "string" ||
+        typeof request.reply !== "function"
+      )
+        return;
+      const current = bound;
+      if (current && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
       const envelope = {
         version: 1,
         requestId: request.requestId,
         sessionId: current?.sessionId ?? "",
         cwd: current?.cwd ?? "",
         operationId: request.operationId,
+        history: true,
       };
       if (
         !current ||
-        current.lifecycle !== lifecycle ||
+        current.lifecycle !== session.reloadLifecycle ||
         request.sessionId !== current.sessionId ||
-        request.cwd !== current.cwd ||
-        !session.ownerBound ||
-        !session.autoMode?.operations
+        request.cwd !== current.cwd
       ) {
-        request.reply!({ ...envelope, qualified: false, operation: null, reason: "operation owner is not ready" });
+        request.reply({ ...envelope, operation: null, reason: "historical owner is not bound" });
         return;
       }
       try {
-        const operation = await session.autoMode.operations.read(request.operationId!);
-        if (
-          bound !== current ||
-          session.reloadLifecycle !== lifecycle ||
-          lifecycle.runtimeSnapshotGeneration !== generation
-        )
-          throw Error("operation owner changed during read");
-        const artifact = operation ? operationArtifactReference(session, operation) : undefined;
-        const retained = operation ? operationHistory(session, operation.operationId, false) : undefined;
-        const proof =
-          retained?.operation.executionId === operation?.executionId
-            ? retained?.operation.runtime?.automaticRetryEligibility
-            : undefined;
-        request.reply!({
+        const retained = operationHistory(session, request.operationId);
+        request.reply({
           ...envelope,
-          qualified: true,
-          operation: operation
-            ? {
-                ...operation,
-                ...(artifact ? { artifact } : {}),
-                ...(proof &&
-                ["settled", "not-started"].includes(operation.state) &&
-                operation.runtime?.control !== "failed"
-                  ? { runtime: { ...operation.runtime, automaticRetryEligibility: proof } }
-                  : {}),
-              }
-            : null,
-          ...(!operation
-            ? { reason: "operation record is absent; this does not prove the dispatch was not started" }
-            : {}),
-          ...(request.includeFinal === true && operation ? { final: operationFinal(session, operation) } : {}),
+          ...(retained ?? { operation: null, reason: "no retained operation; absence is not no-start proof" }),
         });
       } catch (error) {
-        request.reply!({ ...envelope, qualified: false, operation: null, reason: String(error) });
+        request.reply({ ...envelope, operation: null, reason: String(error) });
       }
-    })().catch(() => undefined);
-  });
-  const unsubscribeHistory = pi.events?.on?.(OPERATION_HISTORY_EVENT, (input: unknown) => {
-    const request = input as {
-      version?: number;
-      requestId?: string;
-      sessionId?: string;
-      cwd?: string;
-      operationId?: string;
-      reply?: (value: unknown) => void;
+    });
+    bridges = {
+      reset() {
+        prompts.reset();
+        artifactBridge.reset();
+      },
+      close() {
+        unsubscribeRuntime?.();
+        unsubscribeOperations?.();
+        unsubscribeHistory?.();
+        taskDispatch.close();
+        stopDelivery?.();
+        artifactBridge.close();
+        recoveryBridge.close();
+        dashboardSources.close();
+        prompts.close();
+      },
     };
-    if (
-      request?.version !== 1 ||
-      typeof request.requestId !== "string" ||
-      request.requestId.length > 512 ||
-      typeof request.operationId !== "string" ||
-      typeof request.reply !== "function"
-    )
-      return;
-    const current = bound;
-    if (current && session.reloadLifecycle.runtimeSnapshotGeneration !== generation) return;
-    const envelope = {
-      version: 1,
-      requestId: request.requestId,
-      sessionId: current?.sessionId ?? "",
-      cwd: current?.cwd ?? "",
-      operationId: request.operationId,
-      history: true,
-    };
-    if (
-      !current ||
-      current.lifecycle !== session.reloadLifecycle ||
-      request.sessionId !== current.sessionId ||
-      request.cwd !== current.cwd
-    ) {
-      request.reply({ ...envelope, operation: null, reason: "historical owner is not bound" });
-      return;
-    }
-    try {
-      const retained = operationHistory(session, request.operationId);
-      request.reply({
-        ...envelope,
-        ...(retained ?? { operation: null, reason: "no retained operation; absence is not no-start proof" }),
-      });
-    } catch (error) {
-      request.reply({ ...envelope, operation: null, reason: String(error) });
-    }
-  });
+    return bridges;
+  };
   const unsubscribe = () => {
-    unsubscribeRuntime?.();
-    unsubscribeOperations?.();
-    unsubscribeHistory?.();
-    taskDispatch.close();
-    stopDelivery?.();
-    artifactBridge.close();
-    recoveryBridge.close();
+    bridges?.close();
     void initiative.close().catch(() => undefined);
-    dashboardSources.close();
-    prompts.close();
   };
   return {
     retireDelivery() {
@@ -302,14 +319,13 @@ export function registerRuntimeSnapshot(
     },
     async bind(ctx) {
       ending = false;
-      prompts.reset();
+      ensureBridges().reset();
       const sequence = ++bindSequence,
         lifecycle = session.reloadLifecycle;
       lifecycle.runtimeSettlement = undefined;
       bound = undefined;
       observationOwner = undefined;
       artifactOwner = undefined;
-      artifactBridge.reset();
       await initiative.reset();
       problem = undefined;
       try {

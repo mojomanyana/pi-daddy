@@ -362,3 +362,51 @@ test("fresh interactive start repairs unreachable tiers with one choice and pres
   await handlers.get("session_start")!({}, ctx);
   assert.equal(prompts, 1);
 });
+
+test("askClassifier rejects malformed model IDs and classifierSettings populates catalog lazily before save", async (t) => {
+  profile(t);
+  const ctx = {
+    modelRegistry: {
+      getAvailableOfType: async () => models,
+      getModelOfType: () => models[0],
+      classify: async () => ({
+        model: "kev",
+        provider: "llama",
+        stopReason: "stop",
+        answers: { save: { type: "bool", probability: 0.8 } },
+      }),
+    },
+  } as unknown as ExtensionContext;
+  const question = { type: "bool" as const, instructions: "y", criteria: { true: "yes", false: "no" } };
+  await assert.rejects(
+    askClassifier(ctx.modelRegistry, "no-slash", { prompt: "x" }, question, new AbortController().signal),
+    /provider\/model/,
+  );
+  await assert.rejects(
+    askClassifier(ctx.modelRegistry, "/leading", { prompt: "x" }, question, new AbortController().signal),
+    /provider\/model/,
+  );
+  const settings = createClassifierSettings(
+    () => ctx,
+    () => true,
+  );
+  const saved = await settings.action({
+    action: "save",
+    model: "llama/kev",
+    mode: "suggest",
+    threshold: 0.7,
+    shadow: false,
+  });
+  assert.deepEqual(saved, { saved: true });
+  assert.equal(readEcosystemConfig()?.harvest?.classifier, "llama/kev");
+});
+
+test("ecosystem.json requires boolean bookie.workspaceMemory (rejects legacy string values)", async (t) => {
+  profile(t);
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(
+    join(process.env.PI_CODING_AGENT_DIR!, "ecosystem.json"),
+    JSON.stringify({ bookie: { workspaceMemory: "off" } }),
+  );
+  assert.throws(() => readEcosystemConfig(), /Expected a boolean for bookie\.workspaceMemory/);
+});

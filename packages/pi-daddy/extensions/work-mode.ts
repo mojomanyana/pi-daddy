@@ -483,10 +483,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
       active?.mode === "ambitious" && (active.emphases.length === 0 || active.emphases.includes("depth"));
     const wantsStandardStrong =
       !wantsAmbitiousDepth &&
-      Boolean(
-        resolveEcosystemModelCandidates("strong").length ||
-        (ctx.model && loadEcosystemConfig().escalation?.auto === true),
-      ) &&
+      resolveEcosystemModelCandidates("strong").some((candidate) => candidate !== "session") &&
       process.env.PI_DADDY_AUTO_REVIEW !== "0";
     if (!wantsAmbitiousDepth && !wantsStandardStrong) return;
     if (wantsStandardStrong) {

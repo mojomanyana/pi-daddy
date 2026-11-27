@@ -306,3 +306,28 @@ test("operation bridge reads owner facts and refuses a different session or cwd"
     else process.env.PI_CODING_AGENT_DIR = prior;
   }
 });
+
+test("registerRuntimeSnapshot registers initiative_task at load time without attaching event listeners before bind", () => {
+  const registeredTools: string[] = [];
+  const attachedEvents: string[] = [];
+  const pi = {
+    registerTool: (tool: { name: string }) => registeredTools.push(tool.name),
+    events: {
+      on: (name: string) => {
+        attachedEvents.push(name);
+        return () => {};
+      },
+      emit: () => {},
+    },
+  } as unknown as ExtensionAPI;
+  const session = {
+    depth: 0,
+    mayDelegate: true,
+    reloadLifecycle: { root: {} },
+    executor: { kind: "process" },
+    capacity: { reserved: 0 },
+  } as unknown as GrantsSession;
+  registerRuntimeSnapshot(pi, session);
+  assert.deepEqual(registeredTools, ["initiative_task"]);
+  assert.deepEqual(attachedEvents, [], "an unbound discovery copy must not attach pi.events listeners");
+});

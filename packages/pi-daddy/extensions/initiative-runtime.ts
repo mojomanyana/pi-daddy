@@ -32,9 +32,10 @@ export function registerInitiativeRuntime(
   pi: ExtensionAPI,
   session: GrantsSession,
   currentOwner: () => Owner | undefined,
+  deferEvents = false,
 ) {
   // Optional composition is unavailable on minimal/legacy hosts; ordinary Daddy startup remains valid.
-  if (typeof pi.events?.on !== "function") return { async reset() {}, async close() {} };
+  if (typeof pi.events?.on !== "function") return { start() {}, async reset() {}, async close() {} };
   let selected:
     | {
         initiativeId: string;
@@ -160,252 +161,258 @@ export function registerInitiativeRuntime(
     },
   };
   session.initiativeOperations = binding;
-  const off = pi.events.on(INITIATIVE_EVENT, (value: unknown) => {
-    const r = value as {
-      version?: number;
-      requestId?: string;
-      action?: string;
-      sessionId?: string;
-      cwd?: string;
-      initiativeId?: string;
-      expectedRevision?: string | null;
-      tasks?: InitiativeTask[];
-      assertSelection?: () => void | Promise<void>;
-      assertObservationAuthority?: () => void | Promise<void>;
-      assertExecutionScope?: (scope: {
-        taskId: string;
-        taskRevision: string;
-        cwd: string;
-        workspaceId: string | null;
-      }) => void | Promise<void>;
-      assertHandoffScope?: (scope: HandoffScope) => void | Promise<void>;
-      assertEffectReconciled?: (input: InitiativeEffectReconciliation) => void | Promise<void>;
-      assertTaskReady?: (task: { taskId: string; taskRevision: string }) => void | Promise<void>;
-      reply?: (value: unknown) => void;
-    };
-    if (
-      r?.version !== 1 ||
-      typeof r.requestId !== "string" ||
-      r.requestId.length > 512 ||
-      typeof r.reply !== "function"
-    )
-      return;
-    void (async () => {
-      const owner = currentOwner();
-      if (!owner || r.sessionId !== owner.sessionId || r.cwd !== owner.cwd) throw Error("initiative owner unavailable");
-      const envelope = {
-        version: 1,
-        requestId: r.requestId,
-        sessionId: owner.sessionId,
-        cwd: owner.cwd,
-        initiativeId: r.initiativeId,
+  let off: (() => void) | undefined;
+  const start = () => {
+    if (off) return;
+    off = pi.events.on(INITIATIVE_EVENT, (value: unknown) => {
+      const r = value as {
+        version?: number;
+        requestId?: string;
+        action?: string;
+        sessionId?: string;
+        cwd?: string;
+        initiativeId?: string;
+        expectedRevision?: string | null;
+        tasks?: InitiativeTask[];
+        assertSelection?: () => void | Promise<void>;
+        assertObservationAuthority?: () => void | Promise<void>;
+        assertExecutionScope?: (scope: {
+          taskId: string;
+          taskRevision: string;
+          cwd: string;
+          workspaceId: string | null;
+        }) => void | Promise<void>;
+        assertHandoffScope?: (scope: HandoffScope) => void | Promise<void>;
+        assertEffectReconciled?: (input: InitiativeEffectReconciliation) => void | Promise<void>;
+        assertTaskReady?: (task: { taskId: string; taskRevision: string }) => void | Promise<void>;
+        reply?: (value: unknown) => void;
       };
-      if (r.action === "status") {
-        const snapshot = readInitiativeState(agentDir(), r.initiativeId!);
-        r.reply!({
-          ...envelope,
-          ok: true,
-          revision: snapshot?.revision ?? null,
-          generation: snapshot?.record.generation ?? null,
-          state: snapshot?.record.state ?? "absent",
-        });
-        return;
-      }
       if (
-        !["acquire", "recover"].includes(r.action ?? "") ||
-        typeof r.assertSelection !== "function" ||
-        typeof r.assertTaskReady !== "function" ||
-        (r.assertObservationAuthority !== undefined && typeof r.assertObservationAuthority !== "function") ||
-        (r.assertHandoffScope !== undefined && typeof r.assertHandoffScope !== "function") ||
-        (r.action === "acquire" && typeof r.assertExecutionScope !== "function") ||
-        !Array.isArray(r.tasks) ||
-        !r.tasks.length ||
-        r.tasks.length > 256 ||
-        !r.tasks.every(validInitiativeTask) ||
-        new Set(r.tasks.map((t) => t.taskId)).size !== r.tasks.length ||
-        !(r.expectedRevision === null || typeof r.expectedRevision === "string")
+        r?.version !== 1 ||
+        typeof r.requestId !== "string" ||
+        r.requestId.length > 512 ||
+        typeof r.reply !== "function"
       )
-        throw Error("invalid selected initiative request");
-      if (selected) throw Error("release the current initiative before selecting another");
-      const epoch = ++selectionEpoch,
-        assertSelection = r.assertSelection,
-        assertHandoffScope = r.assertHandoffScope;
-      const assertAuthority = async () => {
-        if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
-        await assertSelection();
-        if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
-      };
-      const observeAuthority = r.assertObservationAuthority ?? assertSelection;
-      const assertObservationAuthority = async () => {
-        if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
-        await observeAuthority();
-        if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
-      };
-      const coordinator = await acquireInitiativeCoordinator(
-        agentDir(),
-        {
-          initiativeId: r.initiativeId!,
-          owner,
-          expectedRevision: r.expectedRevision,
-          recoveryOnly: r.action === "recover",
-        },
-        {
-          assertAuthority,
-          assertObservationAuthority,
-          assertEffectReconciled:
-            typeof r.assertEffectReconciled === "function"
-              ? async (input) => {
-                  await assertObservationAuthority();
-                  await r.assertEffectReconciled!(structuredClone(input));
-                  await assertObservationAuthority();
-                }
-              : undefined,
-          async resolveAttempt(attempt) {
-            const original = openOperationArtifacts(agentDir(), attempt.owner).history(attempt.operationId, false);
-            if (!original) return attempt.state === "not-admitted" ? "not-started" : "unknown";
-            if (
-              original.operation.executionId !== attempt.executionId ||
-              original.requestDigest !== attempt.requestDigest
-            )
-              return "unknown";
-            if (
-              original.operation.state === "not-started" &&
-              original.operation.runtime?.cleanup?.state === "not-started"
-            )
-              return "not-started";
-            const live =
-              attempt.owner.sessionId === owner.sessionId && attempt.owner.cwd === owner.cwd
-                ? await session.autoMode?.operations?.read(attempt.operationId)
-                : undefined;
-            if (live?.executionId === attempt.executionId && ["admitting", "running"].includes(live.state))
-              return "running";
-            try {
-              return await readRuntimeExecutionSettlement(
-                agentDir(),
-                attempt.owner.sessionId,
-                attempt.owner.cwd,
-                attempt.executionId,
-              );
-            } catch {
-              return "unknown";
-            }
-          },
-        },
-      );
-      try {
-        await assertAuthority();
-      } catch (error) {
-        await coordinator.close();
-        throw error;
-      }
-      const s = {
-        initiativeId: r.initiativeId!,
-        owner,
-        coordinator,
-        tasks: structuredClone(r.tasks),
-        dashboard: initiativeDashboard(coordinator, structuredClone(r.tasks)),
-        associations: new Map<string, InitiativeTask>(),
-        assertSelection,
-        assertTaskReady: r.assertTaskReady!,
-        assertExecutionScope: r.assertExecutionScope,
-        assertHandoffScope,
-      };
-      selected = s;
-      lastDisplay = { owner, dashboard: s.dashboard };
-      try {
-        await s.dashboard.refresh();
-        await stillSelected(s);
-        r.reply!({
-          ...envelope,
-          ok: true,
-          generation: coordinator.generation,
-          recoveryOnly: coordinator.recoveryOnly,
-          revision: coordinator.revision(),
-          handle: {
-            recoveryOnly: coordinator.recoveryOnly,
-            pendingEffects: async () => {
-              await stillSelected(s);
-              return coordinator.pendingEffects();
-            },
-            reconcileEffect: async (input: InitiativeEffectReconciliation) => {
-              await stillSelected(s);
-              const result = await coordinator.reconcileEffect(input);
-              await s.dashboard.refresh();
-              return result;
-            },
-            associate: (input: InitiativeTaskIdentity & { operationId: string }) => associate(s, input),
-            retainedHandoff: async (input: InitiativeTaskIdentity) => {
-              const identity = structuredClone(input);
-              const task = s.tasks.find(
-                (t) => t.taskId === identity.taskId && t.taskRevision === identity.taskRevision,
-              );
-              if (!task || identity.initiativeId !== s.initiativeId || typeof s.assertHandoffScope !== "function")
-                return;
-              await stillObserved(s);
-              const bound = await coordinator.handoffAttempt(identity, task);
-              if (!bound) return;
-              const assertScope = s.assertHandoffScope;
-              return retainedInitiativeHandoff(agentDir(), bound.attempt, async (scope) => {
-                await stillObserved(s);
-                const revision = coordinator.revision();
-                await bound.assertCurrent();
-                await assertScope({ taskId: task.taskId, taskRevision: task.taskRevision, ...scope });
-                if (revision !== coordinator.revision() || selected !== s || currentOwner() !== s.owner)
-                  throw Error("initiative selection changed");
-              });
-            },
-            observe: async (input: InitiativeTaskIdentity) => {
-              await stillObserved(s);
-              const task = s.tasks.find((t) => t.taskId === input.taskId && t.taskRevision === input.taskRevision);
-              if (!task) return { status: "unavailable" };
-              const revision = coordinator.revision();
-              try {
-                const observed = await coordinator.observe(input, task);
-                if (selected !== s || currentOwner() !== s.owner) throw Error("initiative selection changed");
-                s.dashboard.record(input, observed, revision);
-                await s.dashboard.refresh();
-                return observed;
-              } catch (error) {
-                s.dashboard.invalidate(input);
-                throw error;
-              }
-            },
-            async release() {
-              await stillSelected(s);
-              await coordinator.release();
-              if (selected === s) selected = undefined;
-              s.dashboard.close();
-            },
-            async close() {
-              s.dashboard.close();
-              if (selected === s) {
-                selected = undefined;
-                ++selectionEpoch;
-              }
-              await coordinator.close();
-            },
-          },
-        });
-      } catch (error) {
-        s.dashboard.close();
-        if (selected === s) selected = undefined;
-        await coordinator.close();
-        throw error;
-      }
-    })().catch(() => {
-      try {
-        r.reply!({
+        return;
+      void (async () => {
+        const owner = currentOwner();
+        if (!owner || r.sessionId !== owner.sessionId || r.cwd !== owner.cwd)
+          throw Error("initiative owner unavailable");
+        const envelope = {
           version: 1,
           requestId: r.requestId,
-          sessionId: r.sessionId,
-          cwd: r.cwd,
+          sessionId: owner.sessionId,
+          cwd: owner.cwd,
           initiativeId: r.initiativeId,
-          ok: false,
-          reason: "initiative unavailable, conflicted, or reconciliation required",
-        });
-      } catch {}
+        };
+        if (r.action === "status") {
+          const snapshot = readInitiativeState(agentDir(), r.initiativeId!);
+          r.reply!({
+            ...envelope,
+            ok: true,
+            revision: snapshot?.revision ?? null,
+            generation: snapshot?.record.generation ?? null,
+            state: snapshot?.record.state ?? "absent",
+          });
+          return;
+        }
+        if (
+          !["acquire", "recover"].includes(r.action ?? "") ||
+          typeof r.assertSelection !== "function" ||
+          typeof r.assertTaskReady !== "function" ||
+          (r.assertObservationAuthority !== undefined && typeof r.assertObservationAuthority !== "function") ||
+          (r.assertHandoffScope !== undefined && typeof r.assertHandoffScope !== "function") ||
+          (r.action === "acquire" && typeof r.assertExecutionScope !== "function") ||
+          !Array.isArray(r.tasks) ||
+          !r.tasks.length ||
+          r.tasks.length > 256 ||
+          !r.tasks.every(validInitiativeTask) ||
+          new Set(r.tasks.map((t) => t.taskId)).size !== r.tasks.length ||
+          !(r.expectedRevision === null || typeof r.expectedRevision === "string")
+        )
+          throw Error("invalid selected initiative request");
+        if (selected) throw Error("release the current initiative before selecting another");
+        const epoch = ++selectionEpoch,
+          assertSelection = r.assertSelection,
+          assertHandoffScope = r.assertHandoffScope;
+        const assertAuthority = async () => {
+          if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
+          await assertSelection();
+          if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
+        };
+        const observeAuthority = r.assertObservationAuthority ?? assertSelection;
+        const assertObservationAuthority = async () => {
+          if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
+          await observeAuthority();
+          if (selectionEpoch !== epoch || currentOwner() !== owner) throw Error("initiative owner changed");
+        };
+        const coordinator = await acquireInitiativeCoordinator(
+          agentDir(),
+          {
+            initiativeId: r.initiativeId!,
+            owner,
+            expectedRevision: r.expectedRevision,
+            recoveryOnly: r.action === "recover",
+          },
+          {
+            assertAuthority,
+            assertObservationAuthority,
+            assertEffectReconciled:
+              typeof r.assertEffectReconciled === "function"
+                ? async (input) => {
+                    await assertObservationAuthority();
+                    await r.assertEffectReconciled!(structuredClone(input));
+                    await assertObservationAuthority();
+                  }
+                : undefined,
+            async resolveAttempt(attempt) {
+              const original = openOperationArtifacts(agentDir(), attempt.owner).history(attempt.operationId, false);
+              if (!original) return attempt.state === "not-admitted" ? "not-started" : "unknown";
+              if (
+                original.operation.executionId !== attempt.executionId ||
+                original.requestDigest !== attempt.requestDigest
+              )
+                return "unknown";
+              if (
+                original.operation.state === "not-started" &&
+                original.operation.runtime?.cleanup?.state === "not-started"
+              )
+                return "not-started";
+              const live =
+                attempt.owner.sessionId === owner.sessionId && attempt.owner.cwd === owner.cwd
+                  ? await session.autoMode?.operations?.read(attempt.operationId)
+                  : undefined;
+              if (live?.executionId === attempt.executionId && ["admitting", "running"].includes(live.state))
+                return "running";
+              try {
+                return await readRuntimeExecutionSettlement(
+                  agentDir(),
+                  attempt.owner.sessionId,
+                  attempt.owner.cwd,
+                  attempt.executionId,
+                );
+              } catch {
+                return "unknown";
+              }
+            },
+          },
+        );
+        try {
+          await assertAuthority();
+        } catch (error) {
+          await coordinator.close();
+          throw error;
+        }
+        const s = {
+          initiativeId: r.initiativeId!,
+          owner,
+          coordinator,
+          tasks: structuredClone(r.tasks),
+          dashboard: initiativeDashboard(coordinator, structuredClone(r.tasks)),
+          associations: new Map<string, InitiativeTask>(),
+          assertSelection,
+          assertTaskReady: r.assertTaskReady!,
+          assertExecutionScope: r.assertExecutionScope,
+          assertHandoffScope,
+        };
+        selected = s;
+        lastDisplay = { owner, dashboard: s.dashboard };
+        try {
+          await s.dashboard.refresh();
+          await stillSelected(s);
+          r.reply!({
+            ...envelope,
+            ok: true,
+            generation: coordinator.generation,
+            recoveryOnly: coordinator.recoveryOnly,
+            revision: coordinator.revision(),
+            handle: {
+              recoveryOnly: coordinator.recoveryOnly,
+              pendingEffects: async () => {
+                await stillSelected(s);
+                return coordinator.pendingEffects();
+              },
+              reconcileEffect: async (input: InitiativeEffectReconciliation) => {
+                await stillSelected(s);
+                const result = await coordinator.reconcileEffect(input);
+                await s.dashboard.refresh();
+                return result;
+              },
+              associate: (input: InitiativeTaskIdentity & { operationId: string }) => associate(s, input),
+              retainedHandoff: async (input: InitiativeTaskIdentity) => {
+                const identity = structuredClone(input);
+                const task = s.tasks.find(
+                  (t) => t.taskId === identity.taskId && t.taskRevision === identity.taskRevision,
+                );
+                if (!task || identity.initiativeId !== s.initiativeId || typeof s.assertHandoffScope !== "function")
+                  return;
+                await stillObserved(s);
+                const bound = await coordinator.handoffAttempt(identity, task);
+                if (!bound) return;
+                const assertScope = s.assertHandoffScope;
+                return retainedInitiativeHandoff(agentDir(), bound.attempt, async (scope) => {
+                  await stillObserved(s);
+                  const revision = coordinator.revision();
+                  await bound.assertCurrent();
+                  await assertScope({ taskId: task.taskId, taskRevision: task.taskRevision, ...scope });
+                  if (revision !== coordinator.revision() || selected !== s || currentOwner() !== s.owner)
+                    throw Error("initiative selection changed");
+                });
+              },
+              observe: async (input: InitiativeTaskIdentity) => {
+                await stillObserved(s);
+                const task = s.tasks.find((t) => t.taskId === input.taskId && t.taskRevision === input.taskRevision);
+                if (!task) return { status: "unavailable" };
+                const revision = coordinator.revision();
+                try {
+                  const observed = await coordinator.observe(input, task);
+                  if (selected !== s || currentOwner() !== s.owner) throw Error("initiative selection changed");
+                  s.dashboard.record(input, observed, revision);
+                  await s.dashboard.refresh();
+                  return observed;
+                } catch (error) {
+                  s.dashboard.invalidate(input);
+                  throw error;
+                }
+              },
+              async release() {
+                await stillSelected(s);
+                await coordinator.release();
+                if (selected === s) selected = undefined;
+                s.dashboard.close();
+              },
+              async close() {
+                s.dashboard.close();
+                if (selected === s) {
+                  selected = undefined;
+                  ++selectionEpoch;
+                }
+                await coordinator.close();
+              },
+            },
+          });
+        } catch (error) {
+          s.dashboard.close();
+          if (selected === s) selected = undefined;
+          await coordinator.close();
+          throw error;
+        }
+      })().catch(() => {
+        try {
+          r.reply!({
+            version: 1,
+            requestId: r.requestId,
+            sessionId: r.sessionId,
+            cwd: r.cwd,
+            initiativeId: r.initiativeId,
+            ok: false,
+            reason: "initiative unavailable, conflicted, or reconciliation required",
+          });
+        } catch {}
+      });
     });
-  });
+  };
+  if (!deferEvents) start();
   if (session.mayDelegate)
     pi.registerTool?.({
       name: "initiative_task",
@@ -427,6 +434,7 @@ export function registerInitiativeRuntime(
       },
     });
   return {
+    start,
     async reset() {
       ++selectionEpoch;
       const old = selected;
@@ -436,6 +444,7 @@ export function registerInitiativeRuntime(
     },
     async close() {
       off?.();
+      off = undefined;
       ++selectionEpoch;
       const old = selected;
       selected = undefined;

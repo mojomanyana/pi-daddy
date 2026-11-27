@@ -44,6 +44,15 @@ export function createClassifierSettings(getContext: () => ExtensionContext | un
       }
       const model = input.model;
       if (
+        typeof model === "string" &&
+        model &&
+        catalog.size === 0 &&
+        !(input.action === "save" && input.mode === "off" && model === harvest.classifier)
+      ) {
+        const result = await classifierCatalog(ctx.modelRegistry);
+        catalog = new Set(result.models);
+      }
+      if (
         typeof model !== "string" ||
         (model &&
           !catalog.has(model) &&
