@@ -9,6 +9,8 @@ import { evidenceFromProvider } from "./execution-evidence-fixture.ts";
 import { executionEvidenceSummary } from "../extensions/execution-evidence.ts";
 import { toolSources } from "./tool-sources-fixture.ts";
 import { piFixtureScript } from "./pi-fixture.ts";
+import { parseAutoModeRef } from "../src/kernel/auto-mode.ts";
+import { connectAutoMode } from "../src/governance/auto-mode-policy.ts";
 /**
  * Wiring tests for `delegate_all` — the fan-out tool as the extension actually registers it.
  *
@@ -99,6 +101,7 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
     commands = new Map<string, any>(),
     activeTools = new Set(["read", "grep", "write"]);
   const hooks = new Map<string, (e: unknown, c: unknown) => unknown>();
+  const shutdownHandlers: Array<(event: unknown, context: unknown) => unknown> = [];
   const ctx = {
     ...(durable ? { sessionManager: { getSessionId: () => `fixture:${dir}` } } : {}),
     cwd: dir,
@@ -110,7 +113,10 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
   };
 
   grantsExtension({
-    on: (name: string, handler: (e: unknown, c: unknown) => unknown) => void hooks.set(name, handler),
+    on: (name: string, handler: (e: unknown, c: unknown) => unknown) => {
+      if (name === "session_shutdown") shutdownHandlers.push(handler);
+      else hooks.set(name, handler);
+    },
     registerTool: (spec: ToolSpec) => void tools.set(spec.name, spec),
     registerCommand: (name: string, spec: any) => void commands.set(name, spec),
     getAllTools: () => toolSources([...toolSources().map(({ name }) => name), "scout_research"]),
@@ -122,7 +128,10 @@ async function harness(env: Record<string, string>, existingDir?: string, durabl
   } as never);
 
   await hooks.get("session_start")!({}, ctx);
-  return { dir, tools, commands, ctx, activeTools, hooks };
+  const shutdown = async () => {
+    for (const handler of shutdownHandlers) await handler({ reason: "shutdown" }, ctx);
+  };
+  return { dir, tools, commands, ctx, activeTools, hooks, shutdown };
 }
 
 /**
@@ -1627,6 +1636,18 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}))
   }
 });
 
+test("session shutdown closes the delegation owner after dashboard handlers register", async () => {
+  const { shutdown } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }, undefined, true);
+  const reader = connectAutoMode(parseAutoModeRef(process.env.PI_DADDY_AUTO_MODE_REF!));
+  try {
+    assert.equal((await reader.read()).ownerId, reader.reference.ownerId);
+    await shutdown();
+    await assert.rejects(reader.read(), /unavailable/i);
+  } finally {
+    await reader.close();
+  }
+});
+
 test("operation owner loss after launch preserves the native final and settlement as an observation failure", async () => {
   const bin = await tempDir("operation-owner-loss-"),
     started = join(bin, "started"),
@@ -1643,7 +1664,7 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}))
   process.env.PATH = `${bin}:${oldPath}`;
   let pending: Promise<any> | undefined;
   try {
-    const { tools, ctx, hooks } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }, undefined, true);
+    const { tools, ctx, shutdown } = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" }, undefined, true);
     pending = tools
       .get("delegate")!
       .execute(
@@ -1663,7 +1684,7 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}))
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.equal(ready, true);
-    await hooks.get("session_shutdown")!({ reason: "shutdown" }, ctx);
+    await shutdown();
     await writeFile(release, "go");
     const result = await pending;
     assert.equal(result.isError, true);
