@@ -1,10 +1,12 @@
 # Changelog — pi-daddy
 
-## Unreleased
+## 1.2.0 - 2026-11-27
 
 - Trusted interactive sessions start with Daddy Auto and Bookie workspace memory on. An Auto change switches both for the session. Bookie can also be switched independently. Both startup preferences are available in Settings.
 
 - Configure Scout, model tiers, and harvest classifiers in the terminal and browser dashboards. A working classifier can retry the pending harvest in its original session.
+
+- Preserve earlier Bookie settings on upgrade, close pending dashboards on reload, and skip automatic Standard reviews when the resolved reviewer is the active model.
 
 ## 1.1.4 - 2026-11-26
 
