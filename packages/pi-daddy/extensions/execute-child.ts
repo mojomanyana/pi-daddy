@@ -64,6 +64,8 @@ export interface DelegationOutcome {
    * The automatic retry of a replay-safe child (decision of 2026-11-17). Present only when the retry ran; this
    * outcome is then the second attempt's, `executionId` names it and `first` keeps the first attempt complete.
    */
+  /** Recovery classification when a specialist was retried, resumed, or disconnected with partial state changes. */
+  recovery?: import("./specialist-helpers.ts").PartialEditRecovery;
   retry?: {
     attempts: 2;
     firstFailure: import("../src/kernel/replay-safe.ts").ReplayFailure;

@@ -30,7 +30,7 @@ function resolvePortableExecutable(
     if (existsSync(shim)) {
       try {
         const text = readFileSync(shim, "utf8");
-        const m = /"%~?dp0\\([^"]+\.(?:m|c)?js)"/i.exec(text);
+        const m = /"%[^"]*dp0%\\([^"]+\.(?:m|c)?js)"/i.exec(text);
         if (m?.[1]) {
           const cli = resolve(dirname(shim), m[1].replace(/\\/g, "/"));
           if (existsSync(cli)) return { cmd: process.execPath, argv: [cli, ...args] };

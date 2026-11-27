@@ -37,7 +37,7 @@ function resolvePiCommand(): { cmd: string; prefix: string[]; shell?: boolean } 
     if (!existsSync(shim)) continue;
     try {
       const text = readFileSync(shim, "utf8");
-      const m = /"%~?dp0\\([^"]+\.(?:m|c)?js)"/i.exec(text);
+      const m = /"%[^"]*dp0%\\([^"]+\.(?:m|c)?js)"/i.exec(text);
       if (m?.[1]) {
         const cli = resolve(dirname(shim), m[1].replace(/\\/g, "/"));
         if (existsSync(cli)) return { cmd: process.execPath, prefix: [cli] };

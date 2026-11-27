@@ -174,6 +174,8 @@ export interface GrantsSession extends NativeSessionHost {
   episodeId: string;
   /** Configured active descendant capacity; use capacity.available for actual reservations. */
   fanoutBudget: number;
+  /** True when PI_DADDY_FANOUT was explicitly provided in the launch environment (overrides mode fanout). */
+  fanoutFromEnvironment?: boolean;
   capacity: CapacityAllocator;
   capacityRefusal?: StructuredRefusal;
   /** Whether delegation tools are active. Reconciled against the owner-bound root at session_start. */
@@ -635,6 +637,7 @@ export function createGrantsSession(
     ownExecutionId: environment[ENV_EXECUTION_ID]?.trim() || undefined,
     episodeId,
     fanoutBudget: capacityState.allocator.total,
+    fanoutFromEnvironment: environment[ENV_FANOUT] !== undefined,
     capacity: capacityState.allocator,
     capacityRefusal: capacityState.refusal,
     /**

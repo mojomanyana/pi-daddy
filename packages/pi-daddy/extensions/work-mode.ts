@@ -167,7 +167,7 @@ export function workModeSnapshot(session: GrantsSession): WorkModeSnapshot {
 /** Sync session-wide active descendant fanout across Standard (8) and Ambitious (24) unless PI_DADDY_FANOUT is explicitly pinned. */
 export function syncModeFanout(session: GrantsSession, selection: WorkModeSelection | undefined): void {
   if (session.depth !== 0 || session.ownExecutionId) return;
-  if (process.env[ENV_FANOUT] !== undefined) return;
+  if (session.fanoutFromEnvironment || process.env[ENV_FANOUT] !== undefined) return;
   const target = selection?.mode === "ambitious" ? AMBITIOUS_FANOUT_BUDGET : STANDARD_FANOUT_BUDGET;
   if (typeof session.capacity?.setTotal === "function" && session.capacity.total !== target) {
     session.capacity.setTotal(target);
@@ -395,6 +395,31 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   let lastCtx: ExtensionContext | undefined;
   let coldReviewRanForTurn = false;
   let escalatedForTurn = false;
+  let harnessHoldsForTurn = 0;
+  const failedSkillEvals = new Map<
+    string,
+    { skill: string; coverageLabel: string; failed: Array<{ id: string; expected?: string[]; observed?: string }> }
+  >();
+
+  pi.events?.on?.("skill-harness:eval-result:v1", (payload: unknown) => {
+    const ev = payload as {
+      skill?: string;
+      keepTaskOpen?: boolean;
+      coverage?: { label?: string };
+      scenarios?: Array<{ id: string; verdict: string; expected?: string[]; observed?: string }>;
+    };
+    if (!ev || typeof ev.skill !== "string") return;
+    if (ev.keepTaskOpen) {
+      const failed = (ev.scenarios ?? []).filter((s) => s.verdict !== "PASS");
+      failedSkillEvals.set(ev.skill, {
+        skill: ev.skill,
+        coverageLabel: ev.coverage?.label ?? "focused",
+        failed,
+      });
+    } else {
+      failedSkillEvals.delete(ev.skill);
+    }
+  });
 
   const runRescueEscalation = async (reason: string) => {
     if (escalatedForTurn || !lastCtx) return;
@@ -464,6 +489,8 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     lastPrompt = "";
     coldReviewRanForTurn = false;
     escalatedForTurn = false;
+    harnessHoldsForTurn = 0;
+    failedSkillEvals.clear();
   };
 
   for (const ev of ["session_start", "session_switch", "session_fork", "session_shutdown"]) {
@@ -474,6 +501,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     lastCtx = ctx;
     coldReviewRanForTurn = false;
     escalatedForTurn = false;
+    harnessHoldsForTurn = 0;
     lastPrompt = typeof (event as any).prompt === "string" ? (event as any).prompt : "";
     const selected = beginWorkModeRequest(session, true);
     if (current(session)?.inherited) return;
@@ -533,11 +561,33 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     }
   });
 
-  // Mechanical lever 2: automatic fast (~1.5s, reasoning=low) cold diff review before settle:
-  // - Always enabled in Ambitious (balanced or depth).
-  // - Also enabled in Standard when PI_ECO_MODEL_STRONG is explicitly set (opt-out: PI_DADDY_AUTO_REVIEW=0)
-  //   and the diff is non-trivial (>=2 files or >=60 lines).
+  // Mechanical lever 2: Skill Harness failure gate (keeps task open in both Standard and Ambitious
+  // modes until failed scenarios are fixed and rerun to PASS) + automatic scoped cold diff review.
   (pi as any).on("agent_before_settle", async (event: any, ctx: ExtensionContext) => {
+    if (failedSkillEvals.size > 0 && harnessHoldsForTurn < 3) {
+      harnessHoldsForTurn++;
+      const details = [...failedSkillEvals.values()].map((item) => {
+        const rows = item.failed.map(
+          (f) => `  - ${f.id}: expected [${(f.expected ?? []).join(" | ")}], observed [${f.observed ?? "FAIL"}]`,
+        );
+        return `Skill "${item.skill}" (${item.coverageLabel}) has failing scenario(s):\n${rows.join("\n")}`;
+      });
+      const content = [
+        "Skill Harness reported failed evaluation scenario(s); this task remains open:",
+        "",
+        ...details,
+        "",
+        "Fix the in-scope skill regression and rerun the affected scenario(s) with skill_check_run, " +
+          "or explain why the evaluation needs updating before changing it if behavior intentionally changed.",
+      ].join("\n");
+      return {
+        entries: [
+          ...(Array.isArray(event?.entries) ? event.entries : []),
+          { type: "custom_message", customType: "pi-daddy-skill-harness-gate", content, display: false },
+        ],
+        continue: true,
+      };
+    }
     if (coldReviewRanForTurn || !lastPrompt) return;
     const active = capturedWorkMode(session);
     const wantsAmbitiousDepth =

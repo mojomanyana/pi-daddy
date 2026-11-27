@@ -2,7 +2,9 @@
  * Specialist child-runtime helpers: ecosystem role model overrides, trusted verification & opt-in
  * child extensions, and attached Scout brief reference extraction.
  */
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { SkillDefinition } from "../src/kernel/definitions.ts";
 import {
@@ -83,4 +85,77 @@ export function extractAttachedBriefSha256(input: {
     }
   }
   return [...found];
+}
+
+export interface PartialEditRecovery {
+  readonly state: "retried" | "resumed" | "needs-decision";
+  readonly label: "retried" | "resumed" | "needs your decision";
+  readonly partialFilesModified: readonly string[];
+  readonly guidance: string;
+}
+
+/** Snapshot file hashes of dirty/untracked entries under `cwd` so an interrupted mutating child's edits can be detected. */
+export function snapshotWorkspaceDirtyState(cwd: string): Map<string, string> | undefined {
+  try {
+    const out = execFileSync("git", ["status", "--porcelain", "-uall", "--", "."], {
+      cwd,
+      encoding: "utf8",
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const map = new Map<string, string>();
+    for (const line of out.split(/\r?\n/)) {
+      if (line.length < 4) continue;
+      const rel = line.slice(3).trim().replace(/^"|"$/g, "");
+      if (!rel || rel.startsWith(".pi/")) continue;
+      const abs = resolve(cwd, rel);
+      try {
+        const digest = createHash("sha256").update(readFileSync(abs)).digest("hex");
+        map.set(rel, `${line.slice(0, 2)}:${digest}`);
+      } catch {
+        map.set(rel, `${line.slice(0, 2)}:deleted`);
+      }
+    }
+    return map;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Determine whether a failed mutating specialist left partial edits and surface explicit resume/decision guidance. */
+export function assessPartialEditRecovery(
+  cwd: string,
+  before: ReadonlyMap<string, string> | undefined,
+  outcome: { ok: boolean; retry?: unknown; cleanup?: { state?: string }; granted: readonly string[] },
+): PartialEditRecovery | undefined {
+  if (outcome.retry) {
+    return {
+      state: "retried",
+      label: "retried",
+      partialFilesModified: [],
+      guidance: "Replay-safe specialist failed without answering and was automatically retried once.",
+    };
+  }
+  if (outcome.ok || !before) return undefined;
+  const after = snapshotWorkspaceDirtyState(cwd);
+  if (!after) return undefined;
+  const modified: string[] = [];
+  for (const [rel, stamp] of after) {
+    if (before.get(rel) !== stamp) modified.push(rel);
+  }
+  for (const rel of before.keys()) {
+    if (!after.has(rel)) modified.push(rel);
+  }
+  modified.sort();
+  if (modified.length > 0) {
+    return {
+      state: "needs-decision",
+      label: "needs your decision",
+      partialFilesModified: modified,
+      guidance:
+        `Specialist disconnected after modifying ${modified.join(", ")}. Do not replay blindly; inspect the completed ` +
+        "changes and resume from the first identifiable unfinished step, or ask the operator before repeating an uncertain action.",
+    };
+  }
+  return undefined;
 }

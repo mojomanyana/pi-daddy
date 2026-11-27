@@ -46,10 +46,13 @@ import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
 import { recoverUnavailableRoleModel } from "./model-recovery.ts";
+import { isReadOnlyCapabilitySet } from "../src/kernel/child-tools.ts";
 import {
+  assessPartialEditRecovery,
   extractAttachedBriefSha256,
   resolveChildExtensionsFor,
   resolveEcosystemRoleModel,
+  snapshotWorkspaceDirtyState,
 } from "./specialist-helpers.ts";
 import {
   governedWorkspaceAccess,
@@ -609,6 +612,9 @@ async function runOneDelegationImplementation(
     });
     if (!options.operationClaim)
       await options.taskObservation?.(ids.executionId, "delegation", "admitted", "Delegation admitted");
+    const preEditSnapshot = !isReadOnlyCapabilitySet(plan.effective)
+      ? snapshotWorkspaceDirtyState(preparedWorkspace?.workspace.root ?? ctx.cwd)
+      : undefined;
     outcome = await executePlannedChild({
       beforeRuntimeBegin: admitted?.beforeRuntimeBegin,
       capacityReservation: capacity,
@@ -636,6 +642,10 @@ async function runOneDelegationImplementation(
       deadlineAt: options.deadlineAt,
       onDeadline: (deadlineAt) => options.onAttempt?.({ deadlineAt }),
     });
+    const recovery = assessPartialEditRecovery(preparedWorkspace?.workspace.root ?? ctx.cwd, preEditSnapshot, outcome);
+    if (recovery) {
+      outcome = { ...outcome, recovery };
+    }
     return outcome;
   } finally {
     if (!options.operationClaim && executorEntered) {

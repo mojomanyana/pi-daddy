@@ -408,6 +408,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const failed = !outcome.operation?.reused && (!outcome.ok || outcome.control === "failed");
       // Pi adds `usage` to this session's totals; `details.childUsage` says what it covers (2026-11-17).
       const { usage, childUsage } = delegationUsage([outcome]);
+      const recoveryNote = outcome.recovery
+        ? `\n\n[Recovery: ${outcome.recovery.label}] ${outcome.recovery.guidance}`
+        : "";
       return capture.finish(
         {
           ...(usage ? { usage } : {}),
@@ -416,8 +419,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             {
               type: "text",
               text: failed
-                ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
-                : outcome.text || "(no output)",
+                ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}${recoveryNote}`
+                : `${outcome.text || "(no output)"}${outcome.recovery ? `\n\n[Recovery: ${outcome.recovery.label}]` : ""}`,
             },
             executionEvidenceContent("delegate", [outcome], 1),
           ],

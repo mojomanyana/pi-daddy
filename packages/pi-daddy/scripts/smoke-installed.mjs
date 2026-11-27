@@ -18,7 +18,7 @@ const pkgDir = new URL("..", import.meta.url).pathname;
 const packageVersion = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).version;
 // Pi 1.4 pins its internal package family. Fresh Pi 1.0.4 installs have broad internal ranges;
 // the lockfile-backed integration tier still tests 1.0.4 separately.
-const smokePiVersion = "1.4.0";
+const smokePiVersion = "1.6.1";
 const work = mkdtempSync(join(tmpdir(), "grants-smoke-"));
 const managed = mkdtempSync(join(tmpdir(), "grants-managed-smoke-"));
 let completed = false;
