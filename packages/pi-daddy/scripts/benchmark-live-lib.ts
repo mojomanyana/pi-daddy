@@ -116,7 +116,9 @@ export function evaluateScoutAcceptance(input: {
     scoutDelegateResult?.details?.childExecutionId ?? scoutDelegateResult?.details?.childId ?? null;
 
   // 2. Correlate successful scout_research start/end pair to the actual scout-public delegation
-  const scoutResults = toolResults.filter((r) => r?.tool === "scout_research" && r.isError !== true);
+  const scoutResults = toolResults.filter(
+    (r) => r?.tool === "scout_research" && (r.isError !== true || Boolean(r.details?.briefReference)),
+  );
   const scoutStarts = toolCalls.filter((c) => c?.tool === "scout_research");
 
   const correlatedPairs: Array<{ start: BenchmarkToolCall; result: BenchmarkToolResult }> = [];

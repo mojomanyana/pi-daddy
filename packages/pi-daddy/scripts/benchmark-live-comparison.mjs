@@ -940,7 +940,11 @@ try {
       const out = await runPiJson({
         cwd: scoutDir,
         profileDir,
-        extraEnv: { PI_DADDY_AUTO_MODE: "1", PI_DADDY_LEDGER: ledgerPath },
+        extraEnv: {
+          PI_DADDY_AUTO_MODE: "1",
+          PI_DADDY_LEDGER: ledgerPath,
+          ...(modeName === "direct-https" ? { PI_SCOUT_DOCKER_PATH: "docker-unavailable-for-direct-test" } : {}),
+        },
         prompt: taskPrompt,
         timeoutMs: 120_000,
       });
