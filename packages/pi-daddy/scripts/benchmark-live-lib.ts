@@ -158,8 +158,16 @@ export function evaluateScoutAcceptance(input: {
     const matchesParentExec = Boolean(delParentExecId && scoutParentExecId && scoutParentExecId === delParentExecId);
     const matchesChildExec = Boolean(delChildExecId && scoutChildId && scoutChildId === delChildExecId);
 
-    if (matchesParentCall || matchesParentExec || matchesChildExec) {
-      correlatedPairs.push({ start: matchingStart, result: r });
+    const hasExplicitLinkage = Boolean(scoutParentCallId || scoutParentExecId || scoutChildId);
+    if (hasExplicitLinkage) {
+      if (matchesParentCall || matchesParentExec || matchesChildExec) {
+        correlatedPairs.push({ start: matchingStart, result: r });
+      }
+    } else {
+      const allDelegations = toolCalls.filter((c) => c?.tool === "delegate");
+      if (allDelegations.length === 1 && scoutResults.length === 1) {
+        correlatedPairs.push({ start: matchingStart, result: r });
+      }
     }
   }
 
@@ -329,7 +337,11 @@ export function summarizeAcceptance(assertions: readonly AcceptanceAssertion[]) 
   };
 }
 
-function isFixtureSkillMdMutation(call: BenchmarkToolCall, fixtureDir: string): boolean {
+function isFixtureSkillMdMutation(
+  call: BenchmarkToolCall,
+  fixtureDir: string,
+  caseSensitive = process.platform !== "win32",
+): boolean {
   if (!call) return false;
   const tool = call.tool;
   const isMutation =
@@ -352,35 +364,29 @@ function isFixtureSkillMdMutation(call: BenchmarkToolCall, fixtureDir: string): 
   if (!rawPath) return false;
   const target = resolve(fixtureDir, "SKILL.md");
   const candidate = resolve(fixtureDir, rawPath);
-  return candidate.toLowerCase() === target.toLowerCase();
+  return caseSensitive ? candidate === target : candidate.toLowerCase() === target.toLowerCase();
+}
+
+function getLinkedCompletions(
+  call: BenchmarkToolCall,
+  results: readonly BenchmarkToolResult[],
+): readonly BenchmarkToolResult[] {
+  if (!call?.tool || typeof call.toolCallId !== "string" || !call.toolCallId.trim()) {
+    return [];
+  }
+  const id = call.toolCallId.trim();
+  return results.filter((r) => r?.tool === call.tool && typeof r.toolCallId === "string" && r.toolCallId.trim() === id);
 }
 
 function findLinkedCompletion(
   call: BenchmarkToolCall,
   results: readonly BenchmarkToolResult[],
 ): BenchmarkToolResult | undefined {
-  if (!call?.tool || typeof call.toolCallId !== "string" || !call.toolCallId.trim()) {
-    return undefined;
-  }
-  const id = call.toolCallId.trim();
-  const matches = results.filter(
-    (r) => r?.tool === call.tool && typeof r.toolCallId === "string" && r.toolCallId.trim() === id,
-  );
+  const matches = getLinkedCompletions(call, results);
   if (matches.length !== 1) {
     return undefined;
   }
   return matches[0];
-}
-
-function isSuccessfulMutationCall(
-  call: BenchmarkToolCall,
-  results: readonly BenchmarkToolResult[],
-  fixtureDir: string,
-): boolean {
-  if (!isFixtureSkillMdMutation(call, fixtureDir)) return false;
-  const completion = findLinkedCompletion(call, results);
-  if (!completion) return false;
-  return completion.isError !== true;
 }
 
 /**
@@ -395,12 +401,14 @@ export function evaluateOrdinarySkillEdit(input: {
   beforeText: string;
   afterText: string;
   fixtureDir?: string;
+  caseSensitive?: boolean;
   toolCalls?: readonly BenchmarkToolCall[];
   toolResults?: readonly BenchmarkToolResult[];
   requiredScenarioId?: string;
 }) {
   const { processOk, beforeText, afterText, toolCalls = [], toolResults = [] } = input;
   const fixtureDir = input.fixtureDir ? resolve(input.fixtureDir) : process.cwd();
+  const caseSensitive = input.caseSensitive !== undefined ? input.caseSensitive : process.platform !== "win32";
   const failureReasons: string[] = [];
   if (!processOk) failureReasons.push("Pi process exited non-zero or timed out");
 
@@ -416,23 +424,38 @@ export function evaluateOrdinarySkillEdit(input: {
     failureReasons.push("Skill harness was never invoked to evaluate the modified skill");
   }
 
-  // Find all indices of confirmed successful mutations of the fixture's SKILL.md
-  const skillMutationIndices: number[] = [];
+  // Track all fixture mutation attempts
+  const confirmedMutationIndices: number[] = [];
+  let unconfirmedOrAmbiguousMutation = false;
+
   toolCalls.forEach((call, idx) => {
-    if (isSuccessfulMutationCall(call, toolResults, fixtureDir)) {
-      skillMutationIndices.push(idx);
+    if (isFixtureSkillMdMutation(call, fixtureDir, caseSensitive)) {
+      const completions = getLinkedCompletions(call, toolResults);
+      if (completions.length === 1) {
+        if (completions[0].isError !== true) {
+          confirmedMutationIndices.push(idx);
+        }
+      } else {
+        unconfirmedOrAmbiguousMutation = true;
+      }
     }
   });
 
+  if (unconfirmedOrAmbiguousMutation) {
+    failureReasons.push(
+      "Fixture SKILL.md mutation attempt has missing or ambiguous completion (insufficient evidence)",
+    );
+  }
+
   const fileChanged = beforeText !== afterText;
-  if (fileChanged && skillMutationIndices.length === 0) {
+  if (fileChanged && confirmedMutationIndices.length === 0) {
     failureReasons.push(
       "SKILL.md was modified but the trace cannot establish the mutation boundary (insufficient evidence)",
     );
   }
 
   const lastMutationIndex =
-    skillMutationIndices.length > 0 ? skillMutationIndices[skillMutationIndices.length - 1] : -1;
+    confirmedMutationIndices.length > 0 ? confirmedMutationIndices[confirmedMutationIndices.length - 1] : -1;
 
   // Post-boundary harness calls: strictly calls occurring after the final successful SKILL.md mutation
   const postBoundaryCalls = toolCalls
@@ -523,7 +546,8 @@ export function evaluateOrdinarySkillEdit(input: {
     processOk &&
     skillEdited &&
     harnessInvoked &&
-    (fileChanged ? skillMutationIndices.length > 0 : true) &&
+    !unconfirmedOrAmbiguousMutation &&
+    (fileChanged ? confirmedMutationIndices.length > 0 : true) &&
     (lastMutationIndex === -1 || rerunAfterFinalEdit) &&
     requiredScenarioPassed,
   );

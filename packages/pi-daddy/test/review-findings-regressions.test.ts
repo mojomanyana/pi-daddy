@@ -1536,4 +1536,107 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
   });
   assert.equal(fileChangedNoTrace.ok, false);
   assert.ok(fileChangedNoTrace.failureReasons.some((r) => /insufficient evidence/i.test(r)));
+
+  // Regression: Confirmed SKILL.md edit → linked tag-prefix PASS → another SKILL.md edit with no completion
+  const editPassUncompletedEdit = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "edit", toolCallId: "e-2", args: { path: "SKILL.md" } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      // e-2 has no completion in toolResults!
+    ],
+  });
+  assert.equal(editPassUncompletedEdit.ok, false);
+  assert.ok(editPassUncompletedEdit.failureReasons.some((r) => /insufficient evidence/i.test(r)));
+
+  // Regression: Confirmed SKILL.md edit → linked tag-prefix PASS → another SKILL.md edit with duplicate completions
+  const editPassDuplicateCompletions = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "edit", toolCallId: "e-2", args: { path: "SKILL.md" } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "edit", toolCallId: "e-2", isError: false, text: "ok 1" },
+      { tool: "edit", toolCallId: "e-2", isError: false, text: "ok 2" },
+    ],
+  });
+  assert.equal(editPassDuplicateCompletions.ok, false);
+  assert.ok(editPassDuplicateCompletions.failureReasons.some((r) => /insufficient evidence/i.test(r)));
+
+  // Case-sensitivity: confirmed SKILL.md edit → linked tag-prefix PASS → write distinct skill.md stays passing
+  const caseSensitiveDistinct = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    caseSensitive: true,
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "write", toolCallId: "w-distinct", args: { path: "skill.md" } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "write", toolCallId: "w-distinct", isError: false, text: "ok" },
+    ],
+  });
+  assert.equal(caseSensitiveDistinct.ok, true);
+  assert.equal(caseSensitiveDistinct.requiredScenarioPassed, true);
+  assert.equal(caseSensitiveDistinct.latestApplicableVerdict, "PASS");
+
+  // Native Windows case-insensitive behavior: write to skill.md is the same file as SKILL.md
+  const caseInsensitiveSame = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    caseSensitive: false,
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "write", toolCallId: "w-same", args: { path: "skill.md" } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "write", toolCallId: "w-same", isError: false, text: "ok" },
+    ],
+  });
+  assert.equal(caseInsensitiveSame.ok, false);
 });
