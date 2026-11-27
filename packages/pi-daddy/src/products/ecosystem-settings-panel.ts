@@ -1,4 +1,3 @@
-import { workspaceMemoryModes } from "../kernel/ecosystem-config.ts";
 export const preferenceFields = [
   ["scoutModel", "Scout research model", "Follow the current Pi model, or choose a connected model for research."],
   ["scoutThinking", "Scout thinking", "Auto uses low effort when the coding agent thinks, and off when it does not."],
@@ -27,7 +26,12 @@ export const preferenceFields = [
   [
     "workspaceMemory",
     "Bookie workspace memory",
-    "On starts memory in trusted interactive workspaces. Follow Daddy Auto ties memory to the Auto switch. Off disables automatic workspace memory.",
+    "Switch Bookie now and remember this choice for startup. Changing Daddy Auto also switches Bookie for this session. Changing Bookie leaves Auto as it is.",
+  ],
+  [
+    "autoOnStartup",
+    "Start with Daddy Auto",
+    "Approve eligible specialist tool requests in new trusted interactive sessions, including shell commands and file edits. Press [a] to change the current session.",
   ],
 ] as const;
 export interface PreferenceCatalog {
@@ -57,11 +61,8 @@ async function loadPreferences() {
       const label = document.createElement('label'), caption = document.createElement('small');
       label.textContent = title; caption.textContent = help;
       const sel = document.createElement('select'), saved = c.values[key];
-      const options = key === 'workspaceMemory' ? ${JSON.stringify(workspaceMemoryModes)} : key === 'scoutModel' ? ['session', ...c.models] : key === 'scoutThinking' ? c.levels : [true,false];
-      for (const value of options) {
-        const labels = key === 'workspaceMemory' ? {on:'On (default)', 'follow-auto':'Follow Daddy Auto', off:'Off'} : {};
-        sel.add(new Option(labels[value] ?? (value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : value), String(value)));
-      }
+      const options = key === 'scoutModel' ? ['session', ...c.models] : key === 'scoutThinking' ? c.levels : [true,false];
+      for (const value of options) sel.add(new Option(value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : value, String(value)));
       if (!options.includes(saved)) sel.add(new Option(String(saved) + ' (unavailable)', String(saved)));
       sel.value = String(saved); sel.disabled = key.startsWith('scout') && !c.scoutReady;
       if (key === 'autoSyncReviews' && !c.bookieSyncReady) {

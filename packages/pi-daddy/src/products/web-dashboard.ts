@@ -182,7 +182,7 @@ function renderHtml(token: string): string {
   <div class="grid2">
     <div class="card">
       <h2>Work Mode & Permissions</h2>
-      <p>Work mode changes how Pi approaches the task. Daddy Auto approves eligible tool requests for this session and its delegated work.</p>
+      <p>Work mode changes how Pi approaches the task. Daddy Auto approves eligible tool requests. Switching Auto also switches Bookie memory for this session.</p>
       <div class="row">Current: <strong id="wm">-</strong></div>
       <div class="bar" style="margin-top:6px">
         <label class="chk"><input type="checkbox" value="speed" class="emp" />speed</label>
@@ -246,6 +246,7 @@ async function post(path, body) {
 ${classifierScript}
 ${preferenceScript}
 function render(s) {
+  if (LAST && LAST.autoEnabled !== s.autoEnabled) void loadPreferences();
   LAST = s;
   document.getElementById('classifier-recovery').hidden = !s.classifierNeedsModel;
   const st = document.getElementById('status');
@@ -314,7 +315,7 @@ async function applyMode(mode) {
 }
 async function toggleAuto() {
   const r = await post('/api/auto-mode', { enabled: !(LAST && LAST.autoEnabled) });
-  document.getElementById('wm-msg').textContent = r.ok ? 'Auto updated.' : (r.data.error || 'Failed');
+  document.getElementById('wm-msg').textContent = r.ok ? 'Auto and Bookie updated.' : (r.data.error || 'Failed');
 }
 async function saveThinking() {
   const r = await post('/api/config', { thinking: document.getElementById('thinking').value });

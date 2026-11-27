@@ -27,6 +27,7 @@ export function registerRuntimeSnapshot(
   retireDelivery(): void;
 } {
   let bound: { sessionId: string; cwd: string; lifecycle: object } | undefined, problem: string | undefined;
+  let observationOwner: typeof bound;
   const generation = {};
   let bindSequence = 0;
   let ending = false;
@@ -53,8 +54,14 @@ export function registerRuntimeSnapshot(
     });
   };
   const stopDelivery = registerDeliveryTaskBridge(pi.events, currentOwner, () => !ending && isRoot(), taskDispatch);
-  const dashboardLive = registerDashboardLive(pi, currentOwner, () => dashboardSources.selectedTaskId());
-  const dashboardSources = registerDashboardSources(pi, currentOwner, Date.now, dashboardLive.turnId);
+  // Display observations need a bound Pi session even on hosts without a settlement journal.
+  const currentObservation = () =>
+    observationOwner?.lifecycle === session.reloadLifecycle &&
+    session.reloadLifecycle.runtimeSnapshotGeneration === generation
+      ? observationOwner
+      : undefined;
+  const dashboardLive = registerDashboardLive(pi, currentObservation, () => dashboardSources.selectedTaskId());
+  const dashboardSources = registerDashboardSources(pi, currentObservation, Date.now, dashboardLive.turnId);
   session.dashboardObservations = () => dashboardSources.snapshot();
   session.dashboardRefreshSources = () => dashboardSources.requestRefresh();
   session.dashboardChoices = dashboardSources.choices;
@@ -300,6 +307,7 @@ export function registerRuntimeSnapshot(
         lifecycle = session.reloadLifecycle;
       lifecycle.runtimeSettlement = undefined;
       bound = undefined;
+      observationOwner = undefined;
       artifactOwner = undefined;
       artifactBridge.reset();
       await initiative.reset();
@@ -311,6 +319,8 @@ export function registerRuntimeSnapshot(
         if (lifecycle.runtimeSnapshotUnsubscribe !== unsubscribe) lifecycle.runtimeSnapshotUnsubscribe?.();
         lifecycle.runtimeSnapshotUnsubscribe = unsubscribe;
         lifecycle.runtimeSnapshotGeneration = generation;
+        if (!sessionId) throw Error("Missing Pi session identity");
+        observationOwner = { sessionId, cwd: ctx.cwd, lifecycle };
         lifecycle.runtimeSettlements ??= new Map();
         const key = JSON.stringify([sessionId, cwd]);
         let runtime = lifecycle.runtimeSettlements.get(key);

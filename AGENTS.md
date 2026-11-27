@@ -207,7 +207,7 @@ it measured nothing rather than passing quietly.
 
 ## Decisions still in force
 
-2026-11-27. Bookie workspace memory defaults to enabled in a trusted interactive root independently of Daddy Auto. A saved `bookie.workspaceMemory` value of `off` withdraws the managed memory permission, including when Auto is on. The `follow-auto` option ties memory to the current Auto switch. Bookie owns review capture and its separate opt-out. Tool approvals continue to follow Daddy Auto.
+2026-11-27 (revised). Trusted interactive root sessions default to Daddy Auto on. At startup managed Bookie memory requires both startup choices. An actual Auto transition sets the current Bookie choice in the same direction. A Bookie edit affects Bookie alone. Preserve explicit launch overrides, independent review-capture settings and session ownership across reload.
 
 2026-11-26. Automatic setup queries the installed Pi for provider status, available chat models and thinking levels. The fast-tier harvest classifier requires thinking off. Explicit model selections retain their provenance in the ecosystem settings.
 

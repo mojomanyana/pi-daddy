@@ -8,7 +8,7 @@
  */
 import { createInterface } from "node:readline";
 import { preferenceFields, type PreferenceCatalog } from "./ecosystem-settings-panel.ts";
-import { readPanelLocator, workspaceMemoryModes } from "../kernel/ecosystem-config.ts";
+import { readPanelLocator } from "../kernel/ecosystem-config.ts";
 import { sectionHeading, colorSessionLine } from "./dashboard-layout.ts";
 import { truncate } from "./dashboard-render.ts";
 import { wrapDashboardLines } from "./dashboard-screen.ts";
@@ -114,7 +114,16 @@ export async function editTerminalPreferences(request: ClassifierRequest, ask: (
   const reply = await ask(
     [
       "Current Pi model: " + c.current,
-      ...preferenceFields.map(([k, title], i) => i + 1 + ". " + title + "  [" + c.values[k] + "]"),
+      ...preferenceFields.map(
+        ([k, title], i) =>
+          i +
+          1 +
+          ". " +
+          title +
+          "  [" +
+          (typeof c.values[k] === "boolean" ? (c.values[k] ? "On" : "Off") : c.values[k]) +
+          "]",
+      ),
       "Select a setting (Enter cancels)",
     ].join("\n"),
   );
@@ -124,14 +133,7 @@ export async function editTerminalPreferences(request: ClassifierRequest, ask: (
   const [key, title, help] = field;
   if (key === "autoSyncReviews" && !c.bookieSyncReady) throw Error("Load the Bookie review sync update first.");
   if (key.startsWith("scout") && !c.scoutReady) throw Error("Load the Scout settings update first.");
-  const choices =
-    key === "workspaceMemory"
-      ? workspaceMemoryModes
-      : key === "scoutModel"
-        ? ["session", ...c.models]
-        : key === "scoutThinking"
-          ? c.levels
-          : [true, false];
+  const choices = key === "scoutModel" ? ["session", ...c.models] : key === "scoutThinking" ? c.levels : [true, false];
   const text = await ask(
     [
       help,
@@ -140,7 +142,7 @@ export async function editTerminalPreferences(request: ClassifierRequest, ask: (
           i +
           1 +
           ". " +
-          (v === "session" ? "Follow Pi: " + c.current : v === "follow-auto" ? "Follow Daddy Auto" : String(v)),
+          (v === "session" ? "Follow Pi: " + c.current : typeof v === "boolean" ? (v ? "On" : "Off") : v),
       ),
       "Select a value to save (Enter cancels)",
     ].join("\n"),
@@ -236,6 +238,7 @@ export function renderTerminalPanel(
       `[m] Work mode    ${modeName}`,
       `[a] Daddy Auto   ${state.autoEnabled ? "on" : "off"}`,
       "Auto approves eligible Daddy tool requests.",
+      "Changing Auto also switches Bookie memory. Use [p] to change Bookie alone.",
       `[t] Thinking     ${state.thinking}`,
       "",
       heading("Model tiers"),

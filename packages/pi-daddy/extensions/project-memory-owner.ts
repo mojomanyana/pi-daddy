@@ -1,4 +1,4 @@
-/** The trusted interactive root offers Bookie workspace memory independently of tool approvals. */
+/** The trusted interactive root offers managed memory under the current session selection. */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -103,8 +103,9 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
             workspace.created !== identity.birthtimeNs
           )
             return;
-          const mode = readEcosystemConfig()?.bookie?.workspaceMemory ?? "on";
-          return mode === "on" || (mode === "follow-auto" && state.authority.snapshot().enabled);
+          const choice = lifecycle.projectMemorySelection;
+          if (choice?.sessionId === sessionId) return choice.enabled;
+          return state.authority.snapshot().enabled && readEcosystemConfig()?.bookie?.workspaceMemory !== false;
         } catch {
           return;
         }
@@ -127,7 +128,15 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
         lease = next;
         publish(next);
       }
-      lifecycle.projectMemoryOwner = { retire, refresh, active: () => lease?.isCurrent() === true };
+      lifecycle.projectMemoryOwner = {
+        retire,
+        setEnabled(enabled) {
+          if (generation !== token || !sessionId || session.reloadLifecycle !== lifecycle) return;
+          lifecycle.projectMemorySelection = { sessionId, enabled };
+          refresh();
+        },
+        active: () => lease?.isCurrent() === true,
+      };
       return () => {
         ready = true;
         refresh();

@@ -3,7 +3,7 @@
  *
  * Stage 1 (0ms, $0): Free deterministic signal filter — skips routine clean turns completely.
  * Stage 2 (Option A): Fast-tier structured JSON classifier (`models.fast` via fallback chain at
- * `reasoning: "off"`) inspects a secret-redacted turn digest and decides whether the turn reveals
+ * its lowest supported effort) inspects a secret-redacted turn digest and decides whether the turn reveals
  * a generalizable regression worth saving as a Harness-validated `specification.yaml`.
  * Mode 2 ("auto", default): saves directly to `~/.pi/agent/pi-daddy/harvested-evals/<repo>/`
  * (zero git repo pollution), with `"suggest"` and `"off"` configurable in `ecosystem.json`.
@@ -223,10 +223,11 @@ export async function classifyHarvestCandidate(input: {
   const picked = selectRegistryModel(input.registry, candidates, input.fallbackModel);
   if (!picked.model || typeof input.registry?.streamSimple !== "function") return skip("classifier-unavailable");
 
-  if (typeof picked.model === "object" && "reasoning" in picked.model && typeof picked.model.reasoning === "boolean") {
-    if (!supportedModelEfforts(picked.model as { reasoning: boolean }).includes("off"))
-      return skip("classifier-thinking-off-unavailable");
-  }
+  const reasoning =
+    typeof picked.model === "object" && "reasoning" in picked.model && typeof picked.model.reasoning === "boolean"
+      ? supportedModelEfforts(picked.model as { reasoning: boolean })[0]
+      : "off";
+  if (!reasoning) return skip("classifier-unavailable");
 
   const digest = harvestClassifierDigest(input.signals);
 
@@ -246,7 +247,10 @@ export async function classifyHarvestCandidate(input: {
     const stream = input.registry.streamSimple(
       picked.model,
       { messages: [{ role: "user", content: [{ type: "text", text: instruction }], timestamp: Date.now() }] },
-      { ...(input.signal ? { signal: input.signal } : {}), reasoning: "off" },
+      {
+        signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+        reasoning,
+      },
     );
     message = await stream.result();
   } catch {

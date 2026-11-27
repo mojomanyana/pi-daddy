@@ -247,11 +247,12 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       getState: stateOf,
       onPreferences: (input) => {
         if (!lastCtx || session.depth !== 0) throw Error("Open Settings in the root Pi session.");
-        const result = connectedEcosystemPreferences(pi.events, lastCtx, input);
-        if (input.action === "save" && input.key === "workspaceMemory")
-          session.reloadLifecycle.projectMemoryOwner?.refresh();
-        if (input.action === "save" && input.key === "autoSyncReviews")
-          pi.events.emit("bookie:review-sync-settings:v1", { action: "changed" });
+        const result = connectedEcosystemPreferences(
+          pi.events,
+          lastCtx,
+          input,
+          session.reloadLifecycle.projectMemoryOwner,
+        );
         if (input.action === "save") record("config", "Updated " + input.key);
         return result;
       },
@@ -526,14 +527,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       })
         .then((decision) => {
           if (generation !== harvestGeneration || turn !== eligibleTurn) return;
-          if (
-            [
-              "classifier-unavailable",
-              "classifier-thinking-off-unavailable",
-              "classifier-error",
-              "classifier-incomplete",
-            ].includes(decision.reason)
-          )
+          if (["classifier-unavailable", "classifier-error", "classifier-incomplete"].includes(decision.reason))
             throw Error(decision.reason);
           if (!decision.harvest) {
             reportActivity("Harvest · no new regression suggested", ctx);

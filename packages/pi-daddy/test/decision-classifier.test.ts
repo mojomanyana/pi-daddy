@@ -299,10 +299,10 @@ test("terminal saves the same Scout preference the browser reads, and rejects di
   const list = ecosystemPreferences(ctx, { action: "list" }, true);
   assert.equal(list.values?.scoutModel, "other/kev");
   assert.equal(list.values?.autoSyncReviews, true);
-  assert.equal(list.values?.workspaceMemory, "on");
+  assert.equal(list.values?.workspaceMemory, true);
   const memoryAnswers = ["9", "2"];
   await editTerminalPreferences(request, async () => memoryAnswers.shift()!);
-  assert.equal(ecosystemPreferences(ctx, { action: "list" }, true).values?.workspaceMemory, "follow-auto");
+  assert.equal(ecosystemPreferences(ctx, { action: "list" }, true).values?.workspaceMemory, false);
   assert.throws(
     () => ecosystemPreferences(ctx, { action: "save", key: "autoSyncReviews", value: false }, true),
     /Bookie review sync update/,

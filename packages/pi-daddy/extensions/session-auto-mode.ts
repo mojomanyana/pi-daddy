@@ -1,4 +1,6 @@
 /** Session-owned Auto policy. Dashboard mutations never become banked or inherited approvals. */
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
 import type { AutoModeReader, AutoModeSource } from "../src/kernel/auto-mode.ts";
 import { parseAutoModeDefault, parseAutoModeRef } from "../src/kernel/auto-mode.ts";
 import { ENV_AUTO_MODE, ENV_AUTO_MODE_REF } from "../src/kernel/env-names.ts";
@@ -14,6 +16,7 @@ export interface SessionAutoLifecycle {
   nativeSessionId: string;
   reader: AutoModeReader;
   authority?: AutoModeAuthority;
+  trustedStartup?: boolean;
   updates: Promise<unknown>;
 }
 const stale = () => new Error("Daddy Auto controls are unavailable for this session owner");
@@ -45,6 +48,7 @@ export async function initializeSessionAutoMode(
   session: GrantsSession,
   environment: NodeJS.ProcessEnv,
   nativeSessionId: string,
+  ctx?: ExtensionContext,
 ): Promise<void> {
   const lifecycle = session.reloadLifecycle;
   let state = lifecycle.autoMode;
@@ -52,9 +56,44 @@ export async function initializeSessionAutoMode(
   if (state && state.nativeSessionId !== nativeSessionId) {
     await state.reader.close();
     delete lifecycle.autoMode;
+    delete lifecycle.projectMemorySelection;
     state = undefined;
   }
+  const trustedStartup = !!(
+    ctx?.mode === "tui" &&
+    ctx.hasUI &&
+    ctx.isProjectTrusted?.() === true &&
+    session.ownerBound &&
+    session.depth === 0 &&
+    !session.ownExecutionId &&
+    session.malformedBounds?.length === 0 &&
+    nativeSessionId &&
+    ctx.sessionManager?.getSessionId?.() === nativeSessionId
+  );
+  const defaultEnabled = () => {
+    if (!trustedStartup) return false;
+    try {
+      return readEcosystemConfig(environment)?.autoOnStartup !== false;
+    } catch (error) {
+      ctx?.ui?.notify?.("Daddy Auto starts off because its settings could not be read. " + String(error), "warning");
+      return false;
+    }
+  };
   if (state) {
+    // Pi can bind its interactive UI after the initial SDK session start.
+    if (state.authority && state.trustedStartup !== trustedStartup && state.authority.snapshot().source === "default") {
+      const before = state.authority.snapshot();
+      const enabled = defaultEnabled();
+      if (enabled !== before.enabled) {
+        if (enabled) await record(session, true, "default", before.revision + 1);
+        if (lifecycle.autoMode !== state || session.reloadLifecycle !== lifecycle) throw stale();
+        if (state.authority.snapshot().revision === before.revision) {
+          const after = state.authority.set(enabled, "default");
+          if (!enabled) await record(session, false, "default", after.revision);
+        }
+      }
+      state.trustedStartup = trustedStartup;
+    }
     session.autoMode = state.reader;
     return;
   }
@@ -71,6 +110,7 @@ export async function initializeSessionAutoMode(
     state = { nativeSessionId, reader, updates: Promise.resolve() };
   } else {
     const initial = parseAutoModeDefault(environment[ENV_AUTO_MODE]);
+    if (initial.source === "default") initial.enabled = defaultEnabled();
     const authority = await createAutoModeAuthority({ enabled: false, source: initial.source });
     try {
       if (initial.enabled) {
@@ -81,7 +121,7 @@ export async function initializeSessionAutoMode(
       await authority.close();
       throw error;
     }
-    state = { nativeSessionId, reader: authority, authority, updates: Promise.resolve() };
+    state = { nativeSessionId, reader: authority, authority, trustedStartup, updates: Promise.resolve() };
   }
   if (session.reloadLifecycle !== lifecycle) {
     await state.reader.close();
@@ -114,10 +154,10 @@ export async function setAutoApproval(session: GrantsSession, enabled: boolean, 
         await record(session, true, "session", before.revision + 1);
         if (current(session) !== state) throw stale();
         state.authority!.set(true, "session");
-        session.reloadLifecycle.projectMemoryOwner?.refresh();
+        if (enabled !== before.enabled) session.reloadLifecycle.projectMemoryOwner?.setEnabled(enabled);
       } else {
         const after = state.authority!.set(false, "session");
-        session.reloadLifecycle.projectMemoryOwner?.refresh();
+        if (enabled !== before.enabled) session.reloadLifecycle.projectMemoryOwner?.setEnabled(enabled);
         await record(session, false, "session", after.revision);
       }
       return getDashboardControlState(session);

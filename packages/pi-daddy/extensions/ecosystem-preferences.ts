@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { isWorkspaceMemoryMode, readEcosystemConfig, saveEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
+import { readEcosystemConfig, saveEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
 
 export const researchLevels = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -7,6 +7,7 @@ export function connectedEcosystemPreferences(
   events: ExtensionAPI["events"],
   ctx: ExtensionContext,
   input: Record<string, unknown>,
+  memory?: { active(): boolean; setEnabled(enabled: boolean): void },
 ) {
   let scoutReady = false,
     bookieSyncReady = false;
@@ -21,7 +22,12 @@ export function connectedEcosystemPreferences(
       bookieSyncReady = true;
     },
   });
-  return ecosystemPreferences(ctx, input, scoutReady, bookieSyncReady);
+  const result = ecosystemPreferences(ctx, input, scoutReady, bookieSyncReady);
+  if (result.values && memory) result.values.workspaceMemory = memory.active();
+  if (input.action === "save" && input.key === "workspaceMemory") memory?.setEnabled(input.value === true);
+  if (input.action === "save" && input.key === "autoSyncReviews")
+    events.emit("bookie:review-sync-settings:v1", { action: "changed" });
+  return result;
 }
 
 export function ecosystemPreferences(
@@ -39,7 +45,8 @@ export function ecosystemPreferences(
     autoRecall: cfg.bookie?.autoRecall !== false,
     autoDistill: cfg.bookie?.autoDistill !== false,
     autoSyncReviews: cfg.bookie?.autoSyncReviews !== false,
-    workspaceMemory: cfg.bookie?.workspaceMemory ?? "on",
+    workspaceMemory: cfg.bookie?.workspaceMemory !== false,
+    autoOnStartup: cfg.autoOnStartup !== false,
     autoStart: cfg.dashboard?.autoStart === true,
     autoEscalate: cfg.escalation?.auto !== false,
   };
@@ -62,14 +69,12 @@ export function ecosystemPreferences(
     if (typeof value !== "string" || !choices.includes(value))
       throw Error("Choose an available value. Use /login to connect a provider.");
     cfg.scout = { ...cfg.scout, [key === "scoutModel" ? "model" : "thinking"]: value };
-  } else if (key === "workspaceMemory") {
-    if (!isWorkspaceMemoryMode(value)) throw Error("Choose On, Follow Daddy Auto, or Off for workspace memory.");
-    cfg.bookie = { ...cfg.bookie, workspaceMemory: value };
   } else {
     if (typeof value !== "boolean") throw Error("Expected an on/off setting.");
     if (key === "directUrls") cfg.scout = { ...cfg.scout, directUrls: value };
-    else if (key === "autoRecall" || key === "autoDistill" || key === "autoSyncReviews")
+    else if (key === "workspaceMemory" || key === "autoRecall" || key === "autoDistill" || key === "autoSyncReviews")
       cfg.bookie = { ...cfg.bookie, [key]: value };
+    else if (key === "autoOnStartup") cfg.autoOnStartup = value;
     else if (key === "autoStart") cfg.dashboard = { ...cfg.dashboard, autoStart: value };
     else if (key === "autoEscalate") cfg.escalation = { ...cfg.escalation, auto: value };
     else throw Error("Unknown ecosystem setting.");

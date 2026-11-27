@@ -207,7 +207,7 @@ test("interactive trusted parent offers workspace memory and the connected dashb
     assert.ok(registered);
     const endpoint = await ensureDashboardSessionServer(current);
     const snapshot = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
-    assert.equal(snapshot.auto.enabled, false);
+    assert.equal(snapshot.auto.enabled, true);
     assert.equal(snapshot.workspaceMemoryActive, true);
     const frame = renderDashboardScreen({
       width: 86,
@@ -220,6 +220,13 @@ test("interactive trusted parent offers workspace memory and the connected dashb
     assert.match(frame, /Bookie memory · Ready in this folder/);
     await setAutoApproval(current, true, "dashboard");
     assert.equal(live.isCurrent(), true);
+    await fixture.session.prompt("/grants auto off");
+    assert.equal(live.isCurrent(), false);
+    const paused = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    assert.equal(paused.workspaceMemoryActive, false);
+    await fixture.session.prompt("/grants auto on");
+    const resumed = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    assert.equal(resumed.workspaceMemoryActive, true);
     assert.deepEqual(fixture.errors, []);
     assert.equal(fixture.requests.length, 0);
   } finally {
@@ -324,7 +331,7 @@ test("Pi /new in the same folder gets a fresh root, dashboard, delivery guard an
     await assert.rejects(dashboardSessionRequest(old.socketPath, old.token, { action: "get" }));
     const snapshot = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
     assert.equal(snapshot.observation?.sessionId, host.session.sessionManager.getSessionId());
-    assert.deepEqual(snapshot.auto, { enabled: false, source: "default" });
+    assert.deepEqual(snapshot.auto, { enabled: true, source: "default" });
     await host.session.prompt("/grants auto on");
     assert.equal(leases.at(-1)?.sessionId, host.session.sessionManager.getSessionId());
     assert.ok(leases.at(-1)?.isCurrent());

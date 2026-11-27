@@ -597,18 +597,23 @@ console.log(JSON.stringify({ skillName: turn.skillName, scenarioId: turn.scenari
   }
 });
 
-test("harvest skips a session model that cannot turn thinking off", async () => {
+test("harvest uses the lowest supported effort when the session model requires thinking", async () => {
   const fallbackModel = { provider: "openai-codex", id: "fixture", reasoning: true, thinkingLevelMap: { off: null } };
   const result = await classifyHarvestCandidate({
     signals: baseSignals,
     fallbackModel,
     registry: {
-      streamSimple() {
-        throw new Error("unsupported model must never be called");
+      streamSimple(_model, _context, options) {
+        assert.equal(options?.reasoning, "minimal");
+        return {
+          result: async () => ({
+            content: [{ type: "text", text: JSON.stringify({ harvest: true, category: "thrash", confidence: 0.95 }) }],
+          }),
+        };
       },
     },
     env: { PI_CODING_AGENT_DIR: join(tmpdir(), "empty-harvest-fixture"), PI_ECO_MODEL_FAST: "session" },
   });
-  assert.equal(result.harvest, false);
-  assert.equal(result.reason, "classifier-thinking-off-unavailable");
+  assert.equal(result.harvest, true);
+  assert.equal(result.category, "thrash");
 });

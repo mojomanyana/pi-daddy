@@ -15,7 +15,7 @@ Start the coding agent with your usual Pi model. Open `/dashboard settings` in P
 
 New profiles created with plain `setup` follow the active Pi model. Choose **Follow Pi** to keep using the model you logged into, including after a model switch. A separately pinned research model requires the matching Scout update. Settings lists connected chat models, including local models exposed through Pi. Use `/login` to add credentials and `/model` to select the coding agent. If a saved tier is unavailable at interactive startup, Pi offers one repair for the affected tiers. If a pinned Scout model is unavailable before dispatch, you can pick a replacement for that request.
 
-With Pi Daddy and Bookie installed, plain `pi` starts workspace memory in a trusted interactive session. Bookie automatically records references to completed reviews and catches up on resume. Daddy Auto controls tool approvals independently. Choose **Follow Daddy Auto** under **Bookie workspace memory** if you want one switch for both. In **Settings → Ecosystem**, turn off **Bookie automatic review capture** to skip automatic review references, or turn off **Bookie workspace memory** to disable Daddy-managed memory.
+In a trusted interactive workspace, Daddy Auto starts on and approves eligible specialist requests, including shell commands and file edits. Bookie workspace memory starts when both startup settings are on. Switching Auto on or off also switches Bookie for that session. Changing Bookie alone leaves Auto as it is. Use **Settings → Ecosystem** to change either startup preference or turn off automatic review capture.
 
 ## Harvest classifier settings
 
@@ -388,7 +388,7 @@ in pi's agent directory, not in the workspace.
 
 **Auto mode** lets the operator approve every Daddy permission request for the current session and its descendants.
 `/grants` marks an approval-only gate as `AUTO` when Auto is on. This is a preview of the permission step; actual delegation still rechecks Auto and all other execution conditions. Genuine refusals remain `BLOCK`.
-Start Pi with `PI_DADDY_AUTO_MODE=1` for Auto ON, or `PI_DADDY_AUTO_MODE=0` (the default when unset) for Auto OFF.
+For an explicit launch override, set `PI_DADDY_AUTO_MODE=1` or `PI_DADDY_AUTO_MODE=0`. Headless sessions default to Auto off. Descendants consult their owning session.
 In the connected dashboard, press **a** to switch it on or off. `/grants auto on` and `/grants auto off` control the
 same session setting; `/grants` shows the current state and source. Reload preserves the session choice; a new
 Pi session starts from the environment default.

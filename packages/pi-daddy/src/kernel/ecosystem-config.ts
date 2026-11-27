@@ -22,10 +22,6 @@ import { dirname, join, resolve } from "node:path";
 import { agentDir, userStateDir } from "./project-paths.ts";
 
 export type EcosystemModelTier = "fast" | "work" | "strong";
-export const workspaceMemoryModes = ["on", "follow-auto", "off"] as const;
-export function isWorkspaceMemoryMode(value: unknown): value is (typeof workspaceMemoryModes)[number] {
-  return workspaceMemoryModes.some((mode) => mode === value);
-}
 
 export interface EcosystemModelsConfig {
   fast?: string;
@@ -47,6 +43,7 @@ export interface EcosystemHarvestConfig {
 }
 
 export interface EcosystemConfig {
+  autoOnStartup?: boolean;
   setupPreset?: { name: string; defaults: EcosystemModelsConfig; fallbacks?: EcosystemModelFallbacks };
   models?: EcosystemModelsConfig;
   modelFallbacks?: EcosystemModelFallbacks;
@@ -55,7 +52,7 @@ export interface EcosystemConfig {
   harvest?: EcosystemHarvestConfig;
   scout?: { directUrls?: boolean; model?: string; thinking?: string };
   bookie?: {
-    workspaceMemory?: "on" | "follow-auto" | "off";
+    workspaceMemory?: boolean;
     autoRecall?: boolean;
     autoDistill?: boolean;
     autoSyncReviews?: boolean;
@@ -108,12 +105,13 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
   }
   if (record(parsed.bookie) && "autoSyncReviews" in parsed.bookie && typeof parsed.bookie.autoSyncReviews !== "boolean")
     throw Error(`Expected a boolean for bookie.autoSyncReviews in ${file}.`);
-  if (
-    record(parsed.bookie) &&
-    "workspaceMemory" in parsed.bookie &&
-    !isWorkspaceMemoryMode(parsed.bookie.workspaceMemory)
-  )
-    throw Error(`Expected on, follow-auto or off for bookie.workspaceMemory in ${file}.`);
+  if ("autoOnStartup" in parsed && typeof parsed.autoOnStartup !== "boolean")
+    throw Error(`Expected a boolean for autoOnStartup in ${file}.`);
+  if (record(parsed.bookie) && "workspaceMemory" in parsed.bookie) {
+    const mode = parsed.bookie.workspaceMemory;
+    if (mode === "on" || mode === "follow-auto" || mode === "off") parsed.bookie.workspaceMemory = mode !== "off";
+    else if (typeof mode !== "boolean") throw Error(`Expected a boolean for bookie.workspaceMemory in ${file}.`);
+  }
   if (record(parsed.scout)) {
     const { model, thinking, directUrls } = parsed.scout;
     if (model !== undefined && model !== "session" && (typeof model !== "string" || !/^[^/\s]+\/[^\s]+$/.test(model)))
