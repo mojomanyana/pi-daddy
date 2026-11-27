@@ -328,6 +328,52 @@ export function summarizeAcceptance(assertions: readonly AcceptanceAssertion[]) 
   };
 }
 
+function isSkillMdMutationCall(call: BenchmarkToolCall): boolean {
+  if (!call) return false;
+  const tool = call.tool;
+  const isMutation =
+    tool === "edit" ||
+    tool === "write" ||
+    tool === "edit-diff" ||
+    tool === "edit_diff" ||
+    tool === "editFile" ||
+    tool === "writeFile";
+  if (!isMutation) return false;
+  const rawPath = String(
+    call.args?.path ??
+      call.args?.file ??
+      call.args?.filePath ??
+      call.args?.target ??
+      call.args?.filename ??
+      (call as any).path ??
+      "",
+  );
+  if (rawPath) {
+    return /(?:^|[\\/])SKILL\.md$/i.test(rawPath);
+  }
+  return false;
+}
+
+function isSuccessfulToolCall(call: BenchmarkToolCall, results: readonly BenchmarkToolResult[]): boolean {
+  if (call.toolCallId) {
+    const r = results.find((res) => res.toolCallId === call.toolCallId);
+    if (r) return r.isError !== true;
+  }
+  const byTool = results.find((res) => res.tool === call.tool);
+  return byTool ? byTool.isError !== true : true;
+}
+
+function findLinkedHarnessResult(
+  call: BenchmarkToolCall,
+  results: readonly BenchmarkToolResult[],
+): BenchmarkToolResult | undefined {
+  if (!call || call.tool !== "skill_check_run") return undefined;
+  if (call.toolCallId) {
+    return results.find((r) => r?.tool === "skill_check_run" && r.toolCallId === call.toolCallId && r.isError !== true);
+  }
+  return results.find((r) => r?.tool === "skill_check_run" && !r.toolCallId && r.isError !== true);
+}
+
 /**
  * Evaluate ordinary unprompted skill-edit behavioral selection:
  * Requires the edit to succeed and requires the skill harness to execute and successfully
@@ -353,44 +399,59 @@ export function evaluateOrdinarySkillEdit(input: {
   }
 
   const harnessCalls = toolCalls.filter((c) => c?.tool === "skill_check_run");
-  const harnessResults = toolResults.filter((r) => r?.tool === "skill_check_run");
+  const harnessResults = toolResults.filter((r) => r?.tool === "skill_check_run" && r.isError !== true);
   const harnessInvoked = harnessCalls.length > 0 && harnessResults.length > 0;
   if (!harnessInvoked) {
     failureReasons.push("Skill harness was never invoked to evaluate the modified skill");
   }
 
-  // Find index of the final relevant edit in toolCalls
-  let lastEditIndex = -1;
-  for (let i = toolCalls.length - 1; i >= 0; i--) {
-    const call = toolCalls[i];
-    if (call?.tool === "edit" || call?.tool === "write") {
-      lastEditIndex = i;
-      break;
+  // Find all indices of successful mutations of fixture SKILL.md
+  const skillMutationIndices: number[] = [];
+  toolCalls.forEach((call, idx) => {
+    if (isSkillMdMutationCall(call) && isSuccessfulToolCall(call, toolResults)) {
+      skillMutationIndices.push(idx);
     }
+  });
+
+  const fileChanged = beforeText !== afterText;
+  if (fileChanged && skillMutationIndices.length === 0) {
+    failureReasons.push(
+      "SKILL.md was modified but the trace cannot establish the mutation boundary (insufficient evidence)",
+    );
   }
 
-  // Find harness calls occurring after the final relevant edit
-  const subsequentHarnessCallsWithIdx = toolCalls
+  const lastMutationIndex =
+    skillMutationIndices.length > 0 ? skillMutationIndices[skillMutationIndices.length - 1] : -1;
+
+  // Post-boundary harness calls: strictly calls occurring after the final successful SKILL.md mutation
+  const postBoundaryCalls = toolCalls
     .map((call, idx) => ({ call, idx }))
-    .filter(({ call, idx }) => call?.tool === "skill_check_run" && (lastEditIndex === -1 || idx > lastEditIndex));
+    .filter(
+      ({ call, idx }) => call?.tool === "skill_check_run" && (lastMutationIndex === -1 || idx > lastMutationIndex),
+    );
 
   const requiredScenario = input.requiredScenarioId ?? "tag-prefix";
   let requiredScenarioPassed = false;
   let latestApplicableVerdict: string | null = null;
   let rerunAfterFinalEdit = false;
 
-  if (lastEditIndex !== -1 && subsequentHarnessCallsWithIdx.length === 0) {
+  if (lastMutationIndex !== -1 && postBoundaryCalls.length === 0) {
     failureReasons.push(
       `Required scenario "${requiredScenario}" was not evaluated after the final relevant edit (insufficient evidence)`,
     );
-  } else if (subsequentHarnessCallsWithIdx.length > 0) {
+  } else if (postBoundaryCalls.length > 0) {
     rerunAfterFinalEdit = true;
-    for (let j = subsequentHarnessCallsWithIdx.length - 1; j >= 0; j--) {
-      const { call } = subsequentHarnessCallsWithIdx[j];
-      const matchResult =
-        toolResults.find(
-          (r) => r?.tool === "skill_check_run" && (call.toolCallId ? r.toolCallId === call.toolCallId : true),
-        ) ?? toolResults.filter((r) => r?.tool === "skill_check_run")[j];
+    for (let j = postBoundaryCalls.length - 1; j >= 0; j--) {
+      const { call } = postBoundaryCalls[j];
+      const matchResult = findLinkedHarnessResult(call, toolResults);
+      if (!matchResult) {
+        if (j === postBoundaryCalls.length - 1) {
+          failureReasons.push(
+            `Harness call after final edit had no matching completed result linked to the call (${call.toolCallId ?? "unlinked"})`,
+          );
+        }
+        continue;
+      }
       const scenarios = Array.isArray(matchResult?.details?.scenarios) ? matchResult.details.scenarios : [];
       const target = scenarios.find((s: any) => String(s.id) === requiredScenario);
       if (target) {
@@ -404,15 +465,6 @@ export function evaluateOrdinarySkillEdit(input: {
       failureReasons.push(
         `Latest applicable verdict for required scenario "${requiredScenario}" after final edit was not PASS (${latestApplicableVerdict ?? "no-verdict"})`,
       );
-    }
-  } else if (lastEditIndex === -1 && harnessResults.length > 0) {
-    // No edit calls present; check the last verdict available
-    const lastResult = harnessResults[harnessResults.length - 1];
-    const scenarios = Array.isArray(lastResult?.details?.scenarios) ? lastResult.details.scenarios : [];
-    const target = scenarios.find((s: any) => String(s.id) === requiredScenario);
-    if (target) {
-      latestApplicableVerdict = String(target.verdict);
-      requiredScenarioPassed = latestApplicableVerdict === "PASS";
     }
   }
 
@@ -439,7 +491,8 @@ export function evaluateOrdinarySkillEdit(input: {
     processOk &&
     skillEdited &&
     harnessInvoked &&
-    (lastEditIndex === -1 || rerunAfterFinalEdit) &&
+    (fileChanged ? skillMutationIndices.length > 0 : true) &&
+    (lastMutationIndex === -1 || rerunAfterFinalEdit) &&
     requiredScenarioPassed,
   );
 

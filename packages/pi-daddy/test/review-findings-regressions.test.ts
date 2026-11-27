@@ -1129,10 +1129,15 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
     processOk: true,
     beforeText,
     afterText,
-    toolCalls: [{ tool: "skill_check_run", args: { scenarios: ["notes-commit"] } }],
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["notes-commit"] } },
+    ],
     toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
       {
         tool: "skill_check_run",
+        toolCallId: "h-1",
         isError: false,
         details: {
           scenarios: [{ id: "notes-commit", verdict: "PASS" }],
@@ -1150,10 +1155,15 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
     processOk: true,
     beforeText,
     afterText,
-    toolCalls: [{ tool: "skill_check_run", args: { scenarios: ["tag-prefix", "notes-commit"] } }],
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix", "notes-commit"] } },
+    ],
     toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
       {
         tool: "skill_check_run",
+        toolCallId: "h-1",
         isError: false,
         details: {
           scenarios: [
@@ -1264,4 +1274,105 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
   assert.equal(passEditNoRerun.rerunAfterFinalEdit, false);
   assert.equal(passEditNoRerun.requiredScenarioPassed, false);
   assert.ok(passEditNoRerun.failureReasons.some((r) => /insufficient evidence/i.test(r)));
+
+  // Focused regression 1: PASS → edit-diff on SKILL.md → no rerun must fail
+  const passEditDiffNoRerun = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [
+      { tool: "skill_check_run", toolCallId: "h-1" },
+      { tool: "edit-diff", toolCallId: "ed-1", args: { path: "SKILL.md" } },
+    ],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "edit-diff", toolCallId: "ed-1", isError: false, text: "ok" },
+    ],
+  });
+  assert.equal(passEditDiffNoRerun.ok, false);
+  assert.equal(passEditDiffNoRerun.rerunAfterFinalEdit, false);
+  assert.equal(passEditDiffNoRerun.requiredScenarioPassed, false);
+  assert.ok(passEditDiffNoRerun.failureReasons.some((r) => /insufficient evidence/i.test(r)));
+
+  // Focused regression 2: PASS → edit SKILL.md → Harness call with no matching result must fail
+  const passEditHarnessNoResult = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [
+      { tool: "skill_check_run", toolCallId: "h-1" },
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-2" },
+    ],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      // h-2 has no matching result in toolResults!
+    ],
+  });
+  assert.equal(passEditHarnessNoResult.ok, false);
+  assert.equal(passEditHarnessNoResult.requiredScenarioPassed, false);
+  assert.equal(passEditHarnessNoResult.latestApplicableVerdict, null);
+  assert.ok(passEditHarnessNoResult.failureReasons.some((r) => /no matching completed result/i.test(r)));
+
+  // Focused regression 3: Edit SKILL.md → matching PASS → write an unrelated file must still pass
+  const editPassWriteUnrelated = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1" },
+      { tool: "write", toolCallId: "w-unrelated", args: { path: "notes.txt" } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: {
+          scenarios: [
+            { id: "tag-prefix", verdict: "PASS" },
+            { id: "notes-commit", verdict: "PASS" },
+          ],
+          coverage: { scenariosRun: ["tag-prefix", "notes-commit"] },
+        },
+      },
+      { tool: "write", toolCallId: "w-unrelated", isError: false, text: "ok" },
+    ],
+  });
+  assert.equal(editPassWriteUnrelated.ok, true);
+  assert.equal(editPassWriteUnrelated.skillEdited, true);
+  assert.equal(editPassWriteUnrelated.requiredScenarioPassed, true);
+  assert.equal(editPassWriteUnrelated.latestApplicableVerdict, "PASS");
+  assert.deepEqual(editPassWriteUnrelated.extraScenariosRun, ["notes-commit"]);
+
+  // Focused regression 4: File changed but trace cannot establish mutation boundary -> insufficient evidence
+  const fileChangedNoTrace = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    toolCalls: [{ tool: "skill_check_run", toolCallId: "h-1" }],
+    toolResults: [
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+    ],
+  });
+  assert.equal(fileChangedNoTrace.ok, false);
+  assert.ok(fileChangedNoTrace.failureReasons.some((r) => /insufficient evidence/i.test(r)));
 });
