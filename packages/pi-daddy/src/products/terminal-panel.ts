@@ -8,7 +8,7 @@
  */
 import { createInterface } from "node:readline";
 import { preferenceFields, type PreferenceCatalog } from "./ecosystem-settings-panel.ts";
-import { readPanelLocator } from "../kernel/ecosystem-config.ts";
+import { readPanelLocator, workspaceMemoryModes } from "../kernel/ecosystem-config.ts";
 import { sectionHeading, colorSessionLine } from "./dashboard-layout.ts";
 import { truncate } from "./dashboard-render.ts";
 import { wrapDashboardLines } from "./dashboard-screen.ts";
@@ -124,11 +124,24 @@ export async function editTerminalPreferences(request: ClassifierRequest, ask: (
   const [key, title, help] = field;
   if (key === "autoSyncReviews" && !c.bookieSyncReady) throw Error("Load the Bookie review sync update first.");
   if (key.startsWith("scout") && !c.scoutReady) throw Error("Load the Scout settings update first.");
-  const choices = key === "scoutModel" ? ["session", ...c.models] : key === "scoutThinking" ? c.levels : [true, false];
+  const choices =
+    key === "workspaceMemory"
+      ? workspaceMemoryModes
+      : key === "scoutModel"
+        ? ["session", ...c.models]
+        : key === "scoutThinking"
+          ? c.levels
+          : [true, false];
   const text = await ask(
     [
       help,
-      ...choices.map((v, i) => i + 1 + ". " + (v === "session" ? "Follow Pi: " + c.current : String(v))),
+      ...choices.map(
+        (v, i) =>
+          i +
+          1 +
+          ". " +
+          (v === "session" ? "Follow Pi: " + c.current : v === "follow-auto" ? "Follow Daddy Auto" : String(v)),
+      ),
       "Select a value to save (Enter cancels)",
     ].join("\n"),
   );

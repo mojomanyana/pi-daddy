@@ -12,7 +12,11 @@ import {
   type ExtensionAPI,
   type ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
-import { PROJECT_MEMORY_OWNER_EVENT, type ProjectMemoryOwner } from "../../extensions/project-memory-owner.ts";
+import {
+  PROJECT_MEMORY_OWNER_EVENT,
+  PROJECT_MEMORY_OWNER_REQUEST,
+  type ProjectMemoryOwner,
+} from "../../extensions/project-memory-owner.ts";
 import {
   DASHBOARD_SOURCE_EVENT,
   type DashboardSourceRegistrationReply,
@@ -106,6 +110,55 @@ for (const contribute of [true, false]) {
   });
 }
 
+test("ordinary trusted Pi startup and reload offer Bookie memory with zero prompts or Auto configuration", async () => {
+  const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_ACTIVITY_TIMELINE"];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  let fixture: Awaited<ReturnType<typeof createFixture>> | undefined;
+  let emit: ExtensionAPI["events"]["emit"] | undefined;
+  try {
+    for (const key of keys) delete process.env[key];
+    fixture = await createFixture({
+      mode: "tui",
+      prepare: async (root) => {
+        process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+      },
+      extension: () => (pi) => {
+        grants(pi, createGrantsSession(undefined));
+        emit = pi.events.emit.bind(pi.events);
+      },
+    });
+    await fixture.session.bindExtensions({ mode: "tui", uiContext: { notify() {} } as unknown as ExtensionUIContext });
+    const request = () => {
+      let owner: ProjectMemoryOwner | undefined;
+      emit!(PROJECT_MEMORY_OWNER_REQUEST, {
+        version: 1,
+        cwd: fixture!.root,
+        sessionId: fixture!.manager.getSessionId(),
+        reply(value: ProjectMemoryOwner) {
+          owner = value;
+        },
+      });
+      return owner;
+    };
+    const initial = request();
+    assert.ok(initial && initial.isCurrent());
+    await fixture.session.reload();
+    assert.equal(initial.isCurrent(), false);
+    assert.ok(request()?.isCurrent());
+    await writeFile(
+      join(fixture.root, "agent", "ecosystem.json"),
+      JSON.stringify({ bookie: { workspaceMemory: "off" } }),
+    );
+    await fixture.session.reload();
+    assert.equal(request(), undefined);
+    assert.deepEqual(fixture.requests, []);
+    assert.deepEqual(fixture.errors, []);
+  } finally {
+    await fixture?.close();
+    for (const [key, value] of saved) value === undefined ? delete process.env[key] : (process.env[key] = value);
+  }
+});
+
 test("interactive trusted parent offers workspace memory and the connected dashboard renders the provider's readiness", async () => {
   const keys = [...GRANT_ENV_KEYS, "PI_CODING_AGENT_DIR", "PI_DADDY_ACTIVITY_TIMELINE"];
   const saved = new Map(keys.map((key) => [key, process.env[key]]));
@@ -115,7 +168,7 @@ test("interactive trusted parent offers workspace memory and the connected dashb
   let owner: ProjectMemoryOwner | undefined;
   try {
     for (const key of keys) delete process.env[key];
-    process.env.PI_DADDY_AUTO_MODE = "1";
+    delete process.env.PI_DADDY_AUTO_MODE;
     process.env.PI_DADDY_ACTIVITY_TIMELINE = "off";
     fixture = await createFixture({
       mode: "tui",
@@ -154,6 +207,8 @@ test("interactive trusted parent offers workspace memory and the connected dashb
     assert.ok(registered);
     const endpoint = await ensureDashboardSessionServer(current);
     const snapshot = await dashboardSessionRequest(endpoint.socketPath, endpoint.token, { action: "get" });
+    assert.equal(snapshot.auto.enabled, false);
+    assert.equal(snapshot.workspaceMemoryActive, true);
     const frame = renderDashboardScreen({
       width: 86,
       height: 36,
@@ -163,8 +218,8 @@ test("interactive trusted parent offers workspace memory and the connected dashb
       screen: { ...dashboardScreenState(), destination: "now" },
     });
     assert.match(frame, /Bookie memory · Ready in this folder/);
-    await setAutoApproval(current, false, "dashboard");
-    assert.equal(live.isCurrent(), false);
+    await setAutoApproval(current, true, "dashboard");
+    assert.equal(live.isCurrent(), true);
     assert.deepEqual(fixture.errors, []);
     assert.equal(fixture.requests.length, 0);
   } finally {

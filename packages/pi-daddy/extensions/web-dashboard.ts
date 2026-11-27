@@ -5,7 +5,7 @@
  * strong-model escalation, and 2-stage classifier-driven session harvesting.
  */
 import { ecosystemToolLabel, summarizeObservations } from "./dashboard-activity.ts";
-import { ecosystemPreferences } from "./ecosystem-preferences.ts";
+import { connectedEcosystemPreferences } from "./ecosystem-preferences.ts";
 import { thresholdFor } from "../src/products/decision-classifier.ts";
 import { createClassifierSettings } from "./classifier-settings.ts";
 import { registerClassifierShadow } from "./classifier-shadow.ts";
@@ -247,20 +247,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       getState: stateOf,
       onPreferences: (input) => {
         if (!lastCtx || session.depth !== 0) throw Error("Open Settings in the root Pi session.");
-        let ready = false;
-        pi.events.emit("scout:model-settings:v1", {
-          report: () => {
-            ready = true;
-          },
-        });
-        let bookieSyncReady = false;
-        pi.events.emit("bookie:review-sync-settings:v1", {
-          action: "status",
-          report: () => {
-            bookieSyncReady = true;
-          },
-        });
-        const result = ecosystemPreferences(lastCtx, input, ready, bookieSyncReady);
+        const result = connectedEcosystemPreferences(pi.events, lastCtx, input);
+        if (input.action === "save" && input.key === "workspaceMemory")
+          session.reloadLifecycle.projectMemoryOwner?.refresh();
         if (input.action === "save" && input.key === "autoSyncReviews")
           pi.events.emit("bookie:review-sync-settings:v1", { action: "changed" });
         if (input.action === "save") record("config", "Updated " + input.key);

@@ -1,3 +1,4 @@
+import { workspaceMemoryModes } from "../kernel/ecosystem-config.ts";
 export const preferenceFields = [
   ["scoutModel", "Scout research model", "Follow the current Pi model, or choose a connected model for research."],
   ["scoutThinking", "Scout thinking", "Auto uses low effort when the coding agent thinks, and off when it does not."],
@@ -16,12 +17,17 @@ export const preferenceFields = [
   [
     "autoSyncReviews",
     "Bookie automatic review capture",
-    "With Daddy Auto on, Bookie catches up on saved reviews for this session. Off leaves /bookie-capture sync available. Bookie stores references locally.",
+    "Bookie saves a local reference when a review finishes and checks for missed reviews when Pi starts or resumes.",
   ],
   [
     "autoEscalate",
     "Automatic escalation",
     "Request a strong-model review when Principal detects a repeated failing check.",
+  ],
+  [
+    "workspaceMemory",
+    "Bookie workspace memory",
+    "On starts memory in trusted interactive workspaces. Follow Daddy Auto ties memory to the Auto switch. Off disables automatic workspace memory.",
   ],
 ] as const;
 export interface PreferenceCatalog {
@@ -51,8 +57,11 @@ async function loadPreferences() {
       const label = document.createElement('label'), caption = document.createElement('small');
       label.textContent = title; caption.textContent = help;
       const sel = document.createElement('select'), saved = c.values[key];
-      const options = key === 'scoutModel' ? ['session', ...c.models] : key === 'scoutThinking' ? c.levels : [true,false];
-      for (const value of options) sel.add(new Option(value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : value, String(value)));
+      const options = key === 'workspaceMemory' ? ${JSON.stringify(workspaceMemoryModes)} : key === 'scoutModel' ? ['session', ...c.models] : key === 'scoutThinking' ? c.levels : [true,false];
+      for (const value of options) {
+        const labels = key === 'workspaceMemory' ? {on:'On (default)', 'follow-auto':'Follow Daddy Auto', off:'Off'} : {};
+        sel.add(new Option(labels[value] ?? (value === 'session' ? 'Follow Pi · ' + c.current : value === true ? 'On' : value === false ? 'Off' : value), String(value)));
+      }
       if (!options.includes(saved)) sel.add(new Option(String(saved) + ' (unavailable)', String(saved)));
       sel.value = String(saved); sel.disabled = key.startsWith('scout') && !c.scoutReady;
       if (key === 'autoSyncReviews' && !c.bookieSyncReady) {

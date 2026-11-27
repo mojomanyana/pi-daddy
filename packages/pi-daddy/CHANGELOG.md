@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bookie workspace memory starts by default in trusted interactive sessions, including with Daddy Auto off. Manage workspace memory and automatic review capture separately in Ecosystem settings.
+
 - Configure Scout, model tiers, and harvest classifiers in the terminal and browser dashboards. A working classifier can retry the pending harvest in its original session.
 
 ## 1.1.4 - 2026-11-26

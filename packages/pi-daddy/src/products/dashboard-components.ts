@@ -84,11 +84,16 @@ function memoryDescription(item: DashboardContribution | undefined, partial: boo
   ];
 }
 
+function memoryActive(options: DashboardScreenOptions) {
+  return options.session?.workspaceMemoryActive ?? options.session?.auto.enabled;
+}
+
 /** Choices are current project observations; a saved question never creates a live input request. */
 export function bookieOpenChoices(options: DashboardScreenOptions): DashboardItem[] {
   const source = options.session?.observation?.sources.find((s) => s.producer === "bookie-memory");
   if (
-    !options.session?.auto.enabled ||
+    !options.session ||
+    !memoryActive(options) ||
     !source ||
     !current(source, options) ||
     !source.items.some((i) => isComponentObservation(source, i) && i.state === "observed")
@@ -155,9 +160,7 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   if (
     options.connected === false ||
     source?.refresh?.state === "failed" ||
-    (source &&
-      !current(source, options) &&
-      !(source.producer === "bookie-memory" && options.session?.auto.enabled === false))
+    (source && !current(source, options) && !(source.producer === "bookie-memory" && memoryActive(options) === false))
   ) {
     state = "last-observed";
     status =
@@ -192,18 +195,20 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   } else if (
     bookie &&
     options.session &&
-    !options.session.auto.enabled &&
+    !memoryActive(options) &&
     (source?.producer === "bookie-memory" || pkg?.commandAvailable || pkg?.loadedVersion) &&
     !(source?.producer === "bookie" && current(source, options) && source.items.length)
   ) {
-    status = "Automatic memory paused · Auto OFF";
-    const origin =
-      options.session.auto.source === "session"
-        ? "Auto was turned off for this session."
-        : options.session.auto.source === "environment"
-          ? "Pi started with Auto off."
-          : "Auto starts off by default.";
-    explanation = `${origin} Turn Auto on in Settings for automatic notes in this folder, or use /bookie-context to select memory manually. A session toggle does not change the startup setting.`;
+    const legacy = options.session.workspaceMemoryActive === undefined;
+    status = legacy ? "Automatic memory paused · Auto OFF" : "Workspace memory inactive";
+    if (legacy) {
+      const origin = {
+        session: "Auto was turned off for this session.",
+        environment: "Pi started with Auto off.",
+        default: "Auto starts off by default.",
+      }[options.session.auto.source];
+      explanation = `${origin} Turn Auto on for automatic notes or use /bookie-context. A session toggle does not change the startup setting.`;
+    } else explanation = "Check Bookie workspace memory in Ecosystem settings and open Pi in a trusted workspace.";
   } else if (source?.producer === "bookie-memory") {
     state = item?.state ?? "unknown";
     [status, explanation] = memoryDescription(item, source.inventory?.state === "available");
@@ -234,11 +239,11 @@ function componentItem(producer: KnownSource, options: DashboardScreenOptions): 
   const sourceDetails = item?.details ?? [];
   const isMemory = source?.producer === "bookie-memory";
   const limited =
-    isMemory && state === "observed" && options.session?.auto.enabled && sourceDetails.includes(BOOKIE_LIMIT_MESSAGE);
+    isMemory && state === "observed" && memoryActive(options) && sourceDetails.includes(BOOKIE_LIMIT_MESSAGE);
   const explanationLines = limited
     ? [explanation, "Bookie could only show part of this project’s open choices."]
     : [explanation];
-  const canShowInventory = source && current(source, options) && (!bookie || options.session?.auto.enabled);
+  const canShowInventory = source && current(source, options) && (!bookie || memoryActive(options));
   const showInventory = canShowInventory && source.refresh?.state !== "failed";
   const inventory = inventoryPresentation(showInventory ? source.inventory : undefined);
   const age = observationAge(source, options.now?.getTime() ?? Date.now());

@@ -1,7 +1,28 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { readEcosystemConfig, saveEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isWorkspaceMemoryMode, readEcosystemConfig, saveEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
 
 export const researchLevels = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+export function connectedEcosystemPreferences(
+  events: ExtensionAPI["events"],
+  ctx: ExtensionContext,
+  input: Record<string, unknown>,
+) {
+  let scoutReady = false,
+    bookieSyncReady = false;
+  events.emit("scout:model-settings:v1", {
+    report() {
+      scoutReady = true;
+    },
+  });
+  events.emit("bookie:review-sync-settings:v1", {
+    action: "status",
+    report() {
+      bookieSyncReady = true;
+    },
+  });
+  return ecosystemPreferences(ctx, input, scoutReady, bookieSyncReady);
+}
 
 export function ecosystemPreferences(
   ctx: ExtensionContext,
@@ -18,6 +39,7 @@ export function ecosystemPreferences(
     autoRecall: cfg.bookie?.autoRecall !== false,
     autoDistill: cfg.bookie?.autoDistill !== false,
     autoSyncReviews: cfg.bookie?.autoSyncReviews !== false,
+    workspaceMemory: cfg.bookie?.workspaceMemory ?? "on",
     autoStart: cfg.dashboard?.autoStart === true,
     autoEscalate: cfg.escalation?.auto !== false,
   };
@@ -40,6 +62,9 @@ export function ecosystemPreferences(
     if (typeof value !== "string" || !choices.includes(value))
       throw Error("Choose an available value. Use /login to connect a provider.");
     cfg.scout = { ...cfg.scout, [key === "scoutModel" ? "model" : "thinking"]: value };
+  } else if (key === "workspaceMemory") {
+    if (!isWorkspaceMemoryMode(value)) throw Error("Choose On, Follow Daddy Auto, or Off for workspace memory.");
+    cfg.bookie = { ...cfg.bookie, workspaceMemory: value };
   } else {
     if (typeof value !== "boolean") throw Error("Expected an on/off setting.");
     if (key === "directUrls") cfg.scout = { ...cfg.scout, directUrls: value };

@@ -9,11 +9,13 @@ Start the coding agent with your usual Pi model. Open `/dashboard settings` in P
 
 | Key | What it changes |
 | --- | --- |
-| **p** | Scout research model and thinking, Bookie recall and distillation, dashboard startup and automatic escalation |
+| **p** | Scout research model and thinking, Bookie workspace memory and review capture, dashboard startup and automatic escalation |
 | **e** | FAST, WORK and STRONG chat model tiers |
 | **c** | The harvest decision model, threshold, harvest mode and optional routing comparison |
 
 New profiles created with plain `setup` follow the active Pi model. Choose **Follow Pi** to keep using the model you logged into, including after a model switch. A separately pinned research model requires the matching Scout update. Settings lists connected chat models, including local models exposed through Pi. Use `/login` to add credentials and `/model` to select the coding agent. If a saved tier is unavailable at interactive startup, Pi offers one repair for the affected tiers. If a pinned Scout model is unavailable before dispatch, you can pick a replacement for that request.
+
+With Pi Daddy and Bookie installed, plain `pi` starts workspace memory in a trusted interactive session. Bookie automatically records references to completed reviews and catches up on resume. Daddy Auto controls tool approvals independently. Choose **Follow Daddy Auto** under **Bookie workspace memory** if you want one switch for both. In **Settings → Ecosystem**, turn off **Bookie automatic review capture** to skip automatic review references, or turn off **Bookie workspace memory** to disable Daddy-managed memory.
 
 ## Harvest classifier settings
 
@@ -190,7 +192,7 @@ previous operation is proven settled or never started; uncertainty stays blocked
 Principal 4.12.0 introduced automatic operation IDs and exact candidate/report references for this contract.
 
 The dashboard shows the selected task's last observed tool event and time since that event.
-With Auto on in a trusted interactive project, a compatible Bookie can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning Auto off withdraws automatic memory access and hides those choices.
+In a trusted interactive project, Bookie workspace memory starts by default and can save and recall routine notes for the current folder. Look for **Bookie memory · Ready in this folder** under Overview → Memory. With a Bookie version that reports saved choices, Overview and Tasks list them under **Open choices**. Turning off **Bookie workspace memory** in Ecosystem settings withdraws automatic memory access and hides those choices.
 
 Select an open choice and press **Enter** to answer or **Decide later**. When Bookie supports corrections, **Not a separate decision** offers a separate confirmation: remove only that item from Open choices, keep the original note, and record no answer. Use it for a progress summary mistakenly presented as another decision. Decide later still leaves the choice open. Older Bookie versions retain their existing answer/view controls; no question is hidden by its wording.
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdir, rename, symlink, unlink } from "node:fs/promises";
+import { mkdir, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { cleanupTempDirs, tempDir } from "./tmp.ts";
@@ -65,29 +65,51 @@ function fixture(cwd = process.cwd()) {
   return { pi, session, ctx, current, notices, request };
 }
 
-test("root Auto offers project memory to early and late observers, with immediate withdrawal even on audit failure", async () => {
+test("workspace memory starts with default settings and honors its own switch across Auto toggles and resume", async (t) => {
+  const profile = await tempDir("memory-settings-");
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = profile;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+  });
   const { pi, session, ctx, current, notices, request } = fixture();
   const bridge = registerProjectMemoryOwner(pi, session);
   const ready = bridge.begin(ctx);
   await initializeSessionAutoMode(session, {}, current.id);
   try {
     ready();
-    assert.equal(request(), undefined);
-    await setAutoApproval(session, true, "dashboard");
     const owner = request();
     assert.ok(owner && owner.isCurrent());
+    assert.equal(session.reloadLifecycle.autoMode!.authority!.snapshot().enabled, false);
     assert.equal(notices.at(-1)?.owner, owner);
     assert.equal(request("some-other-session"), undefined);
     assert.equal(request(current.id, "/another-dir"), undefined);
-    session.ledgerPath = "/dev/null/unwritable";
-    await assert.rejects(setAutoApproval(session, false, "command"));
+    await setAutoApproval(session, true, "dashboard");
+    assert.equal(request(), owner);
+    await setAutoApproval(session, false, "command");
+    assert.equal(request(), owner);
+    const saveMemory = async (value: "off" | "follow-auto" | "on") => {
+      await writeFile(join(profile, "ecosystem.json"), JSON.stringify({ bookie: { workspaceMemory: value } }));
+      session.reloadLifecycle.projectMemoryOwner!.refresh();
+    };
+    await saveMemory("off");
     assert.equal(owner.isCurrent(), false);
     assert.equal(request(), undefined);
     assert.equal(notices.at(-1)?.valid, false);
-    await assert.rejects(setAutoApproval(session, true, "command"));
-    assert.equal(request(), undefined);
-    session.ledgerPath = undefined;
     await setAutoApproval(session, true, "command");
+    assert.equal(request(), undefined);
+    bridge.begin(ctx)();
+    assert.equal(request(), undefined);
+    await saveMemory("follow-auto");
+    const linked = request();
+    assert.ok(linked && linked.isCurrent());
+    await setAutoApproval(session, false, "command");
+    assert.equal(linked.isCurrent(), false);
+    assert.equal(request(), undefined);
+    await setAutoApproval(session, true, "command");
+    assert.ok(request()?.isCurrent());
+    await saveMemory("on");
     const replacement = request();
     assert.ok(replacement && replacement.isCurrent());
     assert.equal(owner.isCurrent(), false);

@@ -308,6 +308,7 @@ async function respond(
     ...(request.action === "reclassify-choice" ? { choiceReclassified: true } : {}),
     ...(request.action === "set-work-mode" ? { workModeApplied: true } : {}),
     ...controls,
+    workspaceMemoryActive: lifecycle.projectMemoryOwner?.active() === true,
     ...dashboardObservation(session),
     ...(session.activity ? { activity: { ...session.activity } } : {}),
     rows: sessionModelRows(session, [...session.definitions.keys()].sort()),

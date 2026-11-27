@@ -192,6 +192,13 @@ test("automatic Bookie memory is a single live Tools row alongside independent w
     ["Bookie memory · Ready in this folder"],
   );
   assert.ok(isComponentObservation(memory, memory.items[0]!));
+  o.session!.workspaceMemoryActive = true;
+  o.session!.auto.enabled = false;
+  assert.match(componentItems(o)[0]!.label, /Ready in this folder/);
+  o.session!.workspaceMemoryActive = false;
+  o.session!.auto.enabled = true;
+  assert.match(componentItems(o)[0]!.label, /Workspace memory inactive/);
+  o.session!.workspaceMemoryActive = true;
   assert.match(versionLines(bookie, false, panel([memory], [bookie])).join(" "), /Active in Pi/);
   memory.availability = "closed";
   assert.match(componentItems(o)[0]!.label, /Project connected/);
