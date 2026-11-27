@@ -51,7 +51,7 @@ export function createTaskDispatchController(
     return previous;
   };
 
-  function select() {
+  function select(purpose: "dispatch" | "replay" = "dispatch") {
     const host = current();
     if (!host) return;
     const response: { scope?: TaskScope; unavailable?: boolean } = {};
@@ -87,8 +87,10 @@ export function createTaskDispatchController(
     } finally {
       accepting = false;
     }
-    if (response.unavailable || (!response.scope && lastBoundHost === host))
+    if (response.unavailable || (!response.scope && lastBoundHost === host)) {
+      if (purpose === "replay") return;
       throw Error("Task scope is temporarily unavailable. Reopen its history before dispatch.");
+    }
     if (!response.scope) return;
     lastBoundHost = host;
     const chosen = response.scope;
@@ -395,7 +397,7 @@ export function createTaskDispatchController(
       typeof req.limit !== "number"
     )
       return;
-    const binding = select();
+    const binding = select("replay");
     if (!binding || req.projectId !== binding.scope.projectId || req.taskId !== binding.scope.taskId) return;
     const after = req.after,
       limit = req.limit;

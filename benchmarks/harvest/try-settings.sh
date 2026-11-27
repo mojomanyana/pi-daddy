@@ -7,7 +7,8 @@ if [[ "${1:-}" == "--verify-bookie" ]]; then
   shift
   tests="$root/../pi-harvest-bookie/packages/pi-extension/test"
   node --test "$tests/automatic-review-sync.test.mjs" "$tests/producer-bridge.test.mjs" \
-    "$root/packages/pi-daddy/test/project-memory-owner.test.ts"
+    "$root/packages/pi-daddy/test/project-memory-owner.test.ts" "$here/capture-resume.test.mjs"
+  node --test --test-name-pattern='a conflicting Bookie|optional task broker' "$root/packages/pi-daddy/test/task-dispatch.test.ts"
 fi
 node "$root/node_modules/typescript/bin/tsc" -p "$root/packages/pi-daddy/tsconfig.json"
 workspace=$(node "$here/prepare-pilot.mjs" --print-workspace)
@@ -16,4 +17,16 @@ export PI_DADDY_AUTO_MODE="${PI_DADDY_AUTO_MODE:-1}"
 export PI_DADDY_LEAN_TOOLS="${PI_DADDY_LEAN_TOOLS:-0}"
 printf '%s\n' "Starting the ecosystem in $PWD. Use /ecosystem-status to check registered components."
 printf '%s\n' "PI_DADDY_AUTO_MODE=$PI_DADDY_AUTO_MODE (1 automatically approves Daddy tool permission requests for this session and its descendants)."
+pilot_session_args() {
+  while (( $# )); do
+    case "$1" in
+      -c|--continue|-r|--resume|/pilot-capture-check|/ecosystem-status) shift ;;
+      --session) [[ $# -ge 2 && "$2" != -* ]] || return 1; shift 2 ;;
+      *) return 1 ;;
+    esac
+  done
+}
+if [[ -t 0 && -t 1 ]] && pilot_session_args "$@"; then
+  set -- /pilot-activate "$@"
+fi
 exec pi -e "$here/pilot-status.mjs" "$@"

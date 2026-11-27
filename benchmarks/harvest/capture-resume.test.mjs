@@ -14,7 +14,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-test("a Daddy copy used only during project trust cannot answer for the resumed session", async () => {
+test("pilot resume retains the selected Daddy and clears a superseded Bookie scope listener once", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-trust-capture-"));
   const cwd = join(root, "project"),
     profile = join(root, "profile");
@@ -28,11 +28,25 @@ test("a Daddy copy used only during project trust cannot answer for the resumed 
   try {
     await mkdir(config, { recursive: true });
     await mkdir(profile);
-    await writeFile(join(profile, "settings.json"), JSON.stringify({ packages: [installed] }));
+    const legacy = join(root, "legacy-bookie");
+    await mkdir(legacy);
+    await writeFile(
+      join(legacy, "package.json"),
+      JSON.stringify({ name: "fixture-bookie", pi: { extensions: ["./scope.mjs"] } }),
+    );
+    const scopeChannel = "pi.task-history.v1.scope";
+    await writeFile(
+      join(legacy, "scope.mjs"),
+      `export default pi => pi.events.on("${scopeChannel}", r => r.unavailable());`,
+    );
+    await writeFile(join(profile, "settings.json"), JSON.stringify({ packages: [installed, legacy] }));
     await writeFile(
       join(config, "settings.json"),
       JSON.stringify({
-        packages: [{ source: installed, extensions: [] }],
+        packages: [
+          { source: installed, extensions: [] },
+          { source: legacy, extensions: [] },
+        ],
         extensions: ["./producer.mjs"],
       }),
     );
@@ -40,13 +54,22 @@ test("a Daddy copy used only during project trust cannot answer for the resumed 
     await writeFile(
       join(config, "producer.mjs"),
       `export default pi => {
+      pi.on("session_start", (_,ctx) => pi.events.on("${scopeChannel}", r => {
+        if (r.sessionId === ctx.sessionManager.getSessionId()) r.accept(); else r.unavailable();
+      }));
       pi.on("session_start", (_,ctx) => pi.events.on("${channel}", r => {
         if (r.sessionId === ctx.sessionManager.getSessionId()) r.reply({ok:true});
       }));
     }`,
     );
     const settingsManager = SettingsManager.create(cwd, profile, { projectTrusted: false });
-    const loader = new DefaultResourceLoader({ cwd, agentDir: profile, settingsManager, eventBus: bus });
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir: profile,
+      settingsManager,
+      eventBus: bus,
+      additionalExtensionPaths: [fileURLToPath(new URL("./pilot-status.mjs", import.meta.url))],
+    });
     await loader.reload({
       resolveProjectTrust: async ({ extensionsResult }) => {
         assert.ok(extensionsResult.extensions.some((e) => e.commands.has("grants")));
@@ -88,7 +111,16 @@ test("a Daddy copy used only during project trust cannot answer for the resumed 
       modelRuntime,
       sessionManager: manager,
     }));
-    await session.bindExtensions({ mode: "json" });
+    let reloads = 0;
+    await session.bindExtensions({
+      mode: "json",
+      commandContextActions: {
+        reload: async () => {
+          reloads++;
+          await session.reload();
+        },
+      },
+    });
     const owner = { cwd: await realpath(cwd), sessionId: id };
     const replies = () => {
       const out = [];
@@ -103,7 +135,29 @@ test("a Daddy copy used only during project trust cannot answer for the resumed 
       return out;
     };
     const resumed = replies();
-    await session.reload();
+    const scopes = () => {
+      const answers = [];
+      bus.emit(scopeChannel, {
+        version: 1,
+        ...owner,
+        accept: () => answers.push("selected"),
+        unavailable: () => answers.push("unavailable"),
+      });
+      return answers.sort();
+    };
+    assert.deepEqual(scopes(), ["selected", "unavailable"]);
+    await session.prompt("/pilot-activate");
+    assert.deepEqual(scopes(), ["selected"]);
+    await session.prompt("/pilot-activate");
+    assert.equal(reloads, 1);
+    assert.equal(session.sessionManager.getSessionId(), id);
+    assert.deepEqual(
+      session.sessionManager
+        .getBranch()
+        .filter((entry) => entry.type === "message")
+        .map((entry) => entry.id),
+      ["0123abcd"],
+    );
     assert.deepEqual(replies(), ["read"], "in-place reload retains the selected producer");
     assert.deepEqual(resumed, ["read"], "only the selected producer may reply on initial resume");
   } finally {

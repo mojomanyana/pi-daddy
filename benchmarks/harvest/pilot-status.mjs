@@ -1,5 +1,6 @@
 import { bookieStatus } from "./bookie-status.mjs";
 import { captureStatus } from "./capture-status.mjs";
+import { randomUUID } from "node:crypto";
 import { getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 
 export function ecosystemStatus(pi) {
@@ -20,6 +21,22 @@ export function ecosystemStatus(pi) {
 }
 
 export default function (pi) {
+  pi.registerCommand("pilot-activate", {
+    description: "Activate the selected pilot extensions if an installed Bookie also answered during startup",
+    handler: async (_args, ctx) => {
+      if (!ctx.isProjectTrusted()) return;
+      // An unrelated session cannot acquire a scope. Each Bookie copy answers unavailable.
+      let responders = 0;
+      pi.events.emit("pi.task-history.v1.scope", {
+        version: 1, cwd: ctx.cwd, sessionId: randomUUID(),
+        accept() {}, unavailable() { responders++; },
+      });
+      if (responders > 1) {
+        ctx.ui.notify("Reloading the selected pilot extensions to restore Bookie task history.", "info");
+        await ctx.reload();
+      }
+    },
+  });
   const inspect = (ctx) => {
     const entries = Object.entries(ecosystemStatus(pi));
     const msg = entries.map(([name, present]) => {
