@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "../extensions/session.ts";
 import { initializeSessionAutoMode, closeSessionAutoMode } from "../extensions/session-auto-mode.ts";
@@ -227,4 +231,43 @@ test("parent guidance is per run and explicit Standard restores the original unm
   } finally {
     await f.close();
   }
+});
+
+test("Standard cold review dispatches only to an available model distinct from the active model", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "standard-review-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  execFileSync("git", ["init", "--quiet"], { cwd });
+  await writeFile(join(cwd, "one.txt"), "first");
+  await writeFile(join(cwd, "two.txt"), "second");
+  const f = await fixture();
+  t.after(f.close);
+  const previous = { ...process.env };
+  const keys = ["PI_DADDY_AUTO_REVIEW", "PI_ECO_MODEL_STRONG", "PI_CODING_AGENT_DIR"];
+  t.after(() => {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  });
+  process.env.PI_DADDY_AUTO_REVIEW = "1";
+  process.env.PI_CODING_AGENT_DIR = cwd;
+  const calls: string[] = [];
+  const ctx = {
+    ...f.ctx,
+    cwd,
+    model: { provider: "fixture", id: "active" },
+    modelRegistry: {
+      find: (provider: string, id: string) => (id === "missing" ? undefined : { provider, id }),
+      streamSimple: (model: { id: string }) => {
+        calls.push(model.id);
+        return { result: async () => ({ content: [{ type: "text", text: "VERDICT: PASS" }] }) };
+      },
+    },
+  };
+  for (const spec of ["fixture/missing", "session,fixture/strong", "fixture/active", "fixture/strong"]) {
+    process.env.PI_ECO_MODEL_STRONG = spec;
+    f.hooks.get("before_agent_start")!({ prompt: "Review this change", systemPromptOptions: {} }, ctx);
+    await f.hooks.get("agent_before_settle")!({}, ctx);
+  }
+  assert.deepEqual(calls, ["strong"]);
 });

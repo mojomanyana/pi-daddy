@@ -6,7 +6,7 @@ Should Daddy save this turn as a regression? This experiment compares the produc
 
 If `/bookie-capture sync` reports `Producer reference unavailable`, use `/ecosystem-status capture` in that Pi session. The pilot checks the first page of Daddy's stored results and requests the latest reference for the current branch, if present. The status shows the producer reply or timeout. Bookie registration is a separate step.
 
-Keep the matching Scout feature checkout beside this repository as `pi-harvest-scout`. Use the two local candidates together until both changes ship. With the Pi ecosystem installed, run the following in WSL from this checkout:
+Place the Scout and Bookie checkouts beside this repository as `pi-scout-research` and `bookie-pi-skills`, or set `PI_SCOUT_CHECKOUT` and `PI_BOOKIE_CHECKOUT` to their roots. The pilot and smoke test also recognize the earlier `pi-harvest-scout` and `pi-harvest-bookie` folder names. With the Pi ecosystem installed, run the following in WSL from this checkout:
 
 ```sh
 bash benchmarks/harvest/check-ecosystem.sh --live
@@ -42,7 +42,7 @@ Export `OPENROUTER_API_KEY` in your shell before checking or running. Kev 4B is 
 
 ## Fixed-threshold holdout
 
-Run `bash benchmarks/harvest/run-holdout.sh` for the fresh 60-turn synthetic corpus. Jev uses 0.53, Luna uses 0.65 and Kev uses 0.50. The 30 new tasks each have two labeled outcomes in shuffled order. Both outcomes of a task have the same gate signal. Two tasks have no gate signal, leaving 56 eligible turns and 168 paid calls. Two positive cases are unreachable at any threshold. Labels and case IDs stay local. The wrapper writes a new report in the parent of the checkout, which is shared with WSL in this workspace.
+Run `bash benchmarks/harvest/run-holdout.sh` for the fresh 60-turn synthetic corpus. Jev uses 0.53, Luna uses 0.65 and Kev uses 0.50. The 30 new tasks each have two labeled outcomes in shuffled order. Both outcomes of a task have the same gate signal. Two tasks have no gate signal, leaving 56 eligible turns and 168 paid calls. Two positive cases are unreachable at any threshold. Labels and case IDs stay local. The runner prints the report path under the system temporary directory and keeps the per-case scores after exit. Set `TMPDIR` to an existing output directory to keep reports there on Linux or WSL.
 
 ## Run
 

@@ -15,11 +15,11 @@ import {
   startWebDashboard,
   type WebDashboardConfigUpdate,
   type WebDashboardEvent,
-  type WebDashboardHandle,
   type WebDashboardHarvestInfo,
   type WebDashboardState,
   type WebDashboardTask,
 } from "../src/products/web-dashboard.ts";
+import { PanelServerLifecycle } from "../src/products/panel-server-lifecycle.ts";
 import { formatPanelCommand, openTerminalSplit } from "../src/products/terminal-split.ts";
 import {
   classifyHarvestCandidate,
@@ -65,8 +65,7 @@ function openInBrowser(url: string): void {
 }
 
 export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): void {
-  let handle: WebDashboardHandle | undefined;
-  let startPromise: Promise<WebDashboardHandle> | undefined;
+  const panel = new PanelServerLifecycle();
   let locatorCwd: string | undefined;
   let busy = false;
   let autoEnabled = false;
@@ -166,7 +165,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     const wm = workModeSnapshot(session);
     const label = wm.selection.mode === "standard" ? "Standard" : workModeLabel(wm.selection);
     const costLabel = costUsd > 0 ? ` · $${costUsd.toFixed(3)}` : "";
-    const dash = handle ? ` · panel:${handle.port}` : "";
+    const dash = panel.current ? ` · panel:${panel.current.port}` : "";
     target.ui.setStatus("pi-daddy", `Daddy · ${label}${busy ? " · running" : ""}${costLabel}${dash}`);
     const latest = ecosystemActivity.at(-1)?.detail;
     target.ui.setStatus(
@@ -180,7 +179,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     if (ctx) lastCtx = ctx;
     recent.push({ at: new Date().toISOString(), kind, detail: detail.slice(0, 240) });
     if (recent.length > MAX_EVENTS) recent.splice(0, recent.length - MAX_EVENTS);
-    handle?.push(stateOf());
+    panel.current?.push(stateOf());
     updateFooter(ctx);
   };
 
@@ -191,7 +190,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
 
   const reportActivity = (detail: string, ctx: ExtensionContext) => {
     activity(detail);
-    if (handle) handle.push(stateOf());
+    if (panel.current) panel.current.push(stateOf());
     updateFooter(ctx);
   };
   registerClassifierShadow(pi, session, classifierSettings.shadowModel, reportActivity);
@@ -244,115 +243,116 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     }
   };
 
-  const ensureStarted = async (): Promise<WebDashboardHandle> => {
-    if (handle) return handle;
-    if (startPromise) return startPromise;
-    startPromise = (async () => {
-      await syncAuto();
-      handle = await startWebDashboard({
-        getState: stateOf,
-        onPreferences: (input) => {
-          if (!lastCtx || session.depth !== 0) throw Error("Open Settings in the root Pi session.");
-          const result = connectedEcosystemPreferences(
-            pi.events,
-            lastCtx,
-            input,
-            session.reloadLifecycle.projectMemoryOwner,
-          );
-          if (input.action === "save") record("config", "Updated " + input.key);
-          return result;
-        },
-        onClassifierSettings: async (data) => {
-          const result = await classifierSettings.action(data);
-          if (data.action === "save") {
-            harvestGeneration++;
-            const retry = retryHarvest;
-            retryHarvest = undefined;
-            if (data.mode !== "off") retry?.();
-            handle?.push(stateOf());
+  const ensureStarted = () =>
+    panel.start(
+      async () => {
+        await syncAuto();
+        return startWebDashboard({
+          getState: stateOf,
+          onPreferences: (input) => {
+            if (!lastCtx || session.depth !== 0) throw Error("Open Settings in the root Pi session.");
+            const result = connectedEcosystemPreferences(
+              pi.events,
+              lastCtx,
+              input,
+              session.reloadLifecycle.projectMemoryOwner,
+            );
+            if (input.action === "save") record("config", "Updated " + input.key);
+            return result;
+          },
+          onClassifierSettings: async (data) => {
+            const result = await classifierSettings.action(data);
+            if (data.action === "save") {
+              harvestGeneration++;
+              const retry = retryHarvest;
+              retryHarvest = undefined;
+              if (data.mode !== "off") retry?.();
+              panel.current?.push(stateOf());
+            }
+            return result;
+          },
+          onWorkModeChange: (selection, scope) => {
+            setWorkMode(session, selection, scope);
+            record("work-mode", workModeLabel(selection));
+          },
+          onSteer: (message, deliverAs) => {
+            const send = (pi as { sendUserMessage?: (c: string, o?: { deliverAs?: "steer" | "followUp" }) => void })
+              .sendUserMessage;
+            if (typeof send !== "function") throw new Error("Pi sendUserMessage unavailable");
+            if (deliverAs === "steer") harvestTracker.markUserSteer();
+            send(message, { deliverAs });
+            record(deliverAs, message);
+          },
+          onAutoModeChange: async (enabled) => {
+            await setAutoApproval(session, enabled, "dashboard");
+            autoEnabled = enabled;
+            record("auto", enabled ? "ON" : "OFF");
+          },
+          onConfigChange: applyConfig,
+          onEscalate: (reason) => {
+            harvestTracker.markEscalated();
+            recordTask("escalate", "requested", reason ?? "manual escalation");
+            pi.events?.emit("pi-daddy:escalate-request:v1", { reason: reason ?? "panel" });
+            record("escalate", reason ?? "manual escalation");
+          },
+          onHarvest: (reason) => {
+            const pending = pendingHarvestSuggestion;
+            const cwd = pending?.cwd ?? lastCtx?.cwd ?? session.cwd;
+            const sessionFile =
+              pending?.sessionFile ??
+              (
+                lastCtx as { sessionManager?: { getSessionFile?: () => string | undefined } } | undefined
+              )?.sessionManager?.getSessionFile?.();
+            const saved = saveHarvestedEval({
+              cwd,
+              scenarioId: pending?.scenarioId || "manual-session-harvest",
+              signals: pending?.signals ?? harvestTracker.snapshot(),
+              reason: pending?.reason ?? reason,
+              sessionFile,
+            });
+            if (!saved.saved || !saved.path) {
+              throw new Error(saved.error ?? "Failed to save harvested eval");
+            }
+            if (!pending) {
+              retryHarvest = undefined;
+              harvestGeneration++;
+            }
+            pendingHarvestSuggestion = undefined;
+            harvestInfo = {
+              scenarioId: saved.scenarioId,
+              reason: pending?.reason ?? reason ?? "operator-harvested",
+              confidence: pending?.confidence ?? 1,
+              savedPath: saved.path,
+            };
+            recordTask("harvest", "saved", `${saved.scenarioId} (${saved.via})`);
+            record("harvest", saved.path);
+            return saved;
+          },
+        });
+      },
+      (handle) => {
+        const cwd = lastCtx?.cwd ?? session.cwd;
+        if (cwd) {
+          locatorCwd = cwd;
+          try {
+            writePanelLocator({
+              url: handle.url,
+              port: handle.port,
+              pid: process.pid,
+              cwd,
+              startedAt: new Date().toISOString(),
+            });
+          } catch {
+            /* Locator is convenience only. */
           }
-          return result;
-        },
-        onWorkModeChange: (selection, scope) => {
-          setWorkMode(session, selection, scope);
-          record("work-mode", workModeLabel(selection));
-        },
-        onSteer: (message, deliverAs) => {
-          const send = (pi as { sendUserMessage?: (c: string, o?: { deliverAs?: "steer" | "followUp" }) => void })
-            .sendUserMessage;
-          if (typeof send !== "function") throw new Error("Pi sendUserMessage unavailable");
-          if (deliverAs === "steer") harvestTracker.markUserSteer();
-          send(message, { deliverAs });
-          record(deliverAs, message);
-        },
-        onAutoModeChange: async (enabled) => {
-          await setAutoApproval(session, enabled, "dashboard");
-          autoEnabled = enabled;
-          record("auto", enabled ? "ON" : "OFF");
-        },
-        onConfigChange: applyConfig,
-        onEscalate: (reason) => {
-          harvestTracker.markEscalated();
-          recordTask("escalate", "requested", reason ?? "manual escalation");
-          pi.events?.emit("pi-daddy:escalate-request:v1", { reason: reason ?? "panel" });
-          record("escalate", reason ?? "manual escalation");
-        },
-        onHarvest: (reason) => {
-          const pending = pendingHarvestSuggestion;
-          const cwd = pending?.cwd ?? lastCtx?.cwd ?? session.cwd;
-          const sessionFile =
-            pending?.sessionFile ??
-            (
-              lastCtx as { sessionManager?: { getSessionFile?: () => string | undefined } } | undefined
-            )?.sessionManager?.getSessionFile?.();
-          const saved = saveHarvestedEval({
-            cwd,
-            scenarioId: pending?.scenarioId || "manual-session-harvest",
-            signals: pending?.signals ?? harvestTracker.snapshot(),
-            reason: pending?.reason ?? reason,
-            sessionFile,
-          });
-          if (!saved.saved || !saved.path) {
-            throw new Error(saved.error ?? "Failed to save harvested eval");
-          }
-          if (!pending) {
-            retryHarvest = undefined;
-            harvestGeneration++;
-          }
-          pendingHarvestSuggestion = undefined;
-          harvestInfo = {
-            scenarioId: saved.scenarioId,
-            reason: pending?.reason ?? reason ?? "operator-harvested",
-            confidence: pending?.confidence ?? 1,
-            savedPath: saved.path,
-          };
-          recordTask("harvest", "saved", `${saved.scenarioId} (${saved.via})`);
-          record("harvest", saved.path);
-          return saved;
-        },
-      });
-      const cwd = lastCtx?.cwd ?? session.cwd;
-      if (cwd) {
-        locatorCwd = cwd;
-        try {
-          writePanelLocator({
-            url: handle.url,
-            port: handle.port,
-            pid: process.pid,
-            cwd,
-            startedAt: new Date().toISOString(),
-          });
-        } catch {
-          /* Locator is convenience only. */
         }
-      }
-      updateFooter();
-      return handle;
-    })().catch((error) => {
-      startPromise = undefined;
-      throw error;
-    });
-    return startPromise;
+        updateFooter();
+      },
+    );
+  const stopPanel = () => {
+    if (locatorCwd) removePanelLocator(locatorCwd, process.pid);
+    locatorCwd = undefined;
+    return panel.stop();
   };
 
   pi.on("session_start", async (_ev, ctx) => {
@@ -370,7 +370,9 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     turns = 0;
     harvestInfo = undefined;
     pendingHarvestSuggestion = undefined;
+    const generation = panel.generation;
     await syncAuto();
+    if (generation !== panel.generation || lastCtx !== ctx) return;
     updateFooter(ctx);
     const cfg = loadEcosystemConfig();
     const shouldAutoStart =
@@ -395,11 +397,11 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     retryHarvest = undefined;
     pendingHarvestSuggestion = undefined;
     harvestInfo = undefined;
-    handle?.push(stateOf());
+    panel.current?.push(stateOf());
   });
   pi.on("model_select", (_event, ctx) => {
     lastCtx = ctx;
-    handle?.push(stateOf());
+    panel.current?.push(stateOf());
   });
   pi.events?.on?.("principal:thrash-detected:v1", (payload: unknown) => {
     const p = payload as { command?: string; signature?: string } | undefined;
@@ -429,7 +431,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       outputTokens += msg.usage.output ?? 0;
       cacheReadTokens += msg.usage.cacheRead ?? 0;
       costUsd += msg.usage.cost?.total ?? 0;
-      handle?.push(stateOf());
+      panel.current?.push(stateOf());
       updateFooter(ctx);
     }
   });
@@ -569,12 +571,7 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
     retryHarvest = undefined;
     classifierSettings.reset();
     lastCtx = undefined;
-    const current = handle;
-    handle = undefined;
-    startPromise = undefined;
-    if (locatorCwd) removePanelLocator(locatorCwd, process.pid);
-    locatorCwd = undefined;
-    if (current) await current.close().catch(() => {});
+    await stopPanel().catch(() => {});
   });
 
   pi.registerCommand("dashboard", {
@@ -583,27 +580,20 @@ export function registerWebDashboard(pi: ExtensionAPI, session: GrantsSession): 
       lastCtx = ctx;
       const sub = args.trim().toLowerCase();
       if (sub === "stop") {
-        if (!handle) {
-          ctx.ui.notify("Standalone dashboard is not running.", "info");
-          return;
-        }
-        const prev = handle;
-        handle = undefined;
-        startPromise = undefined;
-        if (locatorCwd) removePanelLocator(locatorCwd, process.pid);
-        await prev.close();
+        const stopped = await stopPanel();
         updateFooter(ctx);
-        ctx.ui.notify("Standalone dashboard stopped.", "info");
+        ctx.ui.notify(stopped ? "Standalone dashboard stopped." : "Standalone dashboard is not running.", "info");
         return;
       }
       if (sub === "status") {
         ctx.ui.notify(
-          handle ? `Side panel running: ${handle.url}` : "Side panel stopped. Run /dashboard to start.",
+          panel.current ? `Side panel running: ${panel.current.url}` : "Side panel stopped. Run /dashboard to start.",
           "info",
         );
         return;
       }
       const started = await ensureStarted();
+      if (!started) return;
       let splitError: string | undefined;
       if (sub === "settings") {
         const url = started.url + "#ecosystem-settings";

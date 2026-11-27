@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { compareOpenRouter } from "./openrouter.mjs";
 
@@ -103,5 +107,32 @@ test("holdout uses distinct tasks, frozen model thresholds, and only the eligibl
     assert.equal(row[ids[0]].save, true);
     assert.equal(row[ids[1]].save, false);
     assert.equal(row[ids[2]].save, true);
+  }
+});
+
+test("holdout shell keeps complete and partial reports after exit", { skip: process.platform === "win32" }, (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "holdout-cli-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const preload = join(dir, "mock-openrouter.mjs");
+  writeFileSync(preload, `
+    const ids = ${JSON.stringify(ids)};
+    globalThis.fetch = async (url) => {
+      if (url.includes("/models?")) return Response.json({data:ids.map(id => ({id, architecture:{output_modalities:["decisions"]}}))});
+      if (process.env.REPORT_RESULT === "partial") return new Response(null, {status: 403});
+      return Response.json({answers:{save:{type:"noul",noul:0.6}}});
+    };
+  `);
+  for (const status of ["complete", "partial"]) {
+    const child = spawnSync("bash", [fileURLToPath(new URL("./run-holdout.sh", import.meta.url))], {
+      encoding: "utf8",
+      env: {...process.env, TMPDIR:dir, OPENROUTER_API_KEY:"test-fixture", REPORT_RESULT:status,
+        NODE_OPTIONS:"--import=" + pathToFileURL(preload).href},
+    });
+    assert.equal(child.status, status === "complete" ? 0 : 1, child.stderr);
+    const path = /^Report: (.+)$/m.exec(child.stdout)?.[1];
+    assert.ok(path, child.stdout);
+    const report = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(report.status, status);
+    assert.ok(report.rows.some(row => row.eligible));
   }
 });

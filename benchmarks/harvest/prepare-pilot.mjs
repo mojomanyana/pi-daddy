@@ -1,6 +1,7 @@
+import { pilotCheckout } from "./pilot-checkouts.mjs";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
@@ -38,12 +39,9 @@ function identify(entry, base) {
   const manifest = join(resolve(base, s), "package.json");
   return existsSync(manifest) ? JSON.parse(readFileSync(manifest, "utf8")).name : undefined;
 }
-// A sibling Scout development checkout can supply the matching research worker during joint testing.
-const scoutCandidate = join(dirname(repo), "pi-harvest-scout");
-const localScout = existsSync(join(scoutCandidate, "lib/research-model.mjs"))
-  && identify(scoutCandidate, projectDir) === "pi-scout-research" ? scoutCandidate : undefined;
-const bookieCandidate = join(dirname(repo), "pi-harvest-bookie", "packages", "pi-extension");
-const localBookie = identify(bookieCandidate, projectDir) === "pi-bookie" ? bookieCandidate : undefined;
+const localScout = pilotCheckout("scout");
+const bookie = pilotCheckout("bookie");
+const localBookie = bookie && join(bookie, "packages", "pi-extension");
 const release = JSON.parse(readFileSync(join(repo, "packages/pi-daddy/src/products/ecosystem-release.json"), "utf8"));
 for (const name of release.normalCliInstalls) {
   const configured = [...packages.map((p)=>[p,projectDir]), ...(user.packages ?? []).map((p)=>[p,profile])];

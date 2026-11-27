@@ -5,7 +5,8 @@ root=$(cd -- "$here/../.." && pwd)
 bash "$here/pilot-deps.sh"
 if [[ "${1:-}" == "--verify-bookie" ]]; then
   shift
-  bookie="${PI_BOOKIE_CHECKOUT:-$root/../bookie-pi-skills}"
+  bookie=$(node "$here/pilot-checkouts.mjs" bookie)
+  [[ -n "$bookie" ]] || { echo "Set PI_BOOKIE_CHECKOUT to your Bookie checkout." >&2; exit 1; }
   tests="$bookie/packages/pi-extension/test"
   node --test "$tests/automatic-review-sync.test.mjs" "$tests/producer-bridge.test.mjs" \
     "$root/packages/pi-daddy/test/project-memory-owner.test.ts" "$here/capture-resume.test.mjs"

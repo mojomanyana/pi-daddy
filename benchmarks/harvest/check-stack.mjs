@@ -1,3 +1,4 @@
+import { pilotCheckout } from "./pilot-checkouts.mjs";
 // Run two actual Pi processes against the local candidates and installed peers. No model requests.
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
@@ -11,13 +12,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const runFile = promisify(execFile);
 const peers = resolve(process.argv[2] ?? join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "npm", "node_modules"));
-const localBookie = resolve(root,"../pi-harvest-bookie/packages/pi-extension");
-const packages = [join(root,"packages/pi-daddy"),resolve(root,"../pi-harvest-scout"),
-  existsSync(join(localBookie,"package.json")) ? localBookie : join(peers,"pi-bookie"),
+const scout = pilotCheckout("scout"), bookie = pilotCheckout("bookie");
+assert(scout, "Set PI_SCOUT_CHECKOUT to the Scout candidate to run the joint check.");
+const packages = [join(root,"packages/pi-daddy"),scout,
+  bookie ? join(bookie,"packages/pi-extension") : join(peers,"pi-bookie"),
   ...["principal-pi-skills","skill-harness"].map(name=>join(peers,name))].map(path=>{
     assert(existsSync(join(path,"package.json")), "Missing package at " + path);
     return realpathSync(path);
   });
+for (const path of packages) console.log("Checking " + path);
 const version = path => JSON.parse(readFileSync(join(path,"package.json"),"utf8")).version;
 const sdk = version(join(root,"node_modules/@earendil-works/pi-coding-agent"));
 const release = JSON.parse(readFileSync(join(root,"packages/pi-daddy/src/products/ecosystem-release.json"),"utf8"));
@@ -31,6 +34,7 @@ try {
   const profile = join(temp,"profile"), cwd = join(temp,"workspace"), session = join(temp,"session.jsonl");
   mkdirSync(profile,{mode:0o700}); mkdirSync(cwd,{mode:0o700});
   writeFileSync(join(profile,"settings.json"),JSON.stringify({packages}));
+  writeFileSync(join(profile,"ecosystem.json"),JSON.stringify({bookie:{workspaceMemory:"follow-auto"}}));
   const probe = join(temp,"check.mjs"), result = join(temp,"result.json");
   const harnessOut = join(temp,"evaluations");
   const harvest = spawnSync(process.execPath,[join(peers,"skill-harness/bin.js"),"harvest","--turn-json","-","--out",harnessOut,"--unique","--json"],{

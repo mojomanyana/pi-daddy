@@ -107,8 +107,11 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
     throw Error(`Expected a boolean for bookie.autoSyncReviews in ${file}.`);
   if ("autoOnStartup" in parsed && typeof parsed.autoOnStartup !== "boolean")
     throw Error(`Expected a boolean for autoOnStartup in ${file}.`);
-  if (record(parsed.bookie) && "workspaceMemory" in parsed.bookie && typeof parsed.bookie.workspaceMemory !== "boolean")
-    throw Error(`Expected a boolean for bookie.workspaceMemory in ${file}.`);
+  if (record(parsed.bookie) && "workspaceMemory" in parsed.bookie) {
+    const mode = parsed.bookie.workspaceMemory;
+    if (mode === "on" || mode === "follow-auto" || mode === "off") parsed.bookie.workspaceMemory = mode !== "off";
+    else if (typeof mode !== "boolean") throw Error(`Expected a boolean for bookie.workspaceMemory in ${file}.`);
+  }
   if (record(parsed.scout)) {
     const { model, thinking, directUrls } = parsed.scout;
     if (model !== undefined && model !== "session" && (typeof model !== "string" || !/^[^/\s]+\/[^\s]+$/.test(model)))

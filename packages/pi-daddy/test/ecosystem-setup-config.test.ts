@@ -209,3 +209,14 @@ test("fresh default setup follows the session model without assuming Fireworks c
   assert.equal(config.setupPreset?.name, "session");
   assert.deepEqual(config.models, {});
 });
+
+test("settings upgrade preserves the pilot's Bookie choice and writes a boolean on the next save", (t) => {
+  const { file } = fixture(t);
+  for (const mode of ["off", "on", "follow-auto"]) {
+    writeFileSync(file, JSON.stringify({ bookie: { workspaceMemory: mode }, scout: { model: "session" } }));
+    const cfg = loadEcosystemConfig();
+    assert.deepEqual(cfg, { bookie: { workspaceMemory: mode !== "off" }, scout: { model: "session" } });
+    saveEcosystemConfig(cfg);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), cfg);
+  }
+});

@@ -9,8 +9,8 @@ if ! node --input-type=commonjs -e '
 ' 2>/dev/null; then
   npm ci
 fi
-bookie="${PI_BOOKIE_CHECKOUT:-../bookie-pi-skills}"
-if [[ -f "$bookie/packages/pi-extension/src/producer-bridge.ts" ]]; then
+bookie=$(node benchmarks/harvest/pilot-checkouts.mjs bookie)
+if [[ -n "$bookie" && -f "$bookie/packages/pi-extension/src/producer-bridge.ts" ]]; then
   (
     cd -- "$bookie"
     if [[ ! -f node_modules/typescript/bin/tsc || ! -e node_modules/pi-bookie-core/package.json ]]; then

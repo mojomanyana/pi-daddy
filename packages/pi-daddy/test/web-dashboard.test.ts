@@ -1,4 +1,5 @@
 /** Unit tests for 5-tab Side-Panel Steering & Configuration Dashboard (cross-OS: macOS/Linux/Windows). */
+import { PanelServerLifecycle } from "../src/products/panel-server-lifecycle.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { handleConnectedCommand } from "../extensions/grants-connected-command.ts";
@@ -166,4 +167,49 @@ test("/grants dashboard notifies with standalone Side Panel guidance and reports
     { message: "Use `/dashboard open` or `/dashboard split` for the standalone Side Panel.", level: "info" },
     { message: "grants: dashboard unavailable — socket closed", level: "error" },
   ]);
+});
+
+test("a delayed panel start closes after shutdown while the new session keeps its own panel", async () => {
+  const panel = new PanelServerLifecycle();
+  const published: number[] = [],
+    closed: number[] = [];
+  const create = (port: number) => ({
+    port,
+    url: "",
+    token: "fixture",
+    push() {},
+    async close() {
+      closed.push(port);
+    },
+  });
+  let release!: (handle: ReturnType<typeof create>) => void;
+  const delayed = new Promise<ReturnType<typeof create>>((resolve) => {
+    release = resolve;
+  });
+  const oldStart = panel.start(
+    () => delayed,
+    (h) => published.push(h.port),
+  );
+  assert.equal(
+    panel.start(
+      () => {
+        throw Error("duplicate start");
+      },
+      () => {},
+    ),
+    oldStart,
+  );
+  const stopping = panel.stop();
+  const next = await panel.start(
+    async () => create(2),
+    (h) => published.push(h.port),
+  );
+  release(create(1));
+  assert.equal(await oldStart, undefined);
+  await stopping;
+  assert.equal(panel.current, next);
+  assert.deepEqual(published, [2]);
+  assert.deepEqual(closed, [1]);
+  await panel.stop();
+  assert.deepEqual(closed, [1, 2]);
 });

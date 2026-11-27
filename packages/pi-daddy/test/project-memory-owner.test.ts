@@ -75,6 +75,7 @@ test("workspace memory follows each Auto change, while manual memory edits leave
     else process.env.PI_CODING_AGENT_DIR = previous;
   });
   const { pi, session, ctx, current, notices, request } = fixture();
+  await writeFile(join(profile, "ecosystem.json"), JSON.stringify({ bookie: { workspaceMemory: "follow-auto" } }));
   const bridge = registerProjectMemoryOwner(pi, session);
   const ready = bridge.begin(ctx);
   await initializeSessionAutoMode(session, process.env, current.id, ctx);

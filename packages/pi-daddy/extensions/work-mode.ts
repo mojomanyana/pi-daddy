@@ -276,13 +276,13 @@ async function collectReviewDiff(cwd: string): Promise<string> {
 async function runColdDiffReview(
   ctx: ExtensionContext,
   originalPrompt: string,
+  model: unknown,
   signal?: AbortSignal,
 ): Promise<{ pass: boolean; feedback?: string }> {
   try {
     const trimmed = await collectReviewDiff(ctx.cwd);
     if (!trimmed) return { pass: true };
     const registry = (ctx as any).modelRegistry;
-    const { model } = selectRegistryModel(registry, resolveEcosystemModelCandidates("strong"), (ctx as any).model);
     if (!model || typeof registry?.streamSimple !== "function") throw Error("Review model unavailable");
     const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
     const reviewPrompt = [
@@ -353,6 +353,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     const verdict = await runColdDiffReview(
       lastCtx,
       `${lastPrompt}\n\n[Escalation trigger: ${reason}. Identify the exact root cause and concrete fix.]`,
+      model,
       (lastCtx as any)?.signal,
     );
     const send = (pi as any).sendUserMessage;
@@ -481,19 +482,18 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     const active = capturedWorkMode(session);
     const wantsAmbitiousDepth =
       active?.mode === "ambitious" && (active.emphases.length === 0 || active.emphases.includes("depth"));
-    const wantsStandardStrong =
-      !wantsAmbitiousDepth &&
-      resolveEcosystemModelCandidates("strong").some((candidate) => candidate !== "session") &&
-      process.env.PI_DADDY_AUTO_REVIEW !== "0";
-    if (!wantsAmbitiousDepth && !wantsStandardStrong) return;
-    if (wantsStandardStrong) {
+    if (!wantsAmbitiousDepth && process.env.PI_DADDY_AUTO_REVIEW === "0") return;
+    const { model } = selectRegistryModel(ctx.modelRegistry, resolveEcosystemModelCandidates("strong"), ctx.model);
+    if (!wantsAmbitiousDepth) {
+      const strong = model as typeof ctx.model;
+      if (!strong || (strong.provider === ctx.model?.provider && strong.id === ctx.model?.id)) return;
       const preview = await collectReviewDiff(ctx.cwd);
       const fileCount = (preview.match(/^\+\+\+ b\//gm) ?? []).length;
       const lineCount = preview.split("\n").length;
       if (fileCount < 2 && lineCount < 60) return;
     }
     coldReviewRanForTurn = true;
-    const verdict = await runColdDiffReview(ctx, lastPrompt, (ctx as any)?.signal);
+    const verdict = await runColdDiffReview(ctx, lastPrompt, model, (ctx as any)?.signal);
     if (verdict.pass || !verdict.feedback) return;
     const content = [
       "Independent cold diff review found concrete blocker(s) against the user's requirements:",

@@ -2,7 +2,8 @@
 set -eu
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 root=$(cd -- "$here/../.." && pwd)
-scout="${PI_SCOUT_CHECKOUT:-$root/../pi-scout-research}"
+scout=$(node "$here/pilot-checkouts.mjs" scout)
+[[ -n "$scout" ]] || { echo "Set PI_SCOUT_CHECKOUT to your Scout checkout." >&2; exit 1; }
 live=0
 full=0
 for option in "$@"; do
