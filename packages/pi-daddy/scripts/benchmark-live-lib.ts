@@ -2,6 +2,7 @@
  * Pure, unit-testable acceptance evaluators and reporting helpers for `benchmark-live-comparison.mjs`.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
 
@@ -328,7 +329,7 @@ export function summarizeAcceptance(assertions: readonly AcceptanceAssertion[]) 
   };
 }
 
-function isSkillMdMutationCall(call: BenchmarkToolCall): boolean {
+function isFixtureSkillMdMutation(call: BenchmarkToolCall, fixtureDir: string): boolean {
   if (!call) return false;
   const tool = call.tool;
   const isMutation =
@@ -347,31 +348,39 @@ function isSkillMdMutationCall(call: BenchmarkToolCall): boolean {
       call.args?.filename ??
       (call as any).path ??
       "",
-  );
-  if (rawPath) {
-    return /(?:^|[\\/])SKILL\.md$/i.test(rawPath);
-  }
-  return false;
+  ).trim();
+  if (!rawPath) return false;
+  const target = resolve(fixtureDir, "SKILL.md");
+  const candidate = resolve(fixtureDir, rawPath);
+  return candidate.toLowerCase() === target.toLowerCase();
 }
 
-function isSuccessfulToolCall(call: BenchmarkToolCall, results: readonly BenchmarkToolResult[]): boolean {
-  if (call.toolCallId) {
-    const r = results.find((res) => res.toolCallId === call.toolCallId);
-    if (r) return r.isError !== true;
-  }
-  const byTool = results.find((res) => res.tool === call.tool);
-  return byTool ? byTool.isError !== true : true;
-}
-
-function findLinkedHarnessResult(
+function findLinkedCompletion(
   call: BenchmarkToolCall,
   results: readonly BenchmarkToolResult[],
 ): BenchmarkToolResult | undefined {
-  if (!call || call.tool !== "skill_check_run") return undefined;
-  if (call.toolCallId) {
-    return results.find((r) => r?.tool === "skill_check_run" && r.toolCallId === call.toolCallId && r.isError !== true);
+  if (!call?.tool || typeof call.toolCallId !== "string" || !call.toolCallId.trim()) {
+    return undefined;
   }
-  return results.find((r) => r?.tool === "skill_check_run" && !r.toolCallId && r.isError !== true);
+  const id = call.toolCallId.trim();
+  const matches = results.filter(
+    (r) => r?.tool === call.tool && typeof r.toolCallId === "string" && r.toolCallId.trim() === id,
+  );
+  if (matches.length !== 1) {
+    return undefined;
+  }
+  return matches[0];
+}
+
+function isSuccessfulMutationCall(
+  call: BenchmarkToolCall,
+  results: readonly BenchmarkToolResult[],
+  fixtureDir: string,
+): boolean {
+  if (!isFixtureSkillMdMutation(call, fixtureDir)) return false;
+  const completion = findLinkedCompletion(call, results);
+  if (!completion) return false;
+  return completion.isError !== true;
 }
 
 /**
@@ -385,11 +394,13 @@ export function evaluateOrdinarySkillEdit(input: {
   processOk: boolean;
   beforeText: string;
   afterText: string;
+  fixtureDir?: string;
   toolCalls?: readonly BenchmarkToolCall[];
   toolResults?: readonly BenchmarkToolResult[];
   requiredScenarioId?: string;
 }) {
   const { processOk, beforeText, afterText, toolCalls = [], toolResults = [] } = input;
+  const fixtureDir = input.fixtureDir ? resolve(input.fixtureDir) : process.cwd();
   const failureReasons: string[] = [];
   if (!processOk) failureReasons.push("Pi process exited non-zero or timed out");
 
@@ -399,16 +410,16 @@ export function evaluateOrdinarySkillEdit(input: {
   }
 
   const harnessCalls = toolCalls.filter((c) => c?.tool === "skill_check_run");
-  const harnessResults = toolResults.filter((r) => r?.tool === "skill_check_run" && r.isError !== true);
+  const harnessResults = toolResults.filter((r) => r?.tool === "skill_check_run");
   const harnessInvoked = harnessCalls.length > 0 && harnessResults.length > 0;
   if (!harnessInvoked) {
     failureReasons.push("Skill harness was never invoked to evaluate the modified skill");
   }
 
-  // Find all indices of successful mutations of fixture SKILL.md
+  // Find all indices of confirmed successful mutations of the fixture's SKILL.md
   const skillMutationIndices: number[] = [];
   toolCalls.forEach((call, idx) => {
-    if (isSkillMdMutationCall(call) && isSuccessfulToolCall(call, toolResults)) {
+    if (isSuccessfulMutationCall(call, toolResults, fixtureDir)) {
       skillMutationIndices.push(idx);
     }
   });
@@ -443,28 +454,49 @@ export function evaluateOrdinarySkillEdit(input: {
     rerunAfterFinalEdit = true;
     for (let j = postBoundaryCalls.length - 1; j >= 0; j--) {
       const { call } = postBoundaryCalls[j];
-      const matchResult = findLinkedHarnessResult(call, toolResults);
-      if (!matchResult) {
-        if (j === postBoundaryCalls.length - 1) {
-          failureReasons.push(
-            `Harness call after final edit had no matching completed result linked to the call (${call.toolCallId ?? "unlinked"})`,
-          );
-        }
+
+      // Check if this run was explicitly limited to unrelated scenarios
+      const explicitlyUnrelated =
+        Array.isArray(call.args?.scenarios) &&
+        call.args.scenarios.length > 0 &&
+        !call.args.scenarios.map(String).includes(requiredScenario);
+
+      if (explicitlyUnrelated) {
+        // Later run explicitly limited to an unrelated scenario leaves the required verdict intact
         continue;
       }
-      const scenarios = Array.isArray(matchResult?.details?.scenarios) ? matchResult.details.scenarios : [];
-      const target = scenarios.find((s: any) => String(s.id) === requiredScenario);
-      if (target) {
-        latestApplicableVerdict = String(target.verdict);
+
+      // This is the latest run applicable to the required scenario
+      const completion = findLinkedCompletion(call, toolResults);
+      if (!completion) {
+        failureReasons.push(
+          `Latest Harness run applicable to required scenario after final edit has no completion (${call.toolCallId ?? "unlinked"})`,
+        );
+        latestApplicableVerdict = null;
+        requiredScenarioPassed = false;
         break;
       }
-    }
-    if (latestApplicableVerdict === "PASS") {
-      requiredScenarioPassed = true;
-    } else {
-      failureReasons.push(
-        `Latest applicable verdict for required scenario "${requiredScenario}" after final edit was not PASS (${latestApplicableVerdict ?? "no-verdict"})`,
-      );
+
+      // Preserve linked Harness error results: scorecard with isError:true can contain authoritative FAIL
+      const scenarios = Array.isArray(completion.details?.scenarios) ? completion.details.scenarios : [];
+      const match = scenarios.find((s: any) => String(s.id) === requiredScenario);
+      if (match) {
+        latestApplicableVerdict = String(match.verdict);
+        requiredScenarioPassed = latestApplicableVerdict === "PASS" && completion.isError !== true;
+      } else if (completion.isError === true) {
+        latestApplicableVerdict = "FAIL";
+        requiredScenarioPassed = false;
+      } else {
+        latestApplicableVerdict = "UNKNOWN";
+        requiredScenarioPassed = false;
+      }
+
+      if (latestApplicableVerdict !== "PASS") {
+        failureReasons.push(
+          `Latest applicable verdict for required scenario "${requiredScenario}" after final edit was not PASS (${latestApplicableVerdict})`,
+        );
+      }
+      break;
     }
   }
 

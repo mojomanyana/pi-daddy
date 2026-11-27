@@ -683,6 +683,7 @@ try {
         processOk: out.ok,
         beforeText: before,
         afterText: after,
+        fixtureDir: skillDir,
         toolCalls: out.toolCalls,
         toolResults: out.toolResults,
         requiredScenarioId: "tag-prefix",

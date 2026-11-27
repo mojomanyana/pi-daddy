@@ -1299,6 +1299,167 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
   assert.equal(passEditDiffNoRerun.requiredScenarioPassed, false);
   assert.ok(passEditDiffNoRerun.failureReasons.some((r) => /insufficient evidence/i.test(r)));
 
+  // Regression: Fixture edit → tag-prefix PASS → linked tag-prefix FAIL with isError:true
+  const editPassFailError = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "skill_check_run", toolCallId: "h-2", args: { scenarios: ["tag-prefix"] } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-2",
+        isError: true,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "FAIL" }] },
+      },
+    ],
+  });
+  assert.equal(editPassFailError.ok, false);
+  assert.equal(editPassFailError.requiredScenarioPassed, false);
+  assert.equal(editPassFailError.latestApplicableVerdict, "FAIL");
+
+  // Regression: Fixture edit → tag-prefix PASS → another tag-prefix call with no completion
+  const editPassCallNoCompletion = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "skill_check_run", toolCallId: "h-2", args: { scenarios: ["tag-prefix"] } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      // h-2 has no completion in toolResults!
+    ],
+  });
+  assert.equal(editPassCallNoCompletion.ok, false);
+  assert.equal(editPassCallNoCompletion.requiredScenarioPassed, false);
+  assert.equal(editPassCallNoCompletion.latestApplicableVerdict, null);
+  assert.ok(editPassCallNoCompletion.failureReasons.some((r) => /no completion/i.test(r)));
+
+  // Regression: Fixture edit → tag-prefix PASS → write other/SKILL.md must not move fixture boundary
+  const editPassWriteOtherSkillMd = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "write", toolCallId: "w-other", args: { path: "other/SKILL.md" } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      { tool: "write", toolCallId: "w-other", isError: false, text: "ok" },
+    ],
+  });
+  assert.equal(editPassWriteOtherSkillMd.ok, true);
+  assert.equal(editPassWriteOtherSkillMd.requiredScenarioPassed, true);
+  assert.equal(editPassWriteOtherSkillMd.latestApplicableVerdict, "PASS");
+
+  // Regression: A mutation with no matching completion must fail (no default-success)
+  const mutationNoCompletion = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-uncompleted", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+    ],
+    toolResults: [
+      // e-uncompleted has no completion in toolResults
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+    ],
+  });
+  assert.equal(mutationNoCompletion.ok, false);
+  assert.ok(mutationNoCompletion.failureReasons.some((r) => /cannot establish the mutation boundary/i.test(r)));
+
+  // Regression: Harness call/result pair with missing IDs must fail (no tool-name-only fallback)
+  const harnessMissingCallId = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run" }, // missing toolCallId
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run", // missing toolCallId
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+    ],
+  });
+  assert.equal(harnessMissingCallId.ok, false);
+  assert.equal(harnessMissingCallId.requiredScenarioPassed, false);
+  assert.ok(harnessMissingCallId.failureReasons.some((r) => /no completion/i.test(r)));
+
+  // Regression: A later run explicitly limited to an unrelated scenario leaves the required verdict intact
+  const passFollowedByUnrelatedRun = evaluateOrdinarySkillEdit({
+    processOk: true,
+    beforeText,
+    afterText,
+    fixtureDir: "/fake/fixture",
+    toolCalls: [
+      { tool: "edit", toolCallId: "e-1", args: { path: "SKILL.md" } },
+      { tool: "skill_check_run", toolCallId: "h-1", args: { scenarios: ["tag-prefix"] } },
+      { tool: "skill_check_run", toolCallId: "h-2", args: { scenarios: ["notes-commit"] } },
+    ],
+    toolResults: [
+      { tool: "edit", toolCallId: "e-1", isError: false, text: "ok" },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-1",
+        isError: false,
+        details: { scenarios: [{ id: "tag-prefix", verdict: "PASS" }] },
+      },
+      {
+        tool: "skill_check_run",
+        toolCallId: "h-2",
+        isError: false,
+        details: { scenarios: [{ id: "notes-commit", verdict: "PASS" }] },
+      },
+    ],
+  });
+  assert.equal(passFollowedByUnrelatedRun.ok, true);
+  assert.equal(passFollowedByUnrelatedRun.requiredScenarioPassed, true);
+  assert.equal(passFollowedByUnrelatedRun.latestApplicableVerdict, "PASS");
+
   // Focused regression 2: PASS → edit SKILL.md → Harness call with no matching result must fail
   const passEditHarnessNoResult = evaluateOrdinarySkillEdit({
     processOk: true,
@@ -1323,7 +1484,7 @@ test("Review pass 5: ordinary skill-edit requires observed Harness verification 
   assert.equal(passEditHarnessNoResult.ok, false);
   assert.equal(passEditHarnessNoResult.requiredScenarioPassed, false);
   assert.equal(passEditHarnessNoResult.latestApplicableVerdict, null);
-  assert.ok(passEditHarnessNoResult.failureReasons.some((r) => /no matching completed result/i.test(r)));
+  assert.ok(passEditHarnessNoResult.failureReasons.some((r) => /no completion/i.test(r)));
 
   // Focused regression 3: Edit SKILL.md → matching PASS → write an unrelated file must still pass
   const editPassWriteUnrelated = evaluateOrdinarySkillEdit({
