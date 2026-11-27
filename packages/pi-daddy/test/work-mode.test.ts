@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
+import { cleanupTempDirs, tempDir } from "./tmp.ts";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { GrantsSession } from "../extensions/session.ts";
@@ -18,6 +18,8 @@ import {
   WORK_MODE_ENTRY,
 } from "../extensions/work-mode.ts";
 import { ENV_WORK_MODE, parseWorkMode, workModeGuidance, standardWorkMode } from "../src/kernel/work-mode.ts";
+
+after(cleanupTempDirs);
 
 const ambitious = { mode: "ambitious" as const, emphases: ["depth" as const] };
 type Entry = { type: string; customType: string; data: unknown };
@@ -234,8 +236,7 @@ test("parent guidance is per run and explicit Standard restores the original unm
 });
 
 test("Standard cold review dispatches only to an available model distinct from the active model", async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), "standard-review-"));
-  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = await tempDir("standard-review-");
   execFileSync("git", ["init", "--quiet"], { cwd });
   await writeFile(join(cwd, "one.txt"), "first");
   await writeFile(join(cwd, "two.txt"), "second");

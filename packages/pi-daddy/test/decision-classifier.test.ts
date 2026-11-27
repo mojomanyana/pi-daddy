@@ -401,12 +401,12 @@ test("askClassifier rejects malformed model IDs and classifierSettings populates
   assert.equal(readEcosystemConfig()?.harvest?.classifier, "llama/kev");
 });
 
-test("ecosystem.json requires boolean bookie.workspaceMemory (rejects legacy string values)", async (t) => {
+test("ecosystem.json rejects unrecognized bookie.workspaceMemory values", async (t) => {
   profile(t);
   const { writeFileSync } = await import("node:fs");
   writeFileSync(
     join(process.env.PI_CODING_AGENT_DIR!, "ecosystem.json"),
-    JSON.stringify({ bookie: { workspaceMemory: "off" } }),
+    JSON.stringify({ bookie: { workspaceMemory: "sometimes" } }),
   );
   assert.throws(() => readEcosystemConfig(), /Expected a boolean for bookie\.workspaceMemory/);
 });
