@@ -9,9 +9,47 @@ import {
   type ParentToolFacts,
 } from "./parent-tools.ts";
 
-/** Native CLI tools shared by the qualified Pi 1.0.4 and 1.5.2 runtimes, not the display catalog. */
-const nativeTools = new Set(["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"]);
-const governedTools = new Set(["delegate", "delegate_all", "delegate_chain", "delegate_describe"]);
+/** Native CLI tools qualified for Pi 1.6.1+ children. `codemode` is admitted for read-only roles only. */
+const nativeTools = new Set([
+  "read",
+  "bash",
+  "powershell",
+  "edit",
+  "edit-diff",
+  "write",
+  "grep",
+  "find",
+  "ls",
+  "parallel",
+]);
+const mutatingOrShellTools = new Set([
+  "tool:bash",
+  "tool:powershell",
+  "tool:edit",
+  "tool:edit-diff",
+  "tool:write",
+  "tool:*",
+]);
+const governedTools = new Set([
+  "delegate",
+  "delegate_all",
+  "delegate_chain",
+  "delegate_describe",
+  "quick_review",
+  "delegate_tournament",
+]);
+
+/**
+ * Optional Pi 1.6.1+ runtime tools that named specialist definitions may declare alongside core tools.
+ * When absent from the current Pi host's catalog/tool surface, named definitions attenuate them away
+ * cleanly instead of refusing spawn; when present, read-only `codemode`/`parallel` and `edit-diff` flow through.
+ */
+export const OPTIONAL_RUNTIME_TOOLS: ReadonlySet<string> = new Set(["codemode", "parallel", "edit-diff"]);
+
+/** True when a capability set has no file-mutation or shell capabilities, making child `codemode` read-only safe. */
+export function isReadOnlyCapabilitySet(capabilities: readonly Capability[]): boolean {
+  return !capabilities.some((c) => mutatingOrShellTools.has(c));
+}
 export interface ChildToolSource {
   readonly name: string;
   readonly sourceInfo?: Readonly<{ path?: string; source?: string }>;
@@ -68,8 +106,13 @@ export function childToolDeliveryRefusal(
     const source = entries?.length === 1 ? entries[0].sourceInfo : undefined;
     // Pure legacy callers may omit observations; real extension dispatch always supplies the live inventory.
     const unobserved = context.childToolSources === undefined;
+    const readOnlyCodemode =
+      name === "codemode" &&
+      isReadOnlyCapabilitySet(requested) &&
+      (unobserved || (source?.source === "builtin" && source.path === "builtin:codemode") || source === undefined);
     const builtin =
-      nativeTools.has(name) && (unobserved || (source?.source === "builtin" && source.path === `builtin:${name}`));
+      (nativeTools.has(name) && (unobserved || (source?.source === "builtin" && source.path === `builtin:${name}`))) ||
+      readOnlyCodemode;
     const governed =
       governedTools.has(name) &&
       requested.includes("tool:delegate") &&

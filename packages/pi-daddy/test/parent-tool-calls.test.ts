@@ -85,7 +85,8 @@ test("only a registered running child, with its own key and grant, reaches the p
     assert.deepEqual(await ask("exec-a", b.key), unknown, "another child's key");
     assert.deepEqual(await ask("exec-b", a.key), unknown, "another child's identity");
     assert.deepEqual(await ask("exec-c", ungranted.key), refused(PARENT_TOOL_REFUSALS.notGranted));
-    assert.deepEqual(await ask("exec-a", a.key, "bookie_search"), refused(PARENT_TOOL_REFUSALS.notAllowlisted));
+    assert.deepEqual(await ask("exec-a", a.key, "bookie_search"), refused(PARENT_TOOL_REFUSALS.notGranted));
+    assert.deepEqual(await ask("exec-a", a.key, "bookie_write"), refused(PARENT_TOOL_REFUSALS.notAllowlisted));
     await assert.rejects(
       ask("exec-a", a.key, "scout_research", { ...owner.reference, token: "0".repeat(48) }),
       /refused the request \(Error: Unauthorized Auto policy request\)/,

@@ -136,6 +136,7 @@ export default function (pi: ExtensionAPI, trustedSession?: GrantsSession) {
     if (event?.reason !== "reload") forgetDescribedDefinitions(reload.lifecycle);
     session.reconcileEnvironment(reload.environment, reload.lifecycle, ctx.cwd);
     session.ownerBound = true;
+    session.projectTrusted = ctx.isProjectTrusted?.() === true;
     const projectMemoryReady = projectMemory.begin(ctx);
     selectedReady = undefined;
     selectedReportContext = ctx;

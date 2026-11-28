@@ -26,7 +26,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { maySpawnDefinition } from "../src/kernel/delegate.ts";
 import { ceilingForDefinition } from "../src/kernel/definitions.ts";
-import { childToolDeliveryRefusal, type ChildToolSource } from "../src/kernel/child-tools.ts";
+import { OPTIONAL_RUNTIME_TOOLS, childToolDeliveryRefusal, type ChildToolSource } from "../src/kernel/child-tools.ts";
+import { CROSS_MODEL_PROXIED_TOOLS } from "../src/kernel/parent-tools.ts";
 import { MAX_CHILDREN_PER_CALL, splitBudget } from "../src/kernel/fanout.ts";
 import {
   PAINT_INTERVAL_MS,
@@ -189,9 +190,31 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       autoModeRef: session.autoMode?.reference,
       ...parentRun,
     };
+    const offeredProxyNames = new Set((parentRun?.parentTools ?? []).map((t) => t.name));
+    const childSourceNames = childToolSources ? new Set(childToolSources.map((t) => t.name)) : undefined;
     const deliverable = (definition: Parameters<typeof ceilingForDefinition>[0]) => {
       try {
-        return !childToolDeliveryRefusal(ceilingForDefinition(definition).capabilities, delivery);
+        const ceiling = ceilingForDefinition(definition);
+        if (ceiling.undeclared) return false;
+        const hasCore = ceiling.capabilities.some(
+          (c) => !c.startsWith("tool:") || !CROSS_MODEL_PROXIED_TOOLS.has(c.slice(5)),
+        );
+        let caps = hasCore
+          ? ceiling.capabilities.filter(
+              (c) =>
+                !c.startsWith("tool:") ||
+                !CROSS_MODEL_PROXIED_TOOLS.has(c.slice(5)) ||
+                offeredProxyNames.has(c.slice(5)),
+            )
+          : ceiling.capabilities;
+        const hasNonOptionalCore = caps.some((c) => !c.startsWith("tool:") || !OPTIONAL_RUNTIME_TOOLS.has(c.slice(5)));
+        if (hasNonOptionalCore && childSourceNames) {
+          caps = caps.filter(
+            (c) =>
+              !c.startsWith("tool:") || !OPTIONAL_RUNTIME_TOOLS.has(c.slice(5)) || childSourceNames.has(c.slice(5)),
+          );
+        }
+        return !childToolDeliveryRefusal(caps, delivery);
       } catch {
         return false; // An unreadable ceiling is not offered; dispatch fails on the same read.
       }
@@ -251,6 +274,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     model: Type.Optional(Type.String({ description: "Model as provider/id. Defaults to this session's." })),
     thinking: thinkingShape,
     context: Type.Optional(contextShape()),
+    attachedBriefs: Type.Optional(
+      Type.Array(Type.String({ pattern: "^[a-f0-9]{64}$" }), {
+        maxItems: 8,
+        description: "Optional Scout brief SHA-256 hashes attached to this specialist assignment.",
+      }),
+    ),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -287,6 +316,12 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
     ),
     thinking: thinkingShape,
     context: Type.Optional(contextShape()),
+    attachedBriefs: Type.Optional(
+      Type.Array(Type.String({ pattern: "^[a-f0-9]{64}$" }), {
+        maxItems: 8,
+        description: "Optional Scout brief SHA-256 hashes attached to this specialist assignment.",
+      }),
+    ),
     correlation: Type.Optional(correlationShape),
     workspace: Type.Optional(workspaceShape),
   });
@@ -348,6 +383,7 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             params.context?.mode === "files" && (!params.context.files || params.context.files.length === 0)
               ? { mode: "none" as const }
               : params.context,
+          attachedBriefs: params.attachedBriefs,
           correlation: params.correlation,
           workspace: params.workspace,
         },
@@ -380,6 +416,9 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
       const failed = !outcome.operation?.reused && (!outcome.ok || outcome.control === "failed");
       // Pi adds `usage` to this session's totals; `details.childUsage` says what it covers (2026-11-17).
       const { usage, childUsage } = delegationUsage([outcome]);
+      const recoveryNote = outcome.recovery
+        ? `\n\n[Recovery: ${outcome.recovery.label}] ${outcome.recovery.guidance}`
+        : "";
       return capture.finish(
         {
           ...(usage ? { usage } : {}),
@@ -388,8 +427,8 @@ export function registerDelegationTools(pi: ExtensionAPI, session: GrantsSession
             {
               type: "text",
               text: failed
-                ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}`
-                : outcome.text || "(no output)",
+                ? `delegation failed: ${outcome.reason ?? "required control failed"}${outcome.text ? `\n\n${outcome.text}` : ""}${recoveryNote}`
+                : `${outcome.text || "(no output)"}${outcome.recovery ? `\n\n[Recovery: ${outcome.recovery.label}]` : ""}`,
             },
             executionEvidenceContent("delegate", [outcome], 1),
           ],

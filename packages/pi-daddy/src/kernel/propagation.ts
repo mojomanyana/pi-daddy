@@ -232,8 +232,10 @@ export function depthConfig(depthRaw: string | undefined, maxDepthRaw: string | 
   return { depth: depth ?? 0, maxDepth: maxDepth ?? DEFAULT_MAX_DEPTH, malformed };
 }
 
-/** The documented default child-depth bound when `PI_DADDY_MAX_DEPTH` is not set. */
-export const DEFAULT_MAX_DEPTH = 2;
+/** The documented default child-depth bound when `PI_DADDY_MAX_DEPTH` is not set (main session = depth 0). */
+export const DEFAULT_MAX_DEPTH = 4;
+/** Maximum operator-selectable delegation depth in Settings (depth 1..8). */
+export const MAX_SELECTABLE_DEPTH = 8;
 
 /**
  * Gated by default in a governed session (ADR-0012).

@@ -22,6 +22,7 @@ import {
 import { storedGrantSessionState } from "./stored-grant-session.ts";
 import { chooseExecutor } from "../src/executors/executor.ts";
 import { ENV_ALLOW_UNRESOLVED_MODELS } from "../src/kernel/model-preflight.ts";
+import { loadEcosystemConfig } from "../src/kernel/ecosystem-config.ts";
 import type { ReloadLifecycle } from "./reload-environment.ts";
 import { ENV_GOVERNANCE, type GrantsSession } from "./session.ts";
 
@@ -52,7 +53,9 @@ export function reconcileSessionEnvironment(
   session.governed = !governanceOff;
   session.inherited = governanceOff ? stored.inherited : stored.governed ? stored.inherited : [WILDCARD];
   session.depth = bounds.depth;
-  session.maxDepth = bounds.maxDepth;
+  const configuredDepth =
+    environment[ENV_MAX_DEPTH] === undefined ? loadEcosystemConfig(environment).delegation?.maxDepth : undefined;
+  session.maxDepth = configuredDepth !== undefined && bounds.malformed.length === 0 ? configuredDepth : bounds.maxDepth;
   session.malformedBounds = bounds.malformed;
   session.gated = session.governed ? gatedFromEnv(environment[ENV_GATED]) : parseList(environment[ENV_GATED]);
   session.ledgerPath = ledgerRaw !== undefined ? ledgerRaw : stored.defaultLedger;
@@ -70,6 +73,7 @@ export function reconcileSessionEnvironment(
   session.capacity = capacityState.allocator;
   session.capacityRefusal = capacityState.refusal;
   session.fanoutBudget = session.capacity.total;
+  session.fanoutFromEnvironment = environment[ENV_FANOUT] !== undefined;
   session.mayDelegate =
     !session.governed || session.inherited.includes(DELEGATE_CAPABILITY) || session.inherited.includes(WILDCARD);
   session.allowUnresolvedModels = environment[ENV_ALLOW_UNRESOLVED_MODELS] === "1";

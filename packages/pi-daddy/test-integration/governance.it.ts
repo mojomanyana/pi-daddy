@@ -887,7 +887,7 @@ describe("governance decisions in a real pi process", { skip: piAvailable() ? fa
     // `allowed-tools`, and that clause is the PLANNER's own wording rather than a category invented by the
     // summariser (R-81).
     assert.match(line, /fabric-agent \(needs agent:fabric-agent\)/);
-    assert.match(line, /undeclared \(agent "undeclared" declares no `allowed-tools`/);
+    assert.match(line, /inline skills: undeclared/);
   });
 
   test("R-81: a session with no tool:delegate is told so, not told what is spawnable", async () => {

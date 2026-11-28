@@ -159,15 +159,14 @@ test("native binding supports the legacy five phases and the optional test-revie
   }
 });
 
-test("optional test-review does not admit unknown phases, partial manifests or malformed binding rows", async () => {
+test("manifest validation rejects invalid phase names, empty manifests, or malformed binding rows", async () => {
   const { root, commands } = await fixture([...legacyPhases, "test-review"]);
   const path = join(root, "principal-agents.json");
   const manifest = JSON.parse(await readFile(path, "utf8"));
   const row = manifest.bindings["test-review"];
-  const { investigate: _removed, ...partial } = manifest.bindings;
   for (const bindings of [
-    { ...manifest.bindings, unexpected: row },
-    partial,
+    {},
+    { ...manifest.bindings, Bad_Name: row },
     { ...manifest.bindings, "test-review": null },
     { ...manifest.bindings, "test-review": { ...row, agentSha256: "invalid" } },
     { ...manifest.bindings, "test-review": { ...row, agent: "agents/principal-review.md" } },

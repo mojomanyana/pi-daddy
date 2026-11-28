@@ -27,11 +27,26 @@ import { takeBytes } from "./run-child.ts";
 /**
  * The closed allowlist of parent-only tools a child may reach through its parent.
  *
- * A name is added here by a dated decision in AGENTS.md and by nothing else: not configuration, not a pattern,
- * not a grant and not anything a session observes. Bookie's recall tools are deliberately absent; the decision
- * record says why and what would have to exist first.
+ * - `scout_research` requires the child to share the root's provider/model (`sameModel`).
+ * - `scout_brief_read`, `bookie_search`, `bookie_read`, and `bookie_propose_memory` are
+ *   scoped by workspace, active assignment, destination, and Bookie/Scout permission rechecks
+ *   at call time, so assigned specialists on another configured/local model may use them.
  */
-export const PARENT_PROXIED_TOOLS: readonly string[] = Object.freeze(["scout_research"]);
+export const PARENT_PROXIED_TOOLS: readonly string[] = Object.freeze([
+  "scout_research",
+  "scout_brief_read",
+  "bookie_search",
+  "bookie_read",
+  "bookie_propose_memory",
+]);
+
+/** Parent-run tools that recheck workspace/assignment/destination at call time across configured/local models. */
+export const CROSS_MODEL_PROXIED_TOOLS: ReadonlySet<string> = new Set([
+  "scout_brief_read",
+  "bookie_search",
+  "bookie_read",
+  "bookie_propose_memory",
+]);
 
 /** JSON bytes of one call's arguments. Holds Scout's own declared maximum (two 4000-character fields, six URLs). */
 export const MAX_PARENT_TOOL_ARGUMENT_BYTES = 64 * 1024;
@@ -159,30 +174,23 @@ function offeredParentTools(capabilities: readonly Capability[], facts: ParentTo
   });
 }
 
-const modelAllows = (facts: ParentToolFacts) =>
-  facts.rootModel === "preview" || sameModel(facts.childModel, facts.rootModel);
+const modelAllowsTool = (toolName: string, facts: ParentToolFacts) =>
+  CROSS_MODEL_PROXIED_TOOLS.has(toolName) ||
+  facts.rootModel === "preview" ||
+  sameModel(facts.childModel, facts.rootModel);
 
-/**
- * The tools a set of capabilities may reach through the parent. Every condition must hold; a missing fact
- * means none, and the caller's existing refusal then stands.
- *
- *  1. The session deciding is a root. A deeper session's copy of the tool is itself a parent-run tool, and a
- *     second level is refused rather than chained.
- *  2. There is an owner channel and a child entrypoint to load.
- *  3. The name is on the allowlist and the capabilities name it exactly as `tool:<name>`.
- *  4. The composition observed exactly one such tool as callable on a host that can run one tool from another.
- *  5. The child's model is the root's current provider and model (`sameModel`); unknown is not the same.
- */
 export function parentProxiedTools(
   capabilities: readonly Capability[],
   facts: ParentToolFacts,
 ): ParentToolDescriptor[] {
-  return modelAllows(facts) ? offeredParentTools(capabilities, facts) : [];
+  return offeredParentTools(capabilities, facts).filter((tool) => modelAllowsTool(tool.name, facts));
 }
 
 /** The tools that condition 5 alone withholds: everything else holds, and the child's model is not the root's. */
 export function parentToolsWithheldByModel(capabilities: readonly Capability[], facts: ParentToolFacts): string[] {
-  return modelAllows(facts) ? [] : offeredParentTools(capabilities, facts).map((tool) => tool.name);
+  return offeredParentTools(capabilities, facts)
+    .filter((tool) => !modelAllowsTool(tool.name, facts))
+    .map((tool) => tool.name);
 }
 
 /** The one sentence the child-delivery refusal gains when the model rule is its reason. */

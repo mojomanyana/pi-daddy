@@ -1,14 +1,12 @@
 /** Legacy Principal dual-definition binding. Ordinary selected inline roles do not need this adapter. */
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { realpath } from "node:fs/promises";
 import { ceilingForDefinition, parseSkillDefinition, type SkillDefinition } from "./definitions.ts";
 import { resolve } from "./resolve.ts";
 import type { DefinitionSource } from "./definition-sources.ts";
-const v6Phases = ["build", "review", "debug"];
-const requiredPhases = ["plan", "build", "review", "debug", "investigate"];
-const phases = [...requiredPhases, "test-review"];
-const validPhaseSets = [v6Phases, requiredPhases, phases];
+const validPhaseName = (name: string) => /^[a-z0-9][a-z0-9-]{0,63}$/.test(name);
 const hash = (value: string) => createHash("sha256").update(value, "utf8").digest("hex");
 const object = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const exact = (x: Record<string, unknown>, keys: string[]) =>
@@ -22,7 +20,7 @@ export async function principalBinding(
 ): Promise<SkillDefinition> {
   const phase = inline.name;
   const marked = inline.metadata?.["principal-package"] === "principal-pi-skills";
-  if (!phases.includes(phase) || path !== join(dirname(dirname(path)), phase, "SKILL.md")) {
+  if (!validPhaseName(phase) || path !== join(dirname(dirname(path)), phase, "SKILL.md")) {
     if (marked) throw Error("marked Principal skill has a noncanonical phase or path");
     return inline;
   }
@@ -40,16 +38,18 @@ export async function principalBinding(
     return inline;
   }
   const manifest: unknown = JSON.parse(await read(join(root, "principal-agents.json"), "binding-manifest", sources));
+  const bindingNames = object(manifest) && object(manifest.bindings) ? Object.keys(manifest.bindings) : [];
   if (
     !object(manifest) ||
     !exact(manifest, ["version", "package", "bindings"]) ||
     manifest.version !== 1 ||
     manifest.package !== "principal-pi-skills" ||
     !object(manifest.bindings) ||
-    !validPhaseSets.some((set) => exact(manifest.bindings as Record<string, unknown>, set))
+    bindingNames.length === 0 ||
+    !bindingNames.every(validPhaseName)
   )
     throw Error("invalid Principal binding manifest");
-  for (const name of Object.keys(manifest.bindings)) {
+  for (const name of bindingNames) {
     const row = manifest.bindings[name];
     if (
       !object(row) ||
@@ -63,7 +63,13 @@ export async function principalBinding(
     )
       throw Error("invalid Principal binding row");
   }
-  if (!Object.hasOwn(manifest.bindings, phase)) throw Error("selected Principal phase has no binding row");
+  // Unmarked inline-only skills (like git-ops, which have no delegated twin file) return their inline definition.
+  // Any marked phase or skill with a delegated twin file must have a verified binding row in principal-agents.json.
+  if (!Object.hasOwn(manifest.bindings, phase)) {
+    if (marked || existsSync(join(root, "agents", `principal-${phase}.md`)))
+      throw Error("selected Principal phase has no binding row");
+    return inline;
+  }
   const row = manifest.bindings[phase] as Record<string, string>;
   const agentPath = join(root, row.agent);
   if (

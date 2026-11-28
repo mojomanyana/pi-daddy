@@ -34,7 +34,7 @@ try {
   const profile = join(temp,"profile"), cwd = join(temp,"workspace"), session = join(temp,"session.jsonl");
   mkdirSync(profile,{mode:0o700}); mkdirSync(cwd,{mode:0o700});
   writeFileSync(join(profile,"settings.json"),JSON.stringify({packages}));
-  writeFileSync(join(profile,"ecosystem.json"),JSON.stringify({bookie:{workspaceMemory:"follow-auto"}}));
+  writeFileSync(join(profile,"ecosystem.json"),JSON.stringify({bookie:{workspaceMemory:true}}));
   const probe = join(temp,"check.mjs"), result = join(temp,"result.json");
   const harnessOut = join(temp,"evaluations");
   const harvest = spawnSync(process.execPath,[join(peers,"skill-harness/bin.js"),"harvest","--turn-json","-","--out",harnessOut,"--unique","--json"],{

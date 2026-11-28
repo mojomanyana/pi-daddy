@@ -1,12 +1,6 @@
 /** Session-owned optional guidance. Selection is operator input, never a model tool or memory inference. */
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-
-const execFileAsync = promisify(execFile);
 import type { GrantsSession } from "./session.ts";
 import {
   ENV_WORK_MODE,
@@ -16,13 +10,18 @@ import {
   type WorkModeSelection,
   type WorkModeSnapshot,
 } from "../src/kernel/work-mode.ts";
-import { isUnderPiProjectDir } from "../src/kernel/project-paths.ts";
+import { AMBITIOUS_FANOUT_BUDGET, STANDARD_FANOUT_BUDGET } from "../src/kernel/fanout.ts";
+import { ENV_FANOUT } from "../src/kernel/env-names.ts";
 import {
   loadEcosystemConfig,
   resolveEcosystemModelCandidates,
   selectRegistryModel,
 } from "../src/kernel/ecosystem-config.ts";
 import { registerWorkModeCommand } from "./work-mode-command.ts";
+import { collectReviewDiff, formatReviewScopeBanner, resolveReviewScope, type ReviewScope } from "./review-scope.ts";
+import { createSkillHarnessGate } from "./skill-harness-gate.ts";
+
+export { collectReviewDiff, formatReviewScopeBanner, resolveReviewScope, type ReviewScope };
 
 export const WORK_MODE_ENTRY = "pi-daddy:work-mode:v1";
 interface PendingMode {
@@ -162,6 +161,17 @@ export function workModeSnapshot(session: GrantsSession): WorkModeSnapshot {
     : { available: false, selection: standardWorkMode(), inherited: false };
 }
 
+/** Sync session-wide active descendant fanout across Standard (8) and Ambitious (24) unless PI_DADDY_FANOUT is explicitly pinned. */
+export function syncModeFanout(session: GrantsSession, selection: WorkModeSelection | undefined): void {
+  if (session.depth !== 0 || session.ownExecutionId) return;
+  if (session.fanoutFromEnvironment || process.env[ENV_FANOUT] !== undefined) return;
+  const target = selection?.mode === "ambitious" ? AMBITIOUS_FANOUT_BUDGET : STANDARD_FANOUT_BUDGET;
+  if (typeof session.capacity?.setTotal === "function" && session.capacity.total !== target) {
+    session.capacity.setTotal(target);
+    session.fanoutBudget = target;
+  }
+}
+
 /** Explicit operator edit. A session edit clears a queued one-shot override but keeps active work frozen. */
 export function setWorkMode(session: GrantsSession, value: unknown, scope: unknown): void {
   const state = current(session);
@@ -182,6 +192,7 @@ export function setWorkMode(session: GrantsSession, value: unknown, scope: unkno
   state.selection = clone(next.selection);
   state.pending = next.pending;
   delete state.note;
+  if (scope === "session") syncModeFanout(session, state.selection);
 }
 
 /** Capture before any asynchronous discovery/gating; one override belongs to one complete Pi run. */
@@ -201,11 +212,15 @@ export function beginWorkModeRequest(session: GrantsSession, freshRequest = fals
     }
   }
   state.active = clone(selection);
+  syncModeFanout(session, state.active);
   return clone(selection);
 }
 export function finishWorkModeRequest(session: GrantsSession): void {
   const state = current(session);
-  if (state) delete state.active;
+  if (state) {
+    delete state.active;
+    syncModeFanout(session, state.selection);
+  }
 }
 /** Child dispatch uses only the active capture, never a later UI selection. */
 export function capturedWorkMode(session: GrantsSession): WorkModeSelection | undefined {
@@ -214,74 +229,26 @@ export function capturedWorkMode(session: GrantsSession): WorkModeSelection | un
   return selected?.mode === "ambitious" ? clone(selected) : undefined;
 }
 
-async function collectReviewDiff(cwd: string): Promise<string> {
-  const parts: string[] = [];
-  let diff = "";
-  try {
-    const out = await execFileAsync("git", ["diff", "--no-color", "HEAD"], {
-      cwd,
-      timeout: 5000,
-      maxBuffer: 256 * 1024,
-    });
-    diff = out.stdout.trim();
-  } catch {
-    // Unborn HEAD (fresh git init with 0 commits): fall back to staged diff.
-    try {
-      const out = await execFileAsync("git", ["diff", "--no-color", "--cached"], {
-        cwd,
-        timeout: 5000,
-        maxBuffer: 256 * 1024,
-      });
-      diff = out.stdout.trim();
-    } catch {
-      diff = "";
-    }
-  }
-  if (diff) parts.push(diff);
-
-  // Include untracked non-ignored files so greenfield deliverables are also reviewed.
-  try {
-    const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], {
-      cwd,
-      timeout: 5000,
-      maxBuffer: 64 * 1024,
-    });
-    const untracked = stdout
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter((s) => s && !s.startsWith(".") && !s.endsWith(".log") && !isUnderPiProjectDir(s))
-      .slice(0, 12);
-    let extraBytes = 0;
-    for (const rel of untracked) {
-      if (extraBytes >= 12_000) break;
-      try {
-        const full = join(cwd, rel);
-        const info = await stat(full);
-        if (!info.isFile() || info.size === 0 || info.size > 32 * 1024) continue;
-        const raw = await readFile(full, "utf8");
-        if (raw.includes("\0")) continue;
-        const snippet = raw.slice(0, Math.min(raw.length, 12_000 - extraBytes));
-        extraBytes += snippet.length;
-        parts.push(`--- /dev/null\n+++ b/${rel}\n${snippet}`);
-      } catch {
-        /* Skip unreadable untracked file. */
-      }
-    }
-  } catch {
-    /* Non-git workspace or git unavailable. */
-  }
-  return parts.join("\n\n").trim();
-}
-
 async function runColdDiffReview(
   ctx: ExtensionContext,
   originalPrompt: string,
   model: unknown,
   signal?: AbortSignal,
-): Promise<{ pass: boolean; feedback?: string }> {
+  pi?: ExtensionAPI,
+  explicitRoots?: readonly string[],
+): Promise<{ pass: boolean; feedback?: string; scope: ReviewScope }> {
+  const scope = resolveReviewScope(ctx.cwd, originalPrompt, explicitRoots);
   try {
-    const trimmed = await collectReviewDiff(ctx.cwd);
-    if (!trimmed) return { pass: true };
+    const banner = formatReviewScopeBanner(scope);
+    if (ctx.hasUI) ctx.ui?.notify?.(banner, "info");
+    const trimmed = await collectReviewDiff(ctx.cwd, scope);
+    if (!trimmed) return { pass: true, scope };
+    pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+      producer: "principal",
+      kind: "review-started",
+      roots: scope.roots,
+      detail: `Principal · cold review started (${scope.label})`,
+    });
     const registry = (ctx as any).modelRegistry;
     if (!model || typeof registry?.streamSimple !== "function") throw Error("Review model unavailable");
     const clippedDiff = trimmed.length > 24_000 ? `${trimmed.slice(0, 24_000)}\n...[truncated]` : trimmed;
@@ -317,15 +284,27 @@ async function runColdDiffReview(
       .trim();
     if (!text || message?.stopReason === "error" || message?.stopReason === "aborted")
       throw Error("Review model unavailable");
-    if (/^VERDICT:\s*PASS\b/im.test(text)) return { pass: true };
-    return { pass: false, feedback: text.slice(0, 2500) };
+    if (/^VERDICT:\s*PASS\b/im.test(text)) {
+      pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+        producer: "principal",
+        kind: "review-completed",
+        detail: `Principal · review passed (${scope.label})`,
+      });
+      return { pass: true, scope };
+    }
+    pi?.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+      producer: "principal",
+      kind: "review-failed",
+      detail: `Principal · review found blocker(s) (${scope.label})`,
+    });
+    return { pass: false, feedback: text.slice(0, 2500), scope };
   } catch {
     if (!signal?.aborted && ctx.hasUI)
       ctx.ui?.notify?.(
         "Independent review could not finish. Choose a connected STRONG model in /dashboard settings, then use Escalate to retry.",
         "warning",
       );
-    return { pass: false };
+    return { pass: false, scope };
   }
 }
 
@@ -336,6 +315,11 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   let lastCtx: ExtensionContext | undefined;
   let coldReviewRanForTurn = false;
   let escalatedForTurn = false;
+  const skillHarnessGate = createSkillHarnessGate();
+
+  pi.events?.on?.("skill-harness:eval-result:v1", (payload: unknown) => {
+    skillHarnessGate.recordResult(payload);
+  });
 
   const runRescueEscalation = async (reason: string) => {
     if (escalatedForTurn || !lastCtx) return;
@@ -355,6 +339,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
       `${lastPrompt}\n\n[Escalation trigger: ${reason}. Identify the exact root cause and concrete fix.]`,
       model,
       (lastCtx as any)?.signal,
+      pi,
     );
     const send = (pi as any).sendUserMessage;
     if (!verdict.pass && verdict.feedback && typeof send === "function") {
@@ -404,6 +389,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     lastPrompt = "";
     coldReviewRanForTurn = false;
     escalatedForTurn = false;
+    skillHarnessGate.resetSession();
   };
 
   for (const ev of ["session_start", "session_switch", "session_fork", "session_shutdown"]) {
@@ -414,6 +400,7 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     lastCtx = ctx;
     coldReviewRanForTurn = false;
     escalatedForTurn = false;
+    skillHarnessGate.resetTurn();
     lastPrompt = typeof (event as any).prompt === "string" ? (event as any).prompt : "";
     const selected = beginWorkModeRequest(session, true);
     if (current(session)?.inherited) return;
@@ -473,11 +460,51 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     }
   });
 
-  // Mechanical lever 2: automatic fast (~1.5s, reasoning=low) cold diff review before settle:
-  // - Always enabled in Ambitious (balanced or depth).
-  // - Also enabled in Standard when PI_ECO_MODEL_STRONG is explicitly set (opt-out: PI_DADDY_AUTO_REVIEW=0)
-  //   and the diff is non-trivial (>=2 files or >=60 lines).
+  // Mechanical lever 2: Skill Harness failure gate (tracked by skill + scenario; bounded
+  // automatic retries, then explicit unresolved operator decision) + automatic scoped cold diff review.
   (pi as any).on("agent_before_settle", async (event: any, ctx: ExtensionContext) => {
+    const harnessDecision = skillHarnessGate.onBeforeSettle();
+    if (harnessDecision.action === "hold") {
+      return {
+        entries: [
+          ...(Array.isArray(event?.entries) ? event.entries : []),
+          {
+            type: "custom_message",
+            customType: harnessDecision.customType,
+            content: harnessDecision.content,
+            display: false,
+          },
+        ],
+        continue: true,
+      };
+    }
+    if (harnessDecision.action === "unresolved-decision") {
+      const list = harnessDecision.remaining.map((f) => `${f.skill}:${f.scenarioId}`).join(", ");
+      if (ctx.hasUI) {
+        ctx.ui?.notify?.(
+          `Skill Harness: unresolved failing evaluation(s) after ${harnessDecision.maxRetries} retries (${list}) — operator decision required.`,
+          "warning",
+        );
+      }
+      pi.events?.emit?.("pi-daddy:ecosystem-activity:v1", {
+        producer: "skill-harness",
+        kind: "eval-unresolved-decision",
+        remaining: harnessDecision.remaining,
+        detail: `Skill Harness · unresolved failure after ${harnessDecision.maxRetries} retries (${list}) — operator decision required`,
+      });
+      return {
+        entries: [
+          ...(Array.isArray(event?.entries) ? event.entries : []),
+          {
+            type: "custom_message",
+            customType: harnessDecision.customType,
+            content: harnessDecision.content,
+            display: true,
+          },
+        ],
+        continue: false,
+      };
+    }
     if (coldReviewRanForTurn || !lastPrompt) return;
     const active = capturedWorkMode(session);
     const wantsAmbitiousDepth =
@@ -487,16 +514,17 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
     if (!wantsAmbitiousDepth) {
       const strong = model as typeof ctx.model;
       if (!strong || (strong.provider === ctx.model?.provider && strong.id === ctx.model?.id)) return;
-      const preview = await collectReviewDiff(ctx.cwd);
+      const scope = resolveReviewScope(ctx.cwd, lastPrompt);
+      const preview = await collectReviewDiff(ctx.cwd, scope);
       const fileCount = (preview.match(/^\+\+\+ b\//gm) ?? []).length;
       const lineCount = preview.split("\n").length;
       if (fileCount < 2 && lineCount < 60) return;
     }
     coldReviewRanForTurn = true;
-    const verdict = await runColdDiffReview(ctx, lastPrompt, model, (ctx as any)?.signal);
+    const verdict = await runColdDiffReview(ctx, lastPrompt, model, (ctx as any)?.signal, pi);
     if (verdict.pass || !verdict.feedback) return;
     const content = [
-      "Independent cold diff review found concrete blocker(s) against the user's requirements:",
+      `Independent cold diff review (${verdict.scope.label}) found concrete blocker(s) against the user's requirements:`,
       "",
       verdict.feedback,
       "",
@@ -518,6 +546,9 @@ export function registerWorkMode(pi: ExtensionAPI, session: GrantsSession) {
   });
   pi.on("session_tree", (_event, ctx) => initializeWorkMode(pi, session, ctx, "tree"));
   registerWorkModeCommand(pi, session);
-  return (ctx: ModeContext, reason: string, environment: NodeJS.ProcessEnv) =>
+  return (ctx: ModeContext, reason: string, environment: NodeJS.ProcessEnv) => {
     initializeWorkMode(pi, session, ctx, reason, environment);
+    const state = current(session);
+    if (state) syncModeFanout(session, state.selection);
+  };
 }

@@ -22,6 +22,9 @@ export interface CapacityAllocator {
   readonly total: number;
   readonly available: number;
   readonly reserved: number;
+  readonly peakActive: number;
+  /** Adjust the session-wide active descendant ceiling (e.g. Standard 8 <-> Ambitious 24) without dropping live reservations. */
+  setTotal(nextTotal: number): void;
   /** Still-held occurrences; released reservations are removed, execution IDs remain tombstoned. */
   readonly retainedReservations: readonly CapacityReservation[];
   reserve(executionId: string, childAllowance: number): CapacityReservationResult;
@@ -49,19 +52,30 @@ function sameIdentity(a: CapturedWorkerIdentity, b: CapturedWorkerIdentity): boo
 const validAllowance = (value: number): boolean => Number.isSafeInteger(value) && value >= 0;
 
 /** Synchronous reservations are atomic within the actual session owner, including overlapping tool calls. */
-export function createCapacityAllocator(total: number): CapacityAllocator {
-  if (!validAllowance(total)) throw new Error("descendant capacity must be a non-negative safe integer");
-  let available = total;
+export function createCapacityAllocator(initialTotal: number): CapacityAllocator {
+  if (!validAllowance(initialTotal)) throw new Error("descendant capacity must be a non-negative safe integer");
+  let currentTotal = initialTotal;
+  let reserved = 0;
+  let peakActive = 0;
   // Keep occurrence tombstones: a stale finalizer must never release a newly reused execution identifier.
   const executions = new Set<string>();
   const held = new Map<string, CapacityReservation>();
   return Object.freeze({
-    total,
+    get total() {
+      return currentTotal;
+    },
     get available() {
-      return available;
+      return Math.max(0, currentTotal - reserved);
     },
     get reserved() {
-      return total - available;
+      return reserved;
+    },
+    get peakActive() {
+      return peakActive;
+    },
+    setTotal(nextTotal: number): void {
+      if (!validAllowance(nextTotal)) throw new Error("descendant capacity must be a non-negative safe integer");
+      currentTotal = nextTotal;
     },
     get retainedReservations() {
       return [...held.values()].filter((reservation) => reservation.state === "retained");
@@ -72,12 +86,14 @@ export function createCapacityAllocator(total: number): CapacityAllocator {
       if (!validAllowance(childAllowance) || !Number.isSafeInteger(childAllowance + 1))
         return { ok: false, reason: "child allowance must be a non-negative safe integer below the numeric ceiling" };
       const cost = childAllowance + 1;
-      if (cost > available)
+      const availableNow = Math.max(0, currentTotal - reserved);
+      if (cost > availableNow)
         return {
           ok: false,
-          reason: `active descendant capacity exhausted: ${cost} reserved units requested, ${available} available`,
+          reason: `active descendant capacity exhausted: ${cost} reserved units requested, ${availableNow} available`,
         };
-      available -= cost;
+      reserved += cost;
+      if (held.size + 1 > peakActive) peakActive = held.size + 1;
       executions.add(executionId);
       let state: CapacityReservationState = "reserved";
       let identity: CapturedWorkerIdentity | undefined;
@@ -112,7 +128,7 @@ export function createCapacityAllocator(total: number): CapacityAllocator {
             cleanup.receipt.reapedAll === true;
           if (!provenNotStarted && !settled) return (state = "retained");
           held.delete(executionId);
-          available += cost;
+          reserved = Math.max(0, reserved - cost);
           return (state = "released");
         },
       });

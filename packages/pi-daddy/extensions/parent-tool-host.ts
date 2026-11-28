@@ -14,12 +14,14 @@
  * child's model, and a tool that binds its output to the session's model checks the root's, not the child's.
  * That is checked when planning, again at launch, and again at every call, against the model Pi reports now.
  */
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { childToolUnavailable } from "../src/kernel/child-tools.ts";
 import type { Delegation } from "../src/kernel/delegate.ts";
 import { ENV_EXECUTION_ID, ENV_PARENT_TOOLS, ENV_PROXIED_TOOLS_KEY } from "../src/kernel/env-names.ts";
 import {
+  CROSS_MODEL_PROXIED_TOOLS,
   PARENT_PROXIED_TOOLS,
   PARENT_TOOL_REFUSALS,
   modelRefOf,
@@ -45,6 +47,8 @@ export const PARENT_TOOL_EXTENSION_PATH = fileURLToPath(new URL("./parent-tool-p
  * A host that does not wire nested calls lacks one or the other, which is how such a host is recognised.
  */
 export interface ParentToolHost {
+  readonly cwd?: string;
+  readonly sessionManager?: { getSessionId?(): string };
   readonly tools?: readonly { name: string }[];
   /** The session's current model. Pi resolves it when read, so a later read sees a later `/model` choice. */
   readonly model?: { provider: string; id: string };
@@ -121,7 +125,10 @@ function offer(pi: ExtensionAPI, session: GrantsSession, host?: ParentToolHost) 
   }
 }
 
+const sessionEventBus = new WeakMap<GrantsSession, ExtensionAPI["events"] | undefined>();
+
 export function bindParentTools(pi: ExtensionAPI, session: GrantsSession): void {
+  sessionEventBus.set(session, pi.events);
   session.parentToolContext = (host) => ({
     parentToolExtensionPath: PARENT_TOOL_EXTENSION_PATH,
     parentTools: offer(pi, session, host),
@@ -167,7 +174,10 @@ export interface ParentToolSession {
  */
 export function openParentTools(
   session: GrantsSession,
-  plan: Pick<Delegation, "parentTools" | "parentToolModel" | "effective" | "env">,
+  plan: Pick<
+    Delegation,
+    "parentTools" | "parentToolModel" | "effective" | "env" | "specialist" | "attachedBriefSha256"
+  >,
   executionId: string,
   host: ParentToolHost | undefined,
 ): ParentToolSession | undefined {
@@ -177,17 +187,26 @@ export function openParentTools(
   const childModel = plan.parentToolModel;
   // A gate prompt can sit between planning and here, and the root's model or switch can change while it does.
   const live = host ? liveParentTools(session, plan.effective, host, childModel) : [];
+  const needSameModel = tools.filter((t) => !CROSS_MODEL_PROXIED_TOOLS.has(t));
   if (!host || !calls || plan.env[ENV_EXECUTION_ID] !== executionId || tools.some((tool) => !live.includes(tool)))
     throw new GovernanceRefusal(
-      childToolUnavailable(tools, host && !sameModel(childModel, currentModel(host)) ? parentToolModelNote(tools) : ""),
+      childToolUnavailable(
+        tools,
+        host && needSameModel.length > 0 && !sameModel(childModel, currentModel(host))
+          ? parentToolModelNote(needSameModel)
+          : "",
+      ),
     );
   const granted = [...plan.effective];
+  const specialist = plan.specialist;
+  const attachedBriefs = plan.attachedBriefSha256;
   let registration: ReturnType<typeof calls.register>;
   try {
     registration = calls.register({
       executionId,
       tools,
-      run: (tool, args, signal) => runParentTool(session, granted, childModel, host, tool, args, signal),
+      run: (tool, args, signal) =>
+        runParentTool(session, granted, childModel, host, tool, args, signal, specialist, attachedBriefs),
     });
   } catch {
     throw new GovernanceRefusal(childToolUnavailable(tools));
@@ -199,12 +218,85 @@ export function openParentTools(
   };
 }
 
-/**
- * Run one parent-run call. The conditions the planner applied are applied again, now, against this session's
- * current model, grant, switch, inventory and host, and only then is the real tool asked for through Pi's own
- * pipeline. A refusal there (a permission hook, a human's no) comes back as an error result, never as success.
- * Anything thrown outside that pipeline becomes a fixed refusal: its message may describe the parent.
- */
+function deniedBriefRead(reason: string): ParentToolReply {
+  return {
+    status: "result",
+    isError: true,
+    ...parentToolResultText({
+      content: [{ type: "text", text: JSON.stringify({ ok: false, status: "denied", reason }) }],
+    }),
+  };
+}
+
+async function runSpecialistScoutBriefRead(
+  session: GrantsSession,
+  host: ParentToolHost,
+  childModel: string | undefined,
+  args: Record<string, unknown>,
+  specialist: string | undefined,
+  attachedBriefs: readonly string[] | undefined,
+): Promise<ParentToolReply> {
+  // Fail closed whenever assignment attachment evidence is absent or empty, or when Scout cannot authorize it.
+  if (!Array.isArray(attachedBriefs)) {
+    return deniedBriefRead("brief assignment evidence is absent");
+  }
+  const events = sessionEventBus.get(session);
+  const sessionId = host.sessionManager?.getSessionId?.();
+  const cwd = host.cwd ?? session.cwd;
+  if (!events?.emit || !sessionId || !specialist) {
+    return deniedBriefRead("specialist brief read requires active Scout assignment authorization");
+  }
+  const explicitAttached = [...attachedBriefs];
+  return new Promise<ParentToolReply>((resolveDone) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolveDone(deniedBriefRead("Scout assignment authorization did not respond"));
+      }
+    }, 2000);
+    timer.unref?.();
+    events.emit("scout:specialist-brief-read:v1", {
+      version: 1,
+      requestId: randomUUID(),
+      sessionId,
+      cwd,
+      specialist,
+      childModel,
+      // Explicitly transmit the assignment list (including []) so Scout never sees omitted evidence.
+      attachedBriefSha256: explicitAttached,
+      reference: args.reference,
+      offset: args.offset,
+      maxBytes: args.maxBytes,
+      reply: (reply: { ok?: boolean; result?: unknown; status?: string; reason?: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (reply?.ok === true && reply.result) {
+          resolveDone({
+            status: "result",
+            isError: false,
+            ...parentToolResultText({ content: [{ type: "text", text: JSON.stringify(reply.result) }] }),
+          });
+        } else {
+          resolveDone({
+            status: "result",
+            isError: true,
+            ...parentToolResultText({
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ ok: false, status: reply?.status ?? "denied", reason: reply?.reason }),
+                },
+              ],
+            }),
+          });
+        }
+      },
+    });
+  });
+}
+
 async function runParentTool(
   session: GrantsSession,
   granted: readonly Capability[],
@@ -213,14 +305,25 @@ async function runParentTool(
   tool: string,
   args: Record<string, unknown>,
   signal: AbortSignal,
+  specialist?: string,
+  attachedBriefs?: readonly string[],
 ): Promise<ParentToolReply> {
   try {
-    // Said separately because it is the one condition the operator changes in passing (`/model`).
-    if (!sameModel(childModel, currentModel(host)))
+    // Tools outside CROSS_MODEL_PROXIED_TOOLS (e.g. scout_research) strictly require same model.
+    if (!CROSS_MODEL_PROXIED_TOOLS.has(tool) && !sameModel(childModel, currentModel(host)))
       return { status: "refused", reason: PARENT_TOOL_REFUSALS.otherModel };
     if (!liveParentTools(session, granted, host, childModel).includes(tool))
       return { status: "refused", reason: PARENT_TOOL_REFUSALS.unavailable };
-    const outcome = await host.executeTool!(tool, args, { signal });
+    if (tool === "scout_brief_read") {
+      // Never fall through to parent's unscoped host.executeTool("scout_brief_read").
+      return await runSpecialistScoutBriefRead(session, host, childModel, args, specialist, attachedBriefs);
+    }
+    // Pin child-proxied Bookie proposals to specialist origin so no child can forge coordinator acceptance.
+    const effectiveArgs =
+      tool === "bookie_propose_memory"
+        ? { ...args, source: "specialist", coordinatorAccepted: false, ...(specialist ? { specialist } : {}) }
+        : args;
+    const outcome = await host.executeTool!(tool, effectiveArgs, { signal });
     return { status: "result", isError: outcome?.isError === true, ...parentToolResultText(outcome?.result) };
   } catch {
     return { status: "refused", reason: PARENT_TOOL_REFUSALS.unavailable };

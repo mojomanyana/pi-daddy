@@ -45,6 +45,15 @@ import type { ParentToolHost } from "./parent-tool-host.ts";
 import { recordDelegationDecision, type ApprovalLedgerFacts } from "./delegation-ledger.ts";
 import type { ExecutionOccurrenceIds } from "./execution-occurrence.ts";
 import { resolveDefinitionRuntime } from "./definition-runtime.ts";
+import { recoverUnavailableRoleModel } from "./model-recovery.ts";
+import { isReadOnlyCapabilitySet } from "../src/kernel/child-tools.ts";
+import {
+  assessPartialEditRecovery,
+  extractAttachedBriefSha256,
+  resolveChildExtensionsFor,
+  resolveEcosystemRoleModel,
+  snapshotWorkspaceDirtyState,
+} from "./specialist-helpers.ts";
 import {
   governedWorkspaceAccess,
   prepareDelegationWorkspace,
@@ -65,6 +74,8 @@ export interface ChildSpec {
   thinking?: string;
   /** ADR-0078: what of the parent's session crosses. Validated in the kernel, never here. */
   context?: unknown;
+  /** Optional attached Scout brief SHA-256 hashes authorized for this specialist assignment. */
+  attachedBriefs?: string[];
   correlation?: CorrelationMetadata;
   workspace?: DelegationWorkspaceSpec;
 }
@@ -370,12 +381,16 @@ async function runOneDelegationImplementation(
       modelSource: spec.model ? "explicit" : "pi",
       thinkingSource: "pi",
     };
+    const roleEcosystemModel =
+      !spec.model && spec.agent
+        ? resolveEcosystemRoleModel(spec.agent, ctx.modelRegistry as never, ctx.model)
+        : undefined;
     try {
       configured =
         options.resolvedRuntime ??
         resolveDefinitionRuntime({
           definition: spec.agent,
-          explicit: { model: spec.model, thinking: spec.thinking },
+          explicit: { model: spec.model ?? roleEcosystemModel, thinking: spec.thinking },
           session: session.definitionRuntimeOverrides,
           settings: session.definitionRuntimeSettings,
           piModel: defaultModel,
@@ -386,13 +401,37 @@ async function runOneDelegationImplementation(
     } catch (error) {
       runtimeRefusal = structuredRefusal("MODEL_UNRESOLVED", `runtime selection refused: ${String(error)}`);
     }
-    const resolvedRuntime = configured;
+    let resolvedRuntime = configured;
+    let modelRefusal =
+      runtimeRefusal ??
+      preflightModel(configured.model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels);
+    // Outage recovery: if an explicitly selected role model fails preflight, offer "Use session model once"
+    // or "Choose a new default" from compatible configured models, then continue only the interrupted step.
+    if (modelRefusal && configured.model && configured.model !== defaultModel && !askNobody) {
+      const recovered = await recoverUnavailableRoleModel({
+        role: spec.agent ?? "specialist",
+        failedModel: configured.model,
+        sessionModel: defaultModel,
+        registry: ctx.modelRegistry as never,
+        ctx,
+        signal,
+      });
+      if (recovered) {
+        resolvedRuntime = { ...configured, model: recovered.model, modelSource: "explicit" };
+        modelRefusal = preflightModel(
+          recovered.model,
+          ctx.modelRegistry,
+          session.modelResolutionCache,
+          session.allowUnresolvedModels,
+        );
+      }
+    }
     const request = {
       task: spec.task,
       agent: spec.agent,
       tools: spec.tools,
-      model: configured.model,
-      thinking: configured.thinking,
+      model: resolvedRuntime.model,
+      thinking: resolvedRuntime.thinking,
       context: spec.context,
       correlation: spec.workspace
         ? { ...(spec.correlation ?? {}), workspace_id: spec.workspace.workspace_id }
@@ -412,9 +451,6 @@ async function runOneDelegationImplementation(
     // requested and refused, and stored approvals still count toward it — nothing is *hidden*, only nobody is
     // *asked*. It is the same argument `/grants` uses for its preview.
     let executorRefusal = session.executor.refusal;
-    const modelRefusal =
-      runtimeRefusal ??
-      preflightModel(request.model, ctx.modelRegistry, session.modelResolutionCache, session.allowUnresolvedModels);
     const { extra, refusal: nativeRefusal } = await nativeDelegationContext(
       session,
       ids,
@@ -423,10 +459,14 @@ async function runOneDelegationImplementation(
     );
     executorRefusal ||= nativeRefusal;
 
+    const targetDef = spec.agent ? session.definitions.get(spec.agent) : undefined;
+    const childExtensions = resolveChildExtensionsFor(session, targetDef);
+    const attachedBriefSha256 = extractAttachedBriefSha256(spec);
     // Parent-run tools are decided by THIS delegation's live tool context: it is what will run them.
     const planContext = {
       ...extra,
       ...session.parentToolContext?.(ctx),
+      ...(childExtensions.length ? { childExtensions } : {}),
       ...(options.workMode ? { workMode: options.workMode } : {}),
     };
     let preparedWorkspace: PreparedWorkspace | undefined;
@@ -498,6 +538,11 @@ async function runOneDelegationImplementation(
       plan = { ...plan, ok: false, reason: modelRefusal.message, refusal: modelRefusal };
     }
 
+    if (plan.ok) {
+      if (spec.agent) plan = { ...plan, specialist: spec.agent };
+      // Explicitly represent empty assignments as [] so the parent/child proxy never treats absence as unscoped.
+      plan = { ...plan, attachedBriefSha256: [...attachedBriefSha256] };
+    }
     if (plan.ok && options.taskAdmission) {
       try {
         const access = governedWorkspaceAccess(spec.workspace?.access ?? "read", plan.requested);
@@ -568,6 +613,9 @@ async function runOneDelegationImplementation(
     });
     if (!options.operationClaim)
       await options.taskObservation?.(ids.executionId, "delegation", "admitted", "Delegation admitted");
+    const preEditSnapshot = !isReadOnlyCapabilitySet(plan.effective)
+      ? snapshotWorkspaceDirtyState(preparedWorkspace?.workspace.root ?? ctx.cwd)
+      : undefined;
     outcome = await executePlannedChild({
       beforeRuntimeBegin: admitted?.beforeRuntimeBegin,
       capacityReservation: capacity,
@@ -595,6 +643,10 @@ async function runOneDelegationImplementation(
       deadlineAt: options.deadlineAt,
       onDeadline: (deadlineAt) => options.onAttempt?.({ deadlineAt }),
     });
+    const recovery = assessPartialEditRecovery(preparedWorkspace?.workspace.root ?? ctx.cwd, preEditSnapshot, outcome);
+    if (recovery) {
+      outcome = { ...outcome, recovery };
+    }
     return outcome;
   } finally {
     if (!options.operationClaim && executorEntered) {

@@ -1,6 +1,6 @@
 /** Bounded synchronous reads for the synchronous planner/settings seams. */
-import { constants, openSync, closeSync, fstatSync, readSync, realpathSync } from "node:fs";
-import { isAbsolute, relative } from "node:path";
+import { constants, openSync, closeSync, fstatSync, lstatSync, readSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
 import { BoundedReadCleanupError } from "./bounded-read.ts";
 
 export interface SyncReadPorts {
@@ -35,15 +35,36 @@ export function readBoundedTextSync(
 ): { text: string; truncated: boolean; size: number } {
   const now = options.now ?? Date.now;
   const deadline = now() + (options.timeoutMs ?? 2_000);
+  const usingDefaultPorts = io === ports;
+  let preLstat: ReturnType<typeof lstatSync> | undefined;
+  if (usingDefaultPorts && options.confinedRoot && !constants.O_NOFOLLOW) {
+    // Windows lacks O_NOFOLLOW; reject symlinks explicitly before opening and pin (dev, ino) on the held fd.
+    preLstat = lstatSync(path, { bigint: true });
+    if (preLstat.isSymbolicLink() || !preLstat.isFile()) throw new Error("not a regular file");
+  }
   const fd = io.open(path, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
   try {
     const stat = io.stat(fd);
     if (!stat.isFile()) throw new Error("not a regular file");
+    if (preLstat) {
+      const heldBig = fstatSync(fd, { bigint: true });
+      if (!heldBig.isFile() || heldBig.dev !== preLstat.dev || heldBig.ino !== preLstat.ino) {
+        throw new Error("file changed between inspection and open");
+      }
+    }
     // Linux /proc resolves the held fd directly; macOS and Windows lack /proc so resolve canonical path.
     if (options.confinedRoot) {
+      const rootCanonical = usingDefaultPorts ? io.realpath(options.confinedRoot) : options.confinedRoot;
       const held = process.platform === "linux" ? io.realpath(`/proc/self/fd/${fd}`) : io.realpath(path);
-      const within = relative(options.confinedRoot, held);
-      if (!within || within === ".." || within.startsWith("../") || isAbsolute(within))
+      const within = relative(rootCanonical, held);
+      if (
+        !within ||
+        within === ".." ||
+        within.startsWith("../") ||
+        within.startsWith("..\\") ||
+        within.startsWith(`..${sep}`) ||
+        isAbsolute(within)
+      )
         throw new Error("held file is outside this session's working directory");
     }
     if (!options.prefix && stat.size > options.maxBytes) throw new Error("file exceeds byte limit");

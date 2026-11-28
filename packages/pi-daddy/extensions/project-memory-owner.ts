@@ -12,6 +12,8 @@ export interface ProjectMemoryOwner {
   readonly sessionId: string;
   readonly cwd: string;
   isCurrent(): boolean;
+  /** Live Daddy Auto authority at write time, independent of Bookie memory being enabled. */
+  isAutoEnabled(): boolean;
 }
 export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, session: GrantsSession) {
   let lease: ProjectMemoryOwner | undefined;
@@ -123,6 +125,13 @@ export function registerProjectMemoryOwner(pi: Pick<ExtensionAPI, "events">, ses
           isCurrent: () => {
             if (lease !== next || lifecycle.autoMode !== boundPolicy || !memoryEnabled()) expired = true;
             return !expired;
+          },
+          isAutoEnabled: () => {
+            if (lease !== next || lifecycle.autoMode !== boundPolicy || !memoryEnabled()) {
+              expired = true;
+              return false;
+            }
+            return !expired && boundPolicy?.authority?.snapshot().enabled === true;
           },
         });
         lease = next;

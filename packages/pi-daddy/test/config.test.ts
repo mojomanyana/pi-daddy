@@ -38,7 +38,7 @@ test("parseBound rejects a numeric prefix rather than silently truncating it", (
 
 test("absent depth configuration keeps the documented defaults", () => {
   const c = depthConfig(undefined, undefined);
-  assert.deepEqual({ depth: c.depth, maxDepth: c.maxDepth }, { depth: 0, maxDepth: 2 });
+  assert.deepEqual({ depth: c.depth, maxDepth: c.maxDepth }, { depth: 0, maxDepth: 4 });
   assert.deepEqual(c.malformed, []);
 });
 

@@ -27,9 +27,14 @@ export const parseThinkingLevel = (value: unknown): ThinkingLevel | undefined =>
     : undefined;
 export const parseConfiguredModel = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;
-  const colon = value.indexOf(":");
-  if (colon <= 0 || colon === value.length - 1 || /\s/.test(value)) return undefined;
-  return `${value.slice(0, colon)}/${value.slice(colon + 1)}`;
+  const trimmed = value.trim();
+  if (!trimmed || /\s/.test(trimmed)) return undefined;
+  const slash = trimmed.indexOf("/");
+  const colon = trimmed.indexOf(":");
+  // Preserve `provider/model:tag` (e.g. `ollama/qwen3:32b`) when `/` precedes `:`.
+  if (slash > 0 && slash < trimmed.length - 1 && (colon === -1 || slash < colon)) return trimmed;
+  if (colon > 0 && colon < trimmed.length - 1) return `${trimmed.slice(0, colon)}/${trimmed.slice(colon + 1)}`;
+  return undefined;
 };
 const choice = (value: unknown): DefinitionRuntimeChoice => {
   if (!isObject(value)) return {};

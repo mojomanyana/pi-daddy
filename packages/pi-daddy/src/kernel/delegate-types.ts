@@ -83,6 +83,8 @@ export interface DelegationContext {
   extensionPath?: string;
   /** No-tool activity observer injected only for governed leaf children. */
   observerExtensionPath?: string;
+  /** Trusted verification or operator opt-in child extensions loaded via `-e` alongside `--tools`. */
+  childExtensions?: readonly string[];
   /** Public tool origins observed in the current host; names alone do not establish child delivery. */
   childToolSources?: readonly import("./child-tools.ts").ChildToolSource[];
   /** Daddy's child-side entrypoint for parent-run tools; loaded only by a plan that delivers one. */
@@ -238,6 +240,10 @@ export interface Delegation {
    * planned. The root compares it with its model again at launch and at every call.
    */
   parentToolModel?: string;
+  /** Optional attached Scout brief SHA-256 hashes authorized for this assigned specialist. */
+  attachedBriefSha256?: readonly string[];
+  /** Resolved specialist role name (when spawning an operator-authored definition). */
+  specialist?: string;
   /** Ledger id for this child's readable logical position, if the caller assigned one (F8). */
   childId?: string;
   /** Unique identity for this occurrence, if the caller assigned one. */

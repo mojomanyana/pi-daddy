@@ -14,6 +14,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { isUnderPiProjectDir } from "../kernel/project-paths.ts";
+import {
+  candidateTimedOut,
+  preserveCompletedCandidates,
+  requiresComparativeEvidence,
+  type PreservedCandidatePatch,
+} from "./tournament-recovery.ts";
 
 const execFileAsync = promisify(execFile);
 const TEST_FILE_RE = /(?:^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[cm]?[jt]sx?$|verify[^/]*\.[cm]?[jt]s$/i;
@@ -40,6 +46,10 @@ export interface TournamentOptions {
   readonly verifyCommand?: string;
   readonly verifyTimeoutMs?: number;
   readonly applyWinner?: boolean;
+  /** Retry a single timed-out/missing candidate once when its result matters. Default true. */
+  readonly retryTimedOut?: boolean;
+  /** When false (Daddy Auto OFF), preserve patches and ask before applying instead of mutating workspace. */
+  readonly autoApplyAllowed?: boolean;
   readonly signal?: AbortSignal;
   readonly runCandidate: (input: {
     index: number;
@@ -50,7 +60,7 @@ export interface TournamentOptions {
   readonly judgeWinner?: (
     passing: readonly CandidateRunResult[],
     signal?: AbortSignal,
-  ) => Promise<{ winnerIndex: number; rationale: string }>;
+  ) => Promise<{ winnerIndex: number | null; rationale: string; inconclusive?: boolean }>;
 }
 
 export interface TournamentOutcome {
@@ -58,6 +68,12 @@ export interface TournamentOutcome {
   readonly winnerIndex: number | null;
   readonly rationale: string;
   readonly applied: boolean;
+  readonly retriedCandidates?: readonly number[];
+  readonly preservedPatchesDir?: string;
+  readonly preservedPatches?: readonly PreservedCandidatePatch[];
+  readonly needsDecision?: boolean;
+  readonly inconclusive?: boolean;
+  readonly comparativeRequired?: boolean;
 }
 
 async function git(cwd: string, args: string[], timeout = 15_000): Promise<string> {
@@ -295,59 +311,69 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
   const baseSha = (await git(options.repoRoot, ["rev-parse", "HEAD"])).trim();
   const { dirtyFiles, protectedFiles } = await snapshotParentWorkspace(options.repoRoot);
   const created: Array<string | undefined> = new Array(approaches.length).fill(undefined);
+  const executeOne = async (approach: string, index: number): Promise<CandidateRunResult> => {
+    let worktree = "";
+    try {
+      if (created[index]) await removeDetachedWorktree(options.repoRoot, created[index]!);
+      worktree = await createDetachedWorktree(options.repoRoot, index, dirtyFiles);
+      created[index] = worktree;
+      const run = await options.runCandidate({ index, approach, worktree, signal: options.signal });
+      // Restore pre-existing verifier/test files so candidates cannot game verifyCommand.
+      for (const [rel, orig] of protectedFiles) {
+        const dst = resolve(worktree, rel);
+        await mkdir(dirname(dst), { recursive: true });
+        await writeFile(dst, orig);
+      }
+      const { diff, changedFiles } = await collectWorktreeChanges(worktree, baseSha, dirtyFiles);
+      const verify = options.verifyCommand
+        ? await runVerifyCommand(worktree, options.verifyCommand, options.signal, options.verifyTimeoutMs)
+        : { passed: run.ok && changedFiles.length > 0, exitCode: run.ok ? 0 : 1, output: "" };
+      return {
+        index,
+        approach,
+        worktree,
+        ok: run.ok,
+        summary: run.summary,
+        diff,
+        changedFiles,
+        verifyPassed: verify.passed,
+        verifyExitCode: verify.exitCode,
+        verifyOutput: verify.output,
+        ...(run.error ? { error: run.error } : {}),
+      };
+    } catch (error) {
+      return {
+        index,
+        approach,
+        worktree,
+        ok: false,
+        summary: "",
+        diff: "",
+        changedFiles: [],
+        verifyPassed: false,
+        verifyExitCode: null,
+        verifyOutput: "",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
   try {
-    const settled = await Promise.all(
-      approaches.map(async (approach, index): Promise<CandidateRunResult> => {
-        let worktree = "";
-        try {
-          worktree = await createDetachedWorktree(options.repoRoot, index, dirtyFiles);
-          created[index] = worktree;
-          const run = await options.runCandidate({
-            index,
-            approach,
-            worktree,
-            signal: options.signal,
-          });
-          // Restore pre-existing verifier/test files so candidates cannot game verifyCommand.
-          for (const [rel, orig] of protectedFiles) {
-            const dst = resolve(worktree, rel);
-            await mkdir(dirname(dst), { recursive: true });
-            await writeFile(dst, orig);
-          }
-          const { diff, changedFiles } = await collectWorktreeChanges(worktree, baseSha, dirtyFiles);
-          const verify = options.verifyCommand
-            ? await runVerifyCommand(worktree, options.verifyCommand, options.signal, options.verifyTimeoutMs)
-            : { passed: run.ok && changedFiles.length > 0, exitCode: run.ok ? 0 : 1, output: "" };
-          return {
-            index,
-            approach,
-            worktree,
-            ok: run.ok,
-            summary: run.summary,
-            diff,
-            changedFiles,
-            verifyPassed: verify.passed,
-            verifyExitCode: verify.exitCode,
-            verifyOutput: verify.output,
-            ...(run.error ? { error: run.error } : {}),
-          };
-        } catch (error) {
-          return {
-            index,
-            approach,
-            worktree,
-            ok: false,
-            summary: "",
-            diff: "",
-            changedFiles: [],
-            verifyPassed: false,
-            verifyExitCode: null,
-            verifyOutput: "",
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-      }),
-    );
+    const settled = await Promise.all(approaches.map((approach, index) => executeOne(approach, index)));
+    const comparativeRequired = requiresComparativeEvidence(options.task);
+    const anyTimedOut = settled.some((c) => candidateTimedOut(c));
+    let preserved = anyTimedOut ? await preserveCompletedCandidates(settled) : undefined;
+    const retriedCandidates: number[] = [];
+
+    // Retry ONLY timed-out/missing candidates once when their result matters (comparative task or no passing winner yet).
+    const initialPassing = settled.filter((c) => c.ok && c.verifyPassed && c.changedFiles.length > 0);
+    const retryMatters = comparativeRequired ? initialPassing.length < 2 : initialPassing.length === 0;
+    if (options.retryTimedOut !== false && anyTimedOut && retryMatters && !options.signal?.aborted) {
+      for (const c of settled) {
+        if (!candidateTimedOut(c) || options.signal?.aborted) continue;
+        retriedCandidates.push(c.index + 1);
+        settled[c.index] = await executeOne(approaches[c.index], c.index);
+      }
+    }
 
     let passing = settled.filter((c) => c.ok && c.verifyPassed && c.changedFiles.length > 0);
     if (passing.length > 1 && options.verifyCommand) {
@@ -356,15 +382,31 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
 
     let winnerIndex: number | null = null;
     let rationale = "No candidate passed objective verification with code changes.";
-    if (passing.length === 1) {
+    let inconclusive = false;
+    let needsDecision = false;
+    if (comparativeRequired && passing.length < 2) {
+      inconclusive = true;
+      needsDecision = true;
+      rationale =
+        passing.length === 1
+          ? `Comparative evidence required: only Candidate ${passing[0].index + 1} completed; cannot judge comparative claim without a second passing candidate.`
+          : "Comparative evidence required: fewer than two candidates passed verification.";
+    } else if (passing.length === 1) {
       winnerIndex = passing[0].index;
-      rationale = `Candidate ${winnerIndex + 1} (${passing[0].approach}) was the sole passing candidate.`;
+      rationale = `Candidate ${winnerIndex + 1} (${passing[0].approach}) qualified as the surviving passing candidate meeting acceptance criteria.`;
     } else if (passing.length > 1) {
       if (options.judgeWinner) {
         const picked = await options.judgeWinner(passing, options.signal);
-        const valid = passing.find((c) => c.index === picked.winnerIndex);
-        winnerIndex = valid ? valid.index : passing[0].index;
-        rationale = picked.rationale;
+        if (picked.inconclusive || picked.winnerIndex === null) {
+          inconclusive = true;
+          needsDecision = true;
+          rationale =
+            picked.rationale || "Tradeoffs between passing candidates are inconclusive; operator decision needed.";
+        } else {
+          const valid = passing.find((c) => c.index === picked.winnerIndex);
+          winnerIndex = valid ? valid.index : passing[0].index;
+          rationale = picked.rationale;
+        }
       } else {
         const sorted = [...passing].sort(
           (a, b) => (b.crossTestsPassed ?? 0) - (a.crossTestsPassed ?? 0) || a.diff.length - b.diff.length,
@@ -375,13 +417,32 @@ export async function runWorktreeTournament(options: TournamentOptions): Promise
     }
 
     let applied = false;
-    if (winnerIndex !== null && options.applyWinner !== false) {
-      const winner = settled[winnerIndex];
-      if (winner && winner.worktree) {
-        applied = await applyWorktreeChanges(options.repoRoot, winner.worktree, winner.changedFiles);
+    const autoAllowed = options.autoApplyAllowed !== false;
+    if (winnerIndex !== null && options.applyWinner !== false && !inconclusive) {
+      if (autoAllowed) {
+        const winner = settled[winnerIndex];
+        if (winner && winner.worktree) {
+          applied = await applyWorktreeChanges(options.repoRoot, winner.worktree, winner.changedFiles);
+        }
+      } else {
+        needsDecision = true;
+        preserved ??= await preserveCompletedCandidates(settled);
+        rationale += " Auto is off: preserved winning patch; ask the operator before applying.";
       }
+    } else if (inconclusive && !preserved) {
+      preserved = await preserveCompletedCandidates(settled);
     }
-    return { candidates: settled, winnerIndex, rationale, applied };
+    return {
+      candidates: settled,
+      winnerIndex,
+      rationale,
+      applied,
+      ...(retriedCandidates.length ? { retriedCandidates } : {}),
+      ...(preserved ? { preservedPatchesDir: preserved.dir, preservedPatches: preserved.patches } : {}),
+      ...(needsDecision ? { needsDecision: true } : {}),
+      ...(inconclusive ? { inconclusive: true } : {}),
+      ...(comparativeRequired ? { comparativeRequired: true } : {}),
+    };
   } finally {
     await Promise.all(
       created.filter((wt): wt is string => Boolean(wt)).map((wt) => removeDetachedWorktree(options.repoRoot, wt)),

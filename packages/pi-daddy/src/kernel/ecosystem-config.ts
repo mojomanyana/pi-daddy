@@ -42,11 +42,27 @@ export interface EcosystemHarvestConfig {
   thresholds?: Record<string, number>;
 }
 
+export interface EcosystemDelegationConfig {
+  /** Operator-selected delegation depth (1..8, survives Standard <-> Ambitious switches). Default 4. */
+  maxDepth?: number;
+  /** Inherit applicable AGENTS.md files in trusted workspaces by default. Set false to opt out. */
+  inheritContextFiles?: boolean;
+  /** Per-role model overrides (`provider/model` or `session`). */
+  roleModels?: Record<string, string>;
+  /** Per-role tier overrides (`fast` | `work` | `strong`). */
+  roleTiers?: Record<string, EcosystemModelTier>;
+  /** Configurable tournament candidate timeout in seconds (30..1800). Default 180. */
+  tournamentTimeoutSec?: number;
+  /** Opt-in extra child extensions remembered per trusted workspace path -> role name -> extension paths. */
+  childExtensions?: Record<string, Record<string, string[]>>;
+}
+
 export interface EcosystemConfig {
   autoOnStartup?: boolean;
   setupPreset?: { name: string; defaults: EcosystemModelsConfig; fallbacks?: EcosystemModelFallbacks };
   models?: EcosystemModelsConfig;
   modelFallbacks?: EcosystemModelFallbacks;
+  delegation?: EcosystemDelegationConfig;
   dashboard?: { autoStart?: boolean; autoSplit?: boolean };
   escalation?: { auto?: boolean };
   harvest?: EcosystemHarvestConfig;
@@ -94,6 +110,7 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
   for (const section of [
     "models",
     "modelFallbacks",
+    "delegation",
     "dashboard",
     "escalation",
     "harvest",
@@ -107,10 +124,46 @@ export function readEcosystemConfig(env: NodeJS.ProcessEnv = process.env): Ecosy
     throw Error(`Expected a boolean for bookie.autoSyncReviews in ${file}.`);
   if ("autoOnStartup" in parsed && typeof parsed.autoOnStartup !== "boolean")
     throw Error(`Expected a boolean for autoOnStartup in ${file}.`);
-  if (record(parsed.bookie) && "workspaceMemory" in parsed.bookie) {
-    const mode = parsed.bookie.workspaceMemory;
-    if (mode === "on" || mode === "follow-auto" || mode === "off") parsed.bookie.workspaceMemory = mode !== "off";
-    else if (typeof mode !== "boolean") throw Error(`Expected a boolean for bookie.workspaceMemory in ${file}.`);
+  if (record(parsed.bookie) && "workspaceMemory" in parsed.bookie && typeof parsed.bookie.workspaceMemory !== "boolean")
+    throw Error(`Expected a boolean for bookie.workspaceMemory in ${file}.`);
+  if (record(parsed.delegation)) {
+    const d = parsed.delegation;
+    if ("maxDepth" in d && (!Number.isInteger(d.maxDepth) || (d.maxDepth as number) < 1 || (d.maxDepth as number) > 8))
+      throw Error(`Expected delegation.maxDepth to be an integer from 1 to 8 in ${file}.`);
+    if ("inheritContextFiles" in d && typeof d.inheritContextFiles !== "boolean")
+      throw Error(`Expected a boolean for delegation.inheritContextFiles in ${file}.`);
+    if (
+      "tournamentTimeoutSec" in d &&
+      (!Number.isInteger(d.tournamentTimeoutSec) ||
+        (d.tournamentTimeoutSec as number) < 30 ||
+        (d.tournamentTimeoutSec as number) > 1800)
+    )
+      throw Error(`Expected delegation.tournamentTimeoutSec to be an integer from 30 to 1800 in ${file}.`);
+    if ("roleModels" in d) {
+      if (
+        !record(d.roleModels) ||
+        !Object.values(d.roleModels).every((v) => typeof v === "string" && (v === "session" || /^[^/\s:]+\S+$/.test(v)))
+      )
+        throw Error(`Expected provider/model or session strings in delegation.roleModels in ${file}.`);
+    }
+    if ("roleTiers" in d) {
+      if (
+        !record(d.roleTiers) ||
+        !Object.values(d.roleTiers).every((v) => v === "fast" || v === "work" || v === "strong")
+      )
+        throw Error(`Expected fast, work, or strong in delegation.roleTiers in ${file}.`);
+    }
+    if ("childExtensions" in d) {
+      if (
+        !record(d.childExtensions) ||
+        !Object.values(d.childExtensions).every(
+          (roles) =>
+            record(roles) &&
+            Object.values(roles).every((list) => Array.isArray(list) && list.every((p) => typeof p === "string")),
+        )
+      )
+        throw Error(`Expected workspace -> role -> extension path arrays in delegation.childExtensions in ${file}.`);
+    }
   }
   if (record(parsed.scout)) {
     const { model, thinking, directUrls } = parsed.scout;

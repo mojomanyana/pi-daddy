@@ -21,19 +21,17 @@ import { chainStepSpec } from "../src/kernel/chain.ts";
 after(cleanupTempDirs);
 afterEach(restoreEnv);
 
-test("lean Turn-1 activates only delegate by default; PI_DADDY_LEAN_TOOLS=0 activates all delegation tools", async () => {
-  const lean = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
-  for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
-    assert.ok(lean.tools.has(name), `${name} must be registered provisionally`);
+test("Turn-1 exposes all eligible delegation tools by default; PI_DADDY_LEAN_TOOLS=1 opts into lean Turn-1", async () => {
+  const full = await harness({ [ENV_GRANT]: "tool:read,tool:delegate" });
+  for (const name of ["delegate", "delegate_all", "delegate_chain", "delegate_describe"]) {
+    assert.ok(full.tools.has(name), `${name} must be registered provisionally`);
+    assert.ok(full.activeTools.has(name), `${name} must be active by default on Turn 1`);
   }
-  assert.ok(lean.activeTools.has("delegate"), "delegate must be active by default for an authorised owner");
-  assert.ok(!lean.activeTools.has("delegate_all"), "delegate_all stays inactive by default on Turn 1");
-  assert.ok(!lean.activeTools.has("delegate_chain"), "delegate_chain stays inactive by default on Turn 1");
 
-  const full = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", PI_DADDY_LEAN_TOOLS: "0" });
-  for (const name of ["delegate", "delegate_all", "delegate_chain"]) {
-    assert.ok(full.activeTools.has(name), `${name} must be active when PI_DADDY_LEAN_TOOLS=0`);
-  }
+  const lean = await harness({ [ENV_GRANT]: "tool:read,tool:delegate", PI_DADDY_LEAN_TOOLS: "1" });
+  assert.ok(lean.activeTools.has("delegate"), "delegate stays active in opt-in lean mode");
+  assert.ok(!lean.activeTools.has("delegate_all"), "delegate_all stays inactive when PI_DADDY_LEAN_TOOLS=1");
+  assert.ok(!lean.activeTools.has("delegate_chain"), "delegate_chain stays inactive when PI_DADDY_LEAN_TOOLS=1");
 
   const leaf = await harness({ [ENV_GRANT]: "tool:read" });
   assert.ok(!leaf.activeTools.has("delegate"), "S-5: withholding tool:delegate must make a session a leaf");

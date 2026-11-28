@@ -74,13 +74,19 @@ try {
     assert.equal(await client.prompt("/dashboard split"), "handled");
     const deadline = Date.now() + 12000;
     let rendered = false;
+    let lastPane = "";
     do {
       const fresh = panes().filter((pane) => !before.has(pane));
       assert.ok(fresh.length <= 1, "Dashboard must open only one new pane");
-      rendered = fresh.length === 1 && tmux("capture-pane", "-p", "-t", fresh[0]).includes("TERMINAL SIDE PANEL");
+      if (fresh.length === 1) {
+        lastPane = tmux("capture-pane", "-p", "-t", fresh[0]);
+        rendered =
+          lastPane.includes("TERMINAL SIDE PANEL") ||
+          (lastPane.includes("PI DADDY") && (lastPane.includes("Overview") || lastPane.includes("Current session")));
+      }
       if (!rendered) await new Promise((done) => setTimeout(done, 150));
     } while (!rendered && Date.now() < deadline);
-    assert.ok(rendered, "The installed dashboard must render inside the new pane");
+    assert.ok(rendered, `The installed dashboard must render inside the new pane; captured:\n${lastPane}`);
   }
   await client.prompt("/dashboard stop");
 } finally {
